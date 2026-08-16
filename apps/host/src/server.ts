@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { join } from "node:path";
+import { createDocParseTool, createDocProbeTool } from "@flintloom/docforge";
 import { createFsTool } from "@flintloom/fs";
 import { createGrepTool } from "@flintloom/grep";
 import { Context, loadConfig } from "@flintloom/kernel";
@@ -76,6 +77,8 @@ export function createRuntime(workspaceRoot: string, homeDir: string): Runtime {
   tools.register(createFsTool());
   tools.register(createGrepTool());
   tools.register(createShellTool());
+  tools.register(createDocProbeTool());
+  tools.register(createDocParseTool());
 
   const ymlPath = join(workspaceRoot, "flintloom.yml");
   if (existsSync(ymlPath)) {

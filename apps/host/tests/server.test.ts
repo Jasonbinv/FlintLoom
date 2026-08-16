@@ -191,4 +191,13 @@ describe("startHost", () => {
       Session.prototype.append = original;
     }
   });
+
+  it("registers doc_probe and doc_parse tools", () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-ws-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
+    const runtime = createRuntime(workspaceRoot, homeDir);
+    const names = runtime.tools.schemas().map((row) => row.name);
+    expect(names).toContain("doc_probe");
+    expect(names).toContain("doc_parse");
+  });
 });

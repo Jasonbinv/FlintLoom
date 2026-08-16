@@ -6,6 +6,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@flintloom/docforge": "workspace:*",
     "@flintloom/fs": "workspace:*",
     "@flintloom/grep": "workspace:*",
     "@flintloom/kernel": "workspace:*",
