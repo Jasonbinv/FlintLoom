@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { cancelTurn, fetchModels, fetchSession, postTurn } from "./api.ts";
+import { FilePane } from "./FilePane.tsx";
+import { insertPath } from "./files.ts";
 import type { WorkbenchEvent } from "./types.ts";
 import "./app.css";
 
@@ -148,36 +150,43 @@ export function App() {
           <span>chat 已配置</span>
         ) : null}
       </header>
-      <main className="log">
-        {bubbles.map((bubble) => (
-          <div key={bubble.id} className={`bubble ${bubble.kind}`}>
-            {bubble.kind === "user" && bubble.text}
-            {bubble.kind === "assistant" && bubble.text}
-            {bubble.kind === "error" && bubble.message}
-            {bubble.kind === "tool-call" &&
-              `${bubble.name} ${bubble.argsText}`}
-            {bubble.kind === "tool-result" && bubble.text}
-          </div>
-        ))}
-        {draft ? <div className="bubble assistant draft">{draft}</div> : null}
-      </main>
-      <footer className="composer">
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={onKeyDown}
-          rows={3}
+      <div className="workbench-body">
+        <div className="chat-column">
+          <main className="log">
+            {bubbles.map((bubble) => (
+              <div key={bubble.id} className={`bubble ${bubble.kind}`}>
+                {bubble.kind === "user" && bubble.text}
+                {bubble.kind === "assistant" && bubble.text}
+                {bubble.kind === "error" && bubble.message}
+                {bubble.kind === "tool-call" &&
+                  `${bubble.name} ${bubble.argsText}`}
+                {bubble.kind === "tool-result" && bubble.text}
+              </div>
+            ))}
+            {draft ? <div className="bubble assistant draft">{draft}</div> : null}
+          </main>
+          <footer className="composer">
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={onKeyDown}
+              rows={3}
+            />
+            {sending ? (
+              <button type="button" onClick={onCancel}>
+                取消
+              </button>
+            ) : (
+              <button type="button" onClick={() => void send()}>
+                发送
+              </button>
+            )}
+          </footer>
+        </div>
+        <FilePane
+          onInsertPath={(p) => setInput((cur) => insertPath(cur, p))}
         />
-        {sending ? (
-          <button type="button" onClick={onCancel}>
-            取消
-          </button>
-        ) : (
-          <button type="button" onClick={() => void send()}>
-            发送
-          </button>
-        )}
-      </footer>
+      </div>
     </div>
   );
 }

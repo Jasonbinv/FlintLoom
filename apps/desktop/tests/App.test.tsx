@@ -35,9 +35,38 @@ function installFetch(opts: {
   models?: Response | Error;
   session?: Response | Error;
   turn?: Response | Error;
+  files?: Response | Error;
+  preview?: Response | Error;
 } = {}) {
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
     const url = requestUrl(input);
+    if (url.includes("/v1/files/preview")) {
+      if (opts.preview instanceof Error) throw opts.preview;
+      return (
+        opts.preview ??
+        new Response(
+          JSON.stringify({
+            path: "README.md",
+            kind: "markdown",
+            text: "# Hello\n",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        )
+      );
+    }
+    if (url.includes("/v1/files")) {
+      if (opts.files instanceof Error) throw opts.files;
+      return (
+        opts.files ??
+        new Response(
+          JSON.stringify({
+            path: ".",
+            entries: [{ name: "README.md", type: "file" }],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        )
+      );
+    }
     if (url.includes("/v1/models")) {
       if (opts.models instanceof Error) throw opts.models;
       return (
@@ -213,5 +242,30 @@ describe("App", () => {
     expect(document.body.textContent).not.toContain(JSON.stringify(args));
     expect(document.body.textContent).toContain(`${result.slice(0, 2000)}…`);
     expect(document.body.textContent).not.toContain(result);
+  });
+
+  it("shows file tree and preview and inserts path once", async () => {
+    installFetch();
+    await mountApp();
+    await waitForText("README.md");
+    await waitForText("Hello");
+    expect(container!.textContent).toContain("README.md");
+    expect(container!.textContent).toContain("Hello");
+
+    const fileButton = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "README.md",
+    );
+    if (!fileButton) throw new Error("no README.md button");
+    await act(async () => {
+      fileButton.click();
+    });
+    const textarea = document.querySelector("textarea");
+    if (!textarea) throw new Error("no textarea");
+    expect(textarea.value).toBe("README.md");
+
+    await act(async () => {
+      fileButton.click();
+    });
+    expect(textarea.value).toBe("README.md");
   });
 });
