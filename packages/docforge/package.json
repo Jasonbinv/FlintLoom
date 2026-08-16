@@ -1,0 +1,12 @@
+{
+  "name": "@flintloom/docforge",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@flintloom/tools": "workspace:*",
+    "node-html-markdown": "^1.3.0"
+  }
+}
