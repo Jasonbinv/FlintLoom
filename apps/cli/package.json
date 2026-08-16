@@ -1,0 +1,13 @@
+{
+  "name": "@flintloom/cli",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "flint": "./src/bin.ts"
+  },
+  "dependencies": {
+    "@flintloom/host": "workspace:*",
+    "@flintloom/loop": "workspace:*",
+    "@flintloom/session": "workspace:*"
+  }
+}

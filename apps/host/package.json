@@ -1,0 +1,19 @@
+{
+  "name": "@flintloom/host",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@flintloom/fs": "workspace:*",
+    "@flintloom/grep": "workspace:*",
+    "@flintloom/kernel": "workspace:*",
+    "@flintloom/loop": "workspace:*",
+    "@flintloom/models": "workspace:*",
+    "@flintloom/models-chat": "workspace:*",
+    "@flintloom/session": "workspace:*",
+    "@flintloom/shell": "workspace:*",
+    "@flintloom/tools": "workspace:*"
+  }
+}

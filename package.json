@@ -5,10 +5,12 @@
   "packageManager": "pnpm@10.14.0",
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "flint": "tsx apps/cli/src/bin.ts"
   },
   "engines": { "node": ">=22" },
   "devDependencies": {
+    "tsx": "^4.20.5",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"
   }
