@@ -10,7 +10,12 @@ import { ModelRegistry } from "@flintloom/models";
 import { createOpenAiCompatChat } from "@flintloom/models-chat";
 import { Session } from "@flintloom/session";
 import { createShellTool } from "@flintloom/shell";
-import { ToolRegistry } from "@flintloom/tools";
+import { ToolRegistry, WorkspaceEscapeError } from "@flintloom/tools";
+import {
+  listWorkspaceFiles,
+  normalizeRelPath,
+  previewWorkspaceFile,
+} from "./files.ts";
 import { loadOrCreateToken, readCredentials } from "./token.ts";
 
 export type Runtime = {
@@ -202,7 +207,8 @@ async function handleRequest(
     controllers: Map<string, AbortController>;
   },
 ): Promise<void> {
-  const pathname = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
+  const url = new URL(req.url ?? "/", "http://127.0.0.1");
+  const pathname = url.pathname;
 
   if (pathname.startsWith("/v1/") && !isAuthorized(req, opts.token)) {
     send(res, 401);
@@ -211,6 +217,52 @@ async function handleRequest(
 
   if (req.method === "GET" && pathname === "/v1/models") {
     sendJson(res, 200, opts.runtime.models.snapshot());
+    return;
+  }
+
+  if (req.method === "GET" && pathname === "/v1/files/preview") {
+    const rel = normalizeRelPath(url.searchParams.get("path"));
+    if (rel === undefined) {
+      send(res, 400);
+      return;
+    }
+    try {
+      const result = await previewWorkspaceFile(opts.workspaceRoot, rel);
+      if (result === "not_found") {
+        send(res, 404);
+        return;
+      }
+      sendJson(res, 200, result);
+    } catch (err) {
+      if (err instanceof WorkspaceEscapeError) {
+        send(res, 400, err.message);
+        return;
+      }
+      throw err;
+    }
+    return;
+  }
+
+  if (req.method === "GET" && pathname === "/v1/files") {
+    const rel = normalizeRelPath(url.searchParams.get("path")) ?? ".";
+    try {
+      const result = await listWorkspaceFiles(opts.workspaceRoot, rel);
+      if (result === "hidden" || result === "not_found") {
+        send(res, 404);
+        return;
+      }
+      if (result === "not_directory") {
+        send(res, 400, "failed: not a directory");
+        return;
+      }
+      sendJson(res, 200, result);
+    } catch (err) {
+      if (err instanceof WorkspaceEscapeError) {
+        send(res, 400, err.message);
+        return;
+      }
+      throw err;
+    }
     return;
   }
 
