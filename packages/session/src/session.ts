@@ -10,7 +10,7 @@ export class Session {
   }
 
   events(): readonly SessionEvent[] {
-    return this.#events;
+    return [...this.#events];
   }
 
   deriveMessages(): ChatMessage[] {
