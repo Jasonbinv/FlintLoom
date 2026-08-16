@@ -9,3 +9,8 @@ export {
   type FlintloomConfig,
   type FlintloomPluginRow,
 } from "./config.ts";
+export {
+  applyConfig,
+  unwrapPlugin,
+  type ImportFn,
+} from "./apply-config.ts";
