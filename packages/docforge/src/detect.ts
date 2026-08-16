@@ -12,6 +12,16 @@ const BY_EXT: Record<string, DocType> = {
   ".xlsx": "xlsx",
 };
 
+const UNKNOWN_EXT = new Set([
+  ".doc",
+  ".docm",
+  ".xlsm",
+  ".pptm",
+  ".dotm",
+  ".xltm",
+  ".potm",
+]);
+
 function looksLikeHtml(bytes: Uint8Array): boolean {
   const head = Buffer.from(bytes.subarray(0, 256))
     .toString("utf8")
@@ -36,6 +46,9 @@ function zipContains(bytes: Uint8Array, part: string): boolean {
 
 export function detectType(filePath: string, bytes: Uint8Array): DocType {
   const ext = extname(filePath).toLowerCase();
+  if (UNKNOWN_EXT.has(ext)) {
+    return "unknown";
+  }
   const fromExt = BY_EXT[ext];
   if (fromExt !== undefined) {
     return fromExt;

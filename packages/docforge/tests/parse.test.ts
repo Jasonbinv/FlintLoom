@@ -7,6 +7,8 @@ import { parse } from "../src/parse.ts";
 import { probe } from "../src/probe.ts";
 import { EMPTY_PDF, HELLO_PDF } from "./helpers/pdf.ts";
 import {
+  writeDocxWithImage,
+  writeFormulaXlsx,
   writeHelloDocx,
   writeHelloPptx,
   writeHelloXlsx,
@@ -103,5 +105,44 @@ describe("probe/parse md html unknown", () => {
     const xlsxMd = await parse(xlsxPath);
     expect(xlsxMd).toContain("##");
     expect(xlsxMd).toContain("Hello");
+  });
+
+  it("treats macro-enabled docm as unsupported even with docx bytes", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "flintloom-docm-"));
+    const path = join(dir, "x.docm");
+    await writeHelloDocx(path);
+    expect(await parse(path)).toBe("failed: unsupported type");
+  });
+
+  it("parses docx images as placeholders without data URIs", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "flintloom-docx-img-"));
+    const path = join(dir, "picture.docx");
+    await writeDocxWithImage(path);
+    const md = await parse(path);
+    expect(md).not.toMatch(/data:image/i);
+    expect(md).not.toMatch(/base64/i);
+    expect(md).toMatch(/tiny|\[image\]/i);
+  });
+
+  it("probes truncated docx as unreadable", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "flintloom-bad-docx-"));
+    const path = join(dir, "bad.docx");
+    writeFileSync(path, Buffer.from("PK\x03\x04garbage-not-a-zip"));
+    const result = await probe(path);
+    expect(result.type).toBe("docx");
+    expect(result.parseable).toBe(false);
+    expect(result.reason).toMatch(/unreadable|encrypted/);
+  });
+
+  it("parses xlsx formula and richText cells without [object Object]", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "flintloom-xlsx-cells-"));
+    const path = join(dir, "cells.xlsx");
+    await writeFormulaXlsx(path);
+    const md = await parse(path);
+    expect(md).not.toContain("[object Object]");
+    expect(md).toContain("2");
+    expect(md).toContain("RichText");
+    expect(md).toContain("2026-08-16");
+    expect(md).toContain("#DIV/0!");
   });
 });

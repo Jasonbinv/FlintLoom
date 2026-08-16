@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { detectType } from "./detect.ts";
+import { parseDocx } from "./parsers/docx.ts";
 import { parsePdf } from "./parsers/pdf.ts";
 import { parsePptx } from "./parsers/pptx.ts";
 import { parseXlsx } from "./parsers/xlsx.ts";
@@ -74,6 +75,15 @@ export async function probe(absPath: string): Promise<ProbeResult> {
       return { type: "xlsx", parseable: true, pages: xlsx.pages };
     } catch (err) {
       return failReason("xlsx", err);
+    }
+  }
+
+  if (type === "docx") {
+    try {
+      await parseDocx(absPath);
+      return { type: "docx", parseable: true };
+    } catch (err) {
+      return failReason("docx", err);
     }
   }
 

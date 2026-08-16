@@ -1,13 +1,42 @@
 import ExcelJS from "exceljs";
 
+function escapeCell(text: string): string {
+  return text.replaceAll("|", "\\|");
+}
+
 function cellText(value: ExcelJS.CellValue): string {
   if (value === null || value === undefined) {
     return "";
   }
-  if (typeof value === "object" && "text" in value) {
-    return String((value as { text: string }).text).replaceAll("|", "\\|");
+  if (value instanceof Date) {
+    return escapeCell(value.toISOString().slice(0, 10));
   }
-  return String(value).replaceAll("|", "\\|");
+  if (typeof value !== "object") {
+    return escapeCell(String(value));
+  }
+  if ("richText" in value && Array.isArray(value.richText)) {
+    return escapeCell(
+      value.richText.map((part) => part.text ?? "").join(""),
+    );
+  }
+  if ("error" in value && value.error != null) {
+    return escapeCell(String(value.error));
+  }
+  if ("formula" in value || "sharedFormula" in value) {
+    const formulaCell = value as { result?: ExcelJS.CellValue };
+    if (formulaCell.result !== undefined && formulaCell.result !== null) {
+      return cellText(formulaCell.result);
+    }
+    const formula =
+      "formula" in value
+        ? String(value.formula ?? "")
+        : String((value as { sharedFormula?: string }).sharedFormula ?? "");
+    return escapeCell(formula);
+  }
+  if ("text" in value) {
+    return escapeCell(String((value as { text: string }).text));
+  }
+  return escapeCell(String(value));
 }
 
 function rowsToTable(rows: string[][]): string {

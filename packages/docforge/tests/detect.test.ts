@@ -24,6 +24,14 @@ describe("detectType", () => {
     expect(detectType("legacy.doc", bytes)).toBe("unknown");
   });
 
+  it("marks .docm as unknown even when bytes look like a docx zip", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "flintloom-detect-docm-"));
+    const path = join(dir, "sample.docx");
+    await writeHelloDocx(path);
+    const bytes = readFileSync(path);
+    expect(detectType(join(dir, "x.docm"), bytes)).toBe("unknown");
+  });
+
   it("detects extensionless docx zip by parts", async () => {
     const dir = mkdtempSync(join(tmpdir(), "flintloom-detect-"));
     const path = join(dir, "sample.docx");
