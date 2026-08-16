@@ -102,6 +102,12 @@ importers:
 
   packages/docforge:
     dependencies:
+      '@flintloom/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      '@flintloom/models':
+        specifier: workspace:*
+        version: link:../models
       '@flintloom/tools':
         specifier: workspace:*
         version: link:../tools
@@ -123,12 +129,24 @@ importers:
 
   packages/fs:
     dependencies:
+      '@flintloom/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      '@flintloom/models':
+        specifier: workspace:*
+        version: link:../models
       '@flintloom/tools':
         specifier: workspace:*
         version: link:../tools
 
   packages/grep:
     dependencies:
+      '@flintloom/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      '@flintloom/models':
+        specifier: workspace:*
+        version: link:../models
       '@flintloom/tools':
         specifier: workspace:*
         version: link:../tools
@@ -169,6 +187,9 @@ importers:
 
   packages/models-chat:
     dependencies:
+      '@flintloom/kernel':
+        specifier: workspace:*
+        version: link:../kernel
       '@flintloom/models':
         specifier: workspace:*
         version: link:../models
@@ -181,6 +202,12 @@ importers:
 
   packages/shell:
     dependencies:
+      '@flintloom/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      '@flintloom/models':
+        specifier: workspace:*
+        version: link:../models
       '@flintloom/tools':
         specifier: workspace:*
         version: link:../tools

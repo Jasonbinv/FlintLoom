@@ -1,9 +1,11 @@
 import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
+import type { Context, FlintPlugin } from "@flintloom/kernel";
 import {
   resolveInside,
   WorkspaceEscapeError,
   type ToolDefinition,
+  type ToolRegistry,
 } from "@flintloom/tools";
 
 const MAX_HITS = 200;
@@ -122,3 +124,13 @@ export function createGrepTool(): ToolDefinition {
     },
   };
 }
+
+const plugin: FlintPlugin = {
+  name: "@flintloom/grep",
+  apply(ctx: Context) {
+    const tools = ctx.require<ToolRegistry>("tools");
+    ctx.effect(tools.register(createGrepTool()));
+  },
+};
+
+export default plugin;

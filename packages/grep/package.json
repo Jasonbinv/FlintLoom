@@ -6,6 +6,8 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@flintloom/kernel": "workspace:*",
+    "@flintloom/models": "workspace:*",
     "@flintloom/tools": "workspace:*"
   }
 }

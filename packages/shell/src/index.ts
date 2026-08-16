@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { type ToolDefinition } from "@flintloom/tools";
+import type { Context, FlintPlugin } from "@flintloom/kernel";
+import { type ToolDefinition, type ToolRegistry } from "@flintloom/tools";
 
 const OUTPUT_LIMIT = 50_000;
 const TIMEOUT_MS = 15_000;
@@ -108,3 +109,13 @@ export function createShellTool(): ToolDefinition {
     },
   };
 }
+
+const plugin: FlintPlugin = {
+  name: "@flintloom/shell",
+  apply(ctx: Context) {
+    const tools = ctx.require<ToolRegistry>("tools");
+    ctx.effect(tools.register(createShellTool()));
+  },
+};
+
+export default plugin;
