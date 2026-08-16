@@ -1,12 +1,17 @@
-import { readdir, readFile, realpath } from "node:fs/promises";
+import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
-import { resolveInside, type ToolDefinition } from "@flintloom/tools";
+import {
+  resolveInside,
+  WorkspaceEscapeError,
+  type ToolDefinition,
+} from "@flintloom/tools";
 
 const MAX_HITS = 200;
 
 const SKIP_DIRS = new Set(["node_modules", ".git"]);
 
 async function walkAndGrep(
+  workspaceRoot: string,
   rootDir: string,
   regex: RegExp,
   hits: string[],
@@ -28,22 +33,48 @@ async function walkAndGrep(
     }
 
     const fullPath = path.join(rootDir, entry.name);
+    const relativePath = path.relative(workspaceRoot, fullPath);
+
+    let safePath: string;
+    try {
+      safePath = resolveInside(workspaceRoot, relativePath);
+    } catch (error) {
+      if (error instanceof WorkspaceEscapeError) {
+        continue;
+      }
+      throw error;
+    }
 
     if (entry.isDirectory()) {
       if (SKIP_DIRS.has(entry.name)) {
         continue;
       }
-      await walkAndGrep(fullPath, regex, hits);
+      await walkAndGrep(workspaceRoot, safePath, regex, hits);
       continue;
     }
 
-    if (!entry.isFile()) {
+    let entryStat;
+    try {
+      entryStat = await stat(safePath);
+    } catch {
+      continue;
+    }
+
+    if (entryStat.isDirectory()) {
+      if (SKIP_DIRS.has(entry.name)) {
+        continue;
+      }
+      await walkAndGrep(workspaceRoot, safePath, regex, hits);
+      continue;
+    }
+
+    if (!entryStat.isFile()) {
       continue;
     }
 
     let content: string;
     try {
-      content = await readFile(fullPath, "utf8");
+      content = await readFile(safePath, "utf8");
     } catch {
       continue;
     }
@@ -58,7 +89,7 @@ async function walkAndGrep(
         return;
       }
       if (regex.test(lines[i]!)) {
-        hits.push(`${fullPath}:${i + 1}:${lines[i]}`);
+        hits.push(`${safePath}:${i + 1}:${lines[i]}`);
       }
     }
   }
@@ -86,7 +117,7 @@ export function createGrepTool(): ToolDefinition {
           : await realpath(exec.workspaceRoot);
 
       const hits: string[] = [];
-      await walkAndGrep(startPath, regex, hits);
+      await walkAndGrep(exec.workspaceRoot, startPath, regex, hits);
       return hits.join("\n");
     },
   };
