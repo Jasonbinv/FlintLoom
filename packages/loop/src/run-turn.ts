@@ -42,6 +42,25 @@ function parseToolArgs(args: unknown): Record<string, unknown> {
   return args as Record<string, unknown>;
 }
 
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+function failChat(
+  session: Session,
+  onEvent: RunTurnInput["onEvent"],
+  finish: (status: RunTurnResult["status"]) => RunTurnResult,
+  err: unknown,
+  kind = "chat",
+): RunTurnResult {
+  appendEvent(session, onEvent, {
+    type: "model/error",
+    kind,
+    message: errorMessage(err),
+  });
+  return finish("failed");
+}
+
 export async function runTurn(input: RunTurnInput): Promise<RunTurnResult> {
   const {
     session,
@@ -72,15 +91,13 @@ export async function runTurn(input: RunTurnInput): Promise<RunTurnResult> {
     try {
       chat = models.resolveChat();
     } catch (err) {
-      if (err instanceof ModelKindMissingError) {
-        appendEvent(session, onEvent, {
-          type: "model/error",
-          kind: err.kind,
-          message: err.message,
-        });
-        return finish("failed");
+      if (signal.aborted) {
+        return finish("cancelled");
       }
-      throw err;
+      if (err instanceof ModelKindMissingError) {
+        return failChat(session, onEvent, finish, err, err.kind);
+      }
+      return failChat(session, onEvent, finish, err);
     }
 
     const messages = [
@@ -91,33 +108,40 @@ export async function runTurn(input: RunTurnInput): Promise<RunTurnResult> {
     let accumulatedText = "";
     const toolCalls: ChatChunkToolCall[] = [];
 
-    for await (const chunk of chat.stream(
-      { messages, tools: tools.schemas() },
-      signal,
-    )) {
+    try {
+      for await (const chunk of chat.stream(
+        { messages, tools: tools.schemas() },
+        signal,
+      )) {
+        if (signal.aborted) {
+          return finish("cancelled");
+        }
+
+        switch (chunk.type) {
+          case "text":
+            accumulatedText += chunk.text;
+            appendEvent(session, onEvent, {
+              type: "assistant/chunk",
+              text: chunk.text,
+            });
+            break;
+          case "tool_call":
+            toolCalls.push(chunk);
+            break;
+          case "error":
+            appendEvent(session, onEvent, {
+              type: "model/error",
+              kind: "chat",
+              message: chunk.message,
+            });
+            return finish("failed");
+        }
+      }
+    } catch (err) {
       if (signal.aborted) {
         return finish("cancelled");
       }
-
-      switch (chunk.type) {
-        case "text":
-          accumulatedText += chunk.text;
-          appendEvent(session, onEvent, {
-            type: "assistant/chunk",
-            text: chunk.text,
-          });
-          break;
-        case "tool_call":
-          toolCalls.push(chunk);
-          break;
-        case "error":
-          appendEvent(session, onEvent, {
-            type: "model/error",
-            kind: "chat",
-            message: chunk.message,
-          });
-          return finish("failed");
-      }
+      return failChat(session, onEvent, finish, err);
     }
 
     if (signal.aborted) {

@@ -65,6 +65,39 @@ describe("runTurn", () => {
     });
   });
 
+  it("fails and ends turn when chat stream throws", async () => {
+    const fakeChat: ChatProvider = {
+      async *stream() {
+        throw new Error("network down");
+      },
+    };
+
+    const models = new ModelRegistry();
+    models.registerChat("fake", fakeChat);
+    models.setDefault("chat", "fake");
+
+    const tools = new ToolRegistry();
+    const session = new Session("s3");
+
+    const result = await runTurn({
+      session,
+      text: "hello",
+      models,
+      tools,
+      workspaceRoot: process.cwd(),
+      channel: "test",
+      signal: new AbortController().signal,
+    });
+
+    expect(result.status).toBe("failed");
+
+    const turnEnd = session.events().find((e) => e.type === "turn/end");
+    expect(turnEnd).toMatchObject({ status: "failed" });
+
+    const modelError = session.events().find((e) => e.type === "model/error");
+    expect(modelError).toMatchObject({ kind: "chat", message: "network down" });
+  });
+
   it("fails when chat model is missing", async () => {
     const models = new ModelRegistry();
     const tools = new ToolRegistry();
