@@ -77,7 +77,7 @@ export function createRuntime(workspaceRoot: string, homeDir: string): Runtime {
   const ctx = new Context();
   const sessions = new Map<string, Session>();
   const models = new ModelRegistry();
-  const tools = new ToolRegistry();
+  const tools = new ToolRegistry(ctx);
 
   tools.register(createFsTool());
   tools.register(createGrepTool());

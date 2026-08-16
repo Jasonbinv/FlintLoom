@@ -170,7 +170,6 @@ export async function runTurn(input: RunTurnInput): Promise<RunTurnResult> {
           call.name,
           parseToolArgs(call.args),
           { workspaceRoot, signal, channel },
-          models,
         );
       } catch (err) {
         if (signal.aborted) {

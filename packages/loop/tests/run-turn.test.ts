@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createFsTool } from "@flintloom/fs";
+import { Context } from "@flintloom/kernel";
 import { ModelRegistry, type ChatProvider } from "@flintloom/models";
 import { Session, type SessionEvent } from "@flintloom/session";
 import { ToolRegistry } from "@flintloom/tools";
@@ -31,7 +32,8 @@ describe("runTurn", () => {
     models.registerChat("fake", fakeChat);
     models.setDefault("chat", "fake");
 
-    const tools = new ToolRegistry();
+    const ctx = new Context();
+    const tools = new ToolRegistry(ctx);
     tools.register(createFsTool());
 
     const workspace = mkdtempSync(join(tmpdir(), "flintloom-loop-"));
@@ -76,7 +78,8 @@ describe("runTurn", () => {
     models.registerChat("fake", fakeChat);
     models.setDefault("chat", "fake");
 
-    const tools = new ToolRegistry();
+    const ctx = new Context();
+    const tools = new ToolRegistry(ctx);
     const session = new Session("s3");
 
     const result = await runTurn({
@@ -100,7 +103,8 @@ describe("runTurn", () => {
 
   it("fails when chat model is missing", async () => {
     const models = new ModelRegistry();
-    const tools = new ToolRegistry();
+    const ctx = new Context();
+    const tools = new ToolRegistry(ctx);
     const session = new Session("s2");
 
     const result = await runTurn({

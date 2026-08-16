@@ -141,6 +141,9 @@ importers:
 
   packages/loop:
     dependencies:
+      '@flintloom/kernel':
+        specifier: workspace:*
+        version: link:../kernel
       '@flintloom/models':
         specifier: workspace:*
         version: link:../models

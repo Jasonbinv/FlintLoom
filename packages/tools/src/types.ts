@@ -1,3 +1,13 @@
+export const TOOLS_PRE_EXECUTE = "tools/pre-execute";
+
+export type ToolPreExecutePayload = {
+  tool: string;
+  args: Record<string, unknown>;
+  workspaceRoot: string;
+  channel: string;
+  signal: AbortSignal;
+};
+
 export interface ToolDefinition {
   name: string;
   description: string;

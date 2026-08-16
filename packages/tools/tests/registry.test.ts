@@ -1,12 +1,19 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { Context } from "@flintloom/kernel";
 import { ModelRegistry, type GuardProvider } from "@flintloom/models";
-import { ToolRegistry } from "../src/index.ts";
+import modelsPlugin from "@flintloom/models";
+import plugin, { ToolRegistry, WorkspaceEscapeError } from "../src/index.ts";
 
-describe("ToolRegistry", () => {
+describe("tools plugin", () => {
   it("does not call the tool when guard denies", async () => {
-    const tools = new ToolRegistry();
+    const ctx = new Context();
+    ctx.plugin(modelsPlugin);
+    ctx.plugin(plugin);
+    const tools = ctx.require<ToolRegistry>("tools");
     let callCount = 0;
-
     tools.register({
       name: "touch",
       description: "touch file",
@@ -17,7 +24,7 @@ describe("ToolRegistry", () => {
       },
     });
 
-    const models = new ModelRegistry();
+    const models = ctx.require<ModelRegistry>("models");
     const guard: GuardProvider = {
       async gate() {
         return "deny";
@@ -34,10 +41,42 @@ describe("ToolRegistry", () => {
         signal: new AbortController().signal,
         channel: "test",
       },
-      models,
     );
 
     expect(callCount).toBe(0);
     expect(result).toBe("guard denied: touch");
+  });
+
+  it("throws WorkspaceEscapeError before waterfall", async () => {
+    const ctx = new Context();
+    ctx.plugin(modelsPlugin);
+    ctx.plugin(plugin);
+    const tools = ctx.require<ToolRegistry>("tools");
+    let ran = false;
+    ctx.hook("tools/pre-execute", async () => {
+      ran = true;
+      return "should-not";
+    });
+    tools.register({
+      name: "touch",
+      description: "t",
+      parameters: {},
+      async execute() {
+        return "ok";
+      },
+    });
+    const root = mkdtempSync(join(tmpdir(), "flintloom-tools-ws-"));
+    await expect(
+      tools.execute(
+        "touch",
+        { path: "../outside" },
+        {
+          workspaceRoot: root,
+          signal: new AbortController().signal,
+          channel: "test",
+        },
+      ),
+    ).rejects.toBeInstanceOf(WorkspaceEscapeError);
+    expect(ran).toBe(false);
   });
 });
