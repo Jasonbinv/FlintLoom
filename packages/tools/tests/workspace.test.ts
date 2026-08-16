@@ -20,4 +20,12 @@ describe("resolveInside", () => {
 
     expect(resolved).toBe(join(workspace, "README.md"));
   });
+
+  it("resolves nested paths whose parent directories do not exist yet", () => {
+    const workspace = mkdtempSync(join(tmpdir(), "flintloom-ws-"));
+
+    const resolved = resolveInside(workspace, "a/b/c.txt");
+
+    expect(resolved).toBe(join(workspace, "a", "b", "c.txt"));
+  });
 });

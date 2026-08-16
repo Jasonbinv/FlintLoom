@@ -29,19 +29,31 @@ function isInsideWorkspace(workspaceRealpath: string, targetPath: string): boole
   return targetNorm.startsWith(separator);
 }
 
+function realpathExistingPrefix(resolved: string): string {
+  try {
+    return realpathSync.native(resolved);
+  } catch {
+    const missing: string[] = [];
+    let current = resolved;
+    while (true) {
+      const parent = path.dirname(current);
+      missing.unshift(path.basename(current));
+      if (parent === current) {
+        throw new Error(`Unable to resolve path: ${resolved}`);
+      }
+      try {
+        return path.join(realpathSync.native(parent), ...missing);
+      } catch {
+        current = parent;
+      }
+    }
+  }
+}
+
 export function resolveInside(workspaceRoot: string, inputPath: string): string {
   const resolved = path.resolve(workspaceRoot, inputPath);
   const workspaceRealpath = realpathSync.native(workspaceRoot);
-
-  let targetRealpath: string;
-  try {
-    targetRealpath = realpathSync.native(resolved);
-  } catch {
-    const parent = path.dirname(resolved);
-    const leaf = path.basename(resolved);
-    const parentRealpath = realpathSync.native(parent);
-    targetRealpath = path.join(parentRealpath, leaf);
-  }
+  const targetRealpath = realpathExistingPrefix(resolved);
 
   if (!isInsideWorkspace(workspaceRealpath, targetRealpath)) {
     throw new WorkspaceEscapeError(

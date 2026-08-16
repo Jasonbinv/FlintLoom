@@ -14,4 +14,5 @@ export interface ChatMessage {
   content: string;
   toolCallId?: string;
   name?: string;
+  toolCalls?: { id: string; name: string; args: unknown }[];
 }

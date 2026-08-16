@@ -21,6 +21,16 @@ function mapMessages(req: ChatRequest): Record<string, unknown>[] {
     if (msg.toolCallId !== undefined) {
       out.tool_call_id = msg.toolCallId;
     }
+    if (msg.toolCalls !== undefined && msg.toolCalls.length > 0) {
+      out.tool_calls = msg.toolCalls.map((call) => ({
+        type: "function",
+        id: call.id,
+        function: {
+          name: call.name,
+          arguments: JSON.stringify(call.args),
+        },
+      }));
+    }
     return out;
   });
 }

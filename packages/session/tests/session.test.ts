@@ -43,4 +43,122 @@ describe("Session", () => {
       { role: "assistant", content: "reply" },
     ]);
   });
+
+  it("deriveMessages 在 tool/call 后插入带 toolCalls 的 assistant，再跟 tool/result", () => {
+    const session = new Session("s3");
+    session.append({ type: "user/message", text: "read it" });
+    session.append({
+      type: "tool/call",
+      callId: "call-a",
+      name: "fs",
+      args: { action: "read", path: "a.txt" },
+    });
+    session.append({
+      type: "tool/result",
+      callId: "call-a",
+      name: "fs",
+      text: "file-a",
+    });
+
+    expect(session.deriveMessages()).toEqual([
+      { role: "user", content: "read it" },
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          { id: "call-a", name: "fs", args: { action: "read", path: "a.txt" } },
+        ],
+      },
+      {
+        role: "tool",
+        content: "file-a",
+        toolCallId: "call-a",
+        name: "fs",
+      },
+    ]);
+  });
+
+  it("deriveMessages 将连续 tool/call 合成一条 assistant，再按序跟 tool/result", () => {
+    const session = new Session("s4");
+    session.append({
+      type: "tool/call",
+      callId: "call-a",
+      name: "fs",
+      args: { path: "a.txt" },
+    });
+    session.append({
+      type: "tool/call",
+      callId: "call-b",
+      name: "grep",
+      args: { pattern: "x" },
+    });
+    session.append({
+      type: "tool/result",
+      callId: "call-a",
+      name: "fs",
+      text: "a",
+    });
+    session.append({
+      type: "tool/result",
+      callId: "call-b",
+      name: "grep",
+      text: "b",
+    });
+
+    expect(session.deriveMessages()).toEqual([
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          { id: "call-a", name: "fs", args: { path: "a.txt" } },
+          { id: "call-b", name: "grep", args: { pattern: "x" } },
+        ],
+      },
+      { role: "tool", content: "a", toolCallId: "call-a", name: "fs" },
+      { role: "tool", content: "b", toolCallId: "call-b", name: "grep" },
+    ]);
+  });
+
+  it("deriveMessages 对交错的 call/result 各自发出 assistant 再跟 tool", () => {
+    const session = new Session("s5");
+    session.append({
+      type: "tool/call",
+      callId: "call-a",
+      name: "fs",
+      args: { path: "a.txt" },
+    });
+    session.append({
+      type: "tool/result",
+      callId: "call-a",
+      name: "fs",
+      text: "a",
+    });
+    session.append({
+      type: "tool/call",
+      callId: "call-b",
+      name: "grep",
+      args: { pattern: "x" },
+    });
+    session.append({
+      type: "tool/result",
+      callId: "call-b",
+      name: "grep",
+      text: "b",
+    });
+
+    expect(session.deriveMessages()).toEqual([
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [{ id: "call-a", name: "fs", args: { path: "a.txt" } }],
+      },
+      { role: "tool", content: "a", toolCallId: "call-a", name: "fs" },
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [{ id: "call-b", name: "grep", args: { pattern: "x" } }],
+      },
+      { role: "tool", content: "b", toolCallId: "call-b", name: "grep" },
+    ]);
+  });
 });

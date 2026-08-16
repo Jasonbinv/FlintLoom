@@ -34,4 +34,21 @@ describe("createFsTool", () => {
       fs.execute({ action: "read", path: "../x" }, exec),
     ).rejects.toThrow(WorkspaceEscapeError);
   });
+
+  it("writes a file under nested directories that do not exist yet", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "flintloom-fs-"));
+    const exec = createExec(workspace);
+    const fs = createFsTool();
+
+    await fs.execute(
+      { action: "write", path: "a/b/c.txt", content: "nested" },
+      exec,
+    );
+
+    const content = await fs.execute(
+      { action: "read", path: "a/b/c.txt" },
+      exec,
+    );
+    expect(content).toBe("nested");
+  });
 });

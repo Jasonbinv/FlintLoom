@@ -2,6 +2,7 @@ import { homedir } from "node:os";
 import { createRuntime } from "@flintloom/host";
 import { runTurn } from "@flintloom/loop";
 import { Session } from "@flintloom/session";
+import { formatCliOutput } from "./output.ts";
 
 function parseArgv(argv: string[]): { workspace: string; text: string } {
   let workspace = process.cwd();
@@ -34,14 +35,12 @@ const { status } = await runTurn({
   signal: new AbortController().signal,
 });
 
-let lastAssistant: string | undefined;
-for (const event of session.events()) {
-  if (event.type === "assistant/message") {
-    lastAssistant = event.text;
-  }
+const output = formatCliOutput(session.events(), status);
+if (output.stdout !== "") {
+  process.stdout.write(output.stdout);
 }
-if (lastAssistant !== undefined) {
-  process.stdout.write(`${lastAssistant}\n`);
+if (output.stderr !== "") {
+  process.stderr.write(output.stderr);
 }
 
 process.exit(status === "ok" ? 0 : 1);

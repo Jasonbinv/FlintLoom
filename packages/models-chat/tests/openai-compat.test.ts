@@ -104,4 +104,85 @@ describe("createOpenAiCompatChat", () => {
     expect(message).toContain("401");
     expect(message).not.toContain(apiKey);
   });
+
+  it("second-step POST includes assistant tool_calls before role tool", async () => {
+    let capturedBody = "";
+    const toolServer = http.createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (chunk: Buffer) => {
+        chunks.push(chunk);
+      });
+      req.on("end", () => {
+        capturedBody = Buffer.concat(chunks).toString("utf8");
+        res.writeHead(200, { "Content-Type": "text/event-stream" });
+        res.write(
+          `data: ${JSON.stringify({ choices: [{ delta: { content: "ok" } }] })}\n\n`,
+        );
+        res.write("data: [DONE]\n\n");
+        res.end();
+      });
+    });
+
+    const { baseUrl, close } = await listen(toolServer);
+    try {
+      const provider = createOpenAiCompatChat({
+        baseUrl,
+        apiKey: "test-key",
+        model: "test-model",
+      });
+
+      await collectChunks(
+        provider.stream(
+          {
+            messages: [
+              { role: "user", content: "read it" },
+              {
+                role: "assistant",
+                content: "",
+                toolCalls: [
+                  {
+                    id: "call-a",
+                    name: "fs",
+                    args: { action: "read", path: "a.txt" },
+                  },
+                ],
+              },
+              {
+                role: "tool",
+                content: "file-a",
+                toolCallId: "call-a",
+                name: "fs",
+              },
+            ],
+            tools: [],
+          },
+          new AbortController().signal,
+        ),
+      );
+
+      const parsed = JSON.parse(capturedBody) as {
+        messages: Record<string, unknown>[];
+      };
+      expect(parsed.messages).toEqual([
+        { role: "user", content: "read it" },
+        {
+          role: "assistant",
+          content: "",
+          tool_calls: [
+            {
+              type: "function",
+              id: "call-a",
+              function: {
+                name: "fs",
+                arguments: JSON.stringify({ action: "read", path: "a.txt" }),
+              },
+            },
+          ],
+        },
+        { role: "tool", content: "file-a", tool_call_id: "call-a" },
+      ]);
+    } finally {
+      await close();
+    }
+  });
 });
