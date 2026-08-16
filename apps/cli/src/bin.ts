@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { createRuntime } from "@flintloom/host";
-import { runTurn } from "@flintloom/loop";
-import { Session } from "@flintloom/session";
+import type { LoopService } from "@flintloom/loop";
+import type { SessionStore } from "@flintloom/session";
 import { formatCliOutput } from "./output.ts";
 
 function parseArgv(argv: string[]): { workspace: string; text: string } {
@@ -23,10 +23,10 @@ function parseArgv(argv: string[]): { workspace: string; text: string } {
 }
 
 const { workspace, text } = parseArgv(process.argv.slice(2));
-const runtime = createRuntime(workspace, homedir());
-const session = new Session("cli");
-const { status } = await runTurn({
-  ctx: runtime.ctx,
+const { ctx } = await createRuntime(workspace, homedir());
+const session = ctx.require<SessionStore>("sessions").getOrCreate("cli");
+const { status } = await ctx.require<LoopService>("loop").runTurn({
+  ctx,
   session,
   text,
   workspaceRoot: workspace,

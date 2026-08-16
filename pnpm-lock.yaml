@@ -8,9 +8,36 @@ importers:
 
   .:
     devDependencies:
+      '@flintloom/docforge':
+        specifier: workspace:*
+        version: link:packages/docforge
+      '@flintloom/fs':
+        specifier: workspace:*
+        version: link:packages/fs
+      '@flintloom/grep':
+        specifier: workspace:*
+        version: link:packages/grep
       '@flintloom/host':
         specifier: workspace:*
         version: link:apps/host
+      '@flintloom/loop':
+        specifier: workspace:*
+        version: link:packages/loop
+      '@flintloom/models':
+        specifier: workspace:*
+        version: link:packages/models
+      '@flintloom/models-chat':
+        specifier: workspace:*
+        version: link:packages/models-chat
+      '@flintloom/session':
+        specifier: workspace:*
+        version: link:packages/session
+      '@flintloom/shell':
+        specifier: workspace:*
+        version: link:packages/shell
+      '@flintloom/tools':
+        specifier: workspace:*
+        version: link:packages/tools
       '@types/node':
         specifier: ^22.20.1
         version: 22.20.1
@@ -72,12 +99,6 @@ importers:
       '@flintloom/docforge':
         specifier: workspace:*
         version: link:../../packages/docforge
-      '@flintloom/fs':
-        specifier: workspace:*
-        version: link:../../packages/fs
-      '@flintloom/grep':
-        specifier: workspace:*
-        version: link:../../packages/grep
       '@flintloom/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
@@ -87,15 +108,9 @@ importers:
       '@flintloom/models':
         specifier: workspace:*
         version: link:../../packages/models
-      '@flintloom/models-chat':
-        specifier: workspace:*
-        version: link:../../packages/models-chat
       '@flintloom/session':
         specifier: workspace:*
         version: link:../../packages/session
-      '@flintloom/shell':
-        specifier: workspace:*
-        version: link:../../packages/shell
       '@flintloom/tools':
         specifier: workspace:*
         version: link:../../packages/tools

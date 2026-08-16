@@ -1,10 +1,15 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { ModelRegistry } from "@flintloom/models";
 import { Session } from "@flintloom/session";
+import { ToolRegistry } from "@flintloom/tools";
 import { createRuntime, loadOrCreateToken, startHost } from "../src/index.ts";
+import { writeAssembly } from "./assembly.ts";
+
+const here = fileURLToPath(new URL(".", import.meta.url));
 
 describe("startHost", () => {
   let close: (() => Promise<void>) | undefined;
@@ -19,6 +24,7 @@ describe("startHost", () => {
   it("rejects /v1/models without a token and returns chat snapshot with one", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-ws-"));
     const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
+    writeAssembly(workspaceRoot);
 
     const host = await startHost({ workspaceRoot, homeDir, port: 0 });
     close = host.close;
@@ -40,15 +46,55 @@ describe("startHost", () => {
     const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
     writeFileSync(join(workspaceRoot, "flintloom.yml"), "foo: 1\n");
 
-    expect(() => createRuntime(workspaceRoot, homeDir)).toThrow(/plugins/);
+    await expect(createRuntime(workspaceRoot, homeDir)).rejects.toThrow(/plugins/);
     await expect(startHost({ workspaceRoot, homeDir, port: 0 })).rejects.toThrow(
       /plugins/,
     );
   });
 
+  it("missing flintloom.yml refuses to start", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-noyaml-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
+    await expect(createRuntime(workspaceRoot, homeDir)).rejects.toThrow(/plugins/);
+  });
+
+  it("omitting fs from yml omits the fs tool", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-nofs-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
+    writeFileSync(
+      join(workspaceRoot, "flintloom.yml"),
+      `plugins:
+  - id: models
+    name: "@flintloom/models"
+  - id: tools
+    name: "@flintloom/tools"
+  - id: session
+    name: "@flintloom/session"
+  - id: loop
+    name: "@flintloom/loop"
+`,
+    );
+    const { ctx } = await createRuntime(workspaceRoot, homeDir);
+    const names = ctx.require<ToolRegistry>("tools").schemas().map((s) => s.name);
+    expect(names).not.toContain("fs");
+  });
+
+  it("host src does not import tool factories", () => {
+    const server = readFileSync(join(here, "../src/server.ts"), "utf8");
+    const index = readFileSync(join(here, "../src/index.ts"), "utf8");
+    const src = server + index;
+    expect(src).not.toMatch(/@flintloom\/fs/);
+    expect(src).not.toMatch(/@flintloom\/grep/);
+    expect(src).not.toMatch(/@flintloom\/shell/);
+    expect(src).not.toMatch(/@flintloom\/models-chat/);
+    expect(src).not.toMatch(/createDocProbeTool/);
+    expect(src).not.toMatch(/createDocParseTool/);
+  });
+
   it("returns 500 text/plain with the error message and redacts the api key", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-ws-"));
     const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
+    writeAssembly(workspaceRoot);
     const host = await startHost({ workspaceRoot, homeDir, port: 0 });
     close = host.close;
     const token = loadOrCreateToken(homeDir);
@@ -82,6 +128,7 @@ describe("startHost", () => {
   it("returns 500 text/plain internal error when the thrown message is empty", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-ws-"));
     const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
+    writeAssembly(workspaceRoot);
     const host = await startHost({ workspaceRoot, homeDir, port: 0 });
     close = host.close;
     const token = loadOrCreateToken(homeDir);
@@ -105,6 +152,7 @@ describe("startHost", () => {
   it("returns 500 text/plain and redacts credentials chatApiKey", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-ws-"));
     const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
+    writeAssembly(workspaceRoot);
     mkdirSync(join(homeDir, ".flintloom"), { recursive: true });
     writeFileSync(
       join(homeDir, ".flintloom", "credentials"),
@@ -134,9 +182,10 @@ describe("startHost", () => {
     }
   });
 
-  it("registers chat from workspace .env when process env is unset", () => {
+  it("registers chat from workspace .env when process env is unset", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-dotenv-"));
     const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
+    writeAssembly(workspaceRoot);
     writeFileSync(
       join(workspaceRoot, ".env"),
       [
@@ -149,8 +198,11 @@ describe("startHost", () => {
     const previousKey = process.env.FLINTLOOM_API_KEY;
     delete process.env.FLINTLOOM_API_KEY;
     try {
-      const runtime = createRuntime(workspaceRoot, homeDir);
-      const chat = runtime.models.snapshot().find((row) => row.kind === "chat");
+      const { ctx } = await createRuntime(workspaceRoot, homeDir);
+      const chat = ctx
+        .require<ModelRegistry>("models")
+        .snapshot()
+        .find((row) => row.kind === "chat");
       expect(chat?.configured).toBe(true);
     } finally {
       if (previousKey === undefined) {
@@ -164,6 +216,7 @@ describe("startHost", () => {
   it("writes SSE end failed when runTurn throws after stream headers", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-ws-"));
     const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
+    writeAssembly(workspaceRoot);
     const host = await startHost({ workspaceRoot, homeDir, port: 0 });
     close = host.close;
     const token = loadOrCreateToken(homeDir);
@@ -192,12 +245,46 @@ describe("startHost", () => {
     }
   });
 
-  it("registers doc_probe and doc_parse tools", () => {
+  it("registers doc_probe and doc_parse tools", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-ws-"));
     const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
-    const runtime = createRuntime(workspaceRoot, homeDir);
-    const names = runtime.tools.schemas().map((row) => row.name);
+    writeAssembly(workspaceRoot);
+    const { ctx } = await createRuntime(workspaceRoot, homeDir);
+    const names = ctx.require<ToolRegistry>("tools").schemas().map((row) => row.name);
     expect(names).toContain("doc_probe");
     expect(names).toContain("doc_parse");
+  });
+
+  it("turn without a chat key emits model/error and failed", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-nokey-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
+    writeAssembly(workspaceRoot);
+    const previousKey = process.env.FLINTLOOM_API_KEY;
+    delete process.env.FLINTLOOM_API_KEY;
+    try {
+      const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+      close = host.close;
+      const token = loadOrCreateToken(homeDir);
+      const res = await fetch(`${host.url}/v1/turns`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ sessionId: "s1", text: "hi" }),
+      });
+      expect(res.status).toBe(200);
+      const text = await res.text();
+      expect(text).toContain("model/error");
+      expect(text).toContain(
+        `data: ${JSON.stringify({ type: "end", status: "failed" })}`,
+      );
+    } finally {
+      if (previousKey === undefined) {
+        delete process.env.FLINTLOOM_API_KEY;
+      } else {
+        process.env.FLINTLOOM_API_KEY = previousKey;
+      }
+    }
   });
 });

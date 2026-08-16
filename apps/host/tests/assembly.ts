@@ -1,5 +1,7 @@
-# FlintLoom plugin assembly — one row per plugin bundle.
-plugins:
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+export const ASSEMBLY = `plugins:
   - id: models
     name: "@flintloom/models"
   - id: tools
@@ -18,3 +20,8 @@ plugins:
     name: "@flintloom/docforge"
   - id: loop
     name: "@flintloom/loop"
+`;
+
+export function writeAssembly(workspaceRoot: string): void {
+  writeFileSync(join(workspaceRoot, "flintloom.yml"), ASSEMBLY);
+}

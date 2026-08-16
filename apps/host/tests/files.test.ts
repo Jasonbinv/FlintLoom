@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { isHiddenRelPath, relFromWorkspace } from "../src/files.ts";
 import { loadOrCreateToken, startHost } from "../src/index.ts";
+import { writeAssembly } from "./assembly.ts";
 
 describe("isHiddenRelPath", () => {
   it("hides .env but not .env.example", () => {
@@ -57,6 +58,7 @@ describe("GET /v1/files and /v1/files/preview", () => {
       join(workspaceRoot, "node_modules", "pkg", "x.js"),
       "hide-me\n",
     );
+    writeAssembly(workspaceRoot);
 
     const host = await startHost({ workspaceRoot, homeDir, port: 0 });
     close = host.close;
@@ -198,6 +200,7 @@ describe("GET /v1/files and /v1/files/preview", () => {
     writeFileSync(join(workspaceRoot, ".env"), "sk-secret\n");
     writeFileSync(join(workspaceRoot, "README.md"), "# Hello\n");
     mkdirSync(join(workspaceRoot, "node_modules"), { recursive: true });
+    writeAssembly(workspaceRoot);
 
     try {
       symlinkSync(join(workspaceRoot, ".env"), join(workspaceRoot, "config.ts"));
@@ -223,6 +226,7 @@ describe("GET /v1/files and /v1/files/preview", () => {
     const homeDir = mkdtempSync(join(tmpdir(), "flintloom-files-junc-home-"));
     mkdirSync(join(workspaceRoot, "node_modules"), { recursive: true });
     writeFileSync(join(workspaceRoot, "README.md"), "# Hello\n");
+    writeAssembly(workspaceRoot);
 
     try {
       symlinkSync(

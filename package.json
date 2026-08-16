@@ -13,7 +13,16 @@
     "node": ">=22"
   },
   "devDependencies": {
+    "@flintloom/docforge": "workspace:*",
+    "@flintloom/fs": "workspace:*",
+    "@flintloom/grep": "workspace:*",
     "@flintloom/host": "workspace:*",
+    "@flintloom/loop": "workspace:*",
+    "@flintloom/models": "workspace:*",
+    "@flintloom/models-chat": "workspace:*",
+    "@flintloom/session": "workspace:*",
+    "@flintloom/shell": "workspace:*",
+    "@flintloom/tools": "workspace:*",
     "@types/node": "^22.20.1",
     "tsx": "^4.20.5",
     "typescript": "^5.8.3",

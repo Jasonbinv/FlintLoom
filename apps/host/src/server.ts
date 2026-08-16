@@ -1,16 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { join } from "node:path";
-import { createDocParseTool, createDocProbeTool } from "@flintloom/docforge";
-import { createFsTool } from "@flintloom/fs";
-import { createGrepTool } from "@flintloom/grep";
-import { Context, loadConfig } from "@flintloom/kernel";
-import { runTurn } from "@flintloom/loop";
-import { ModelRegistry } from "@flintloom/models";
-import { createOpenAiCompatChat } from "@flintloom/models-chat";
-import { Session } from "@flintloom/session";
-import { createShellTool } from "@flintloom/shell";
-import { ToolRegistry, WorkspaceEscapeError } from "@flintloom/tools";
+import { applyConfig, Context, loadConfig } from "@flintloom/kernel";
+import type { LoopService } from "@flintloom/loop";
+import type { ModelRegistry } from "@flintloom/models";
+import type { SessionStore } from "@flintloom/session";
+import { WorkspaceEscapeError } from "@flintloom/tools";
 import {
   listWorkspaceFiles,
   normalizeRelPath,
@@ -18,12 +13,7 @@ import {
 } from "./files.ts";
 import { loadOrCreateToken, readCredentials } from "./token.ts";
 
-export type Runtime = {
-  ctx: Context;
-  sessions: Map<string, Session>;
-  models: ModelRegistry;
-  tools: ToolRegistry;
-};
+export type Runtime = { ctx: Context };
 
 function readDotEnv(filePath: string): Record<string, string> {
   if (!existsSync(filePath)) {
@@ -73,48 +63,35 @@ function resolveChatApiKey(
   );
 }
 
-export function createRuntime(workspaceRoot: string, homeDir: string): Runtime {
-  const ctx = new Context();
-  const sessions = new Map<string, Session>();
-  const models = new ModelRegistry();
-  const tools = new ToolRegistry(ctx);
-
-  tools.register(createFsTool());
-  tools.register(createGrepTool());
-  tools.register(createShellTool());
-  tools.register(createDocProbeTool());
-  tools.register(createDocParseTool());
-
+export async function createRuntime(
+  workspaceRoot: string,
+  homeDir: string,
+): Promise<Runtime> {
   const ymlPath = join(workspaceRoot, "flintloom.yml");
-  if (existsSync(ymlPath)) {
-    loadConfig(readFileSync(ymlPath, "utf8"));
+  if (!existsSync(ymlPath)) {
+    throw new Error("plugins");
   }
-
+  const config = loadConfig(readFileSync(ymlPath, "utf8"));
   const fileEnv = readDotEnv(join(workspaceRoot, ".env"));
   const apiKey = resolveChatApiKey(homeDir, fileEnv);
+  const runtimeConfigById: Record<string, Record<string, unknown>> = {};
   if (apiKey !== undefined) {
-    models.registerChat(
-      "default",
-      createOpenAiCompatChat({
-        baseUrl:
-          firstNonEmpty(process.env.FLINTLOOM_BASE_URL, fileEnv.FLINTLOOM_BASE_URL) ??
-          "https://api.deepseek.com/v1",
-        apiKey,
-        model:
-          firstNonEmpty(
-            process.env.FLINTLOOM_CHAT_MODEL,
-            fileEnv.FLINTLOOM_CHAT_MODEL,
-          ) ?? "deepseek-chat",
-      }),
-    );
-    models.setDefault("chat", "default");
+    runtimeConfigById["models-chat"] = {
+      apiKey,
+      baseUrl:
+        firstNonEmpty(process.env.FLINTLOOM_BASE_URL, fileEnv.FLINTLOOM_BASE_URL) ??
+        "https://api.deepseek.com/v1",
+      model:
+        firstNonEmpty(
+          process.env.FLINTLOOM_CHAT_MODEL,
+          fileEnv.FLINTLOOM_CHAT_MODEL,
+        ) ?? "deepseek-chat",
+    };
   }
 
-  ctx.provide("sessions", sessions);
-  ctx.provide("models", models);
-  ctx.provide("tools", tools);
-
-  return { ctx, sessions, models, tools };
+  const ctx = new Context();
+  await applyConfig(ctx, config, { runtimeConfigById });
+  return { ctx };
 }
 
 function formatHostError(
@@ -216,7 +193,7 @@ async function handleRequest(
   }
 
   if (req.method === "GET" && pathname === "/v1/models") {
-    sendJson(res, 200, opts.runtime.models.snapshot());
+    sendJson(res, 200, opts.runtime.ctx.require<ModelRegistry>("models").snapshot());
     return;
   }
 
@@ -268,7 +245,9 @@ async function handleRequest(
 
   const sessionMatch = /^\/v1\/sessions\/([^/]+)$/.exec(pathname);
   if (req.method === "GET" && sessionMatch) {
-    const session = opts.runtime.sessions.get(decodeURIComponent(sessionMatch[1]!));
+    const session = opts.runtime.ctx
+      .require<SessionStore>("sessions")
+      .get(decodeURIComponent(sessionMatch[1]!));
     if (session === undefined) {
       send(res, 404);
       return;
@@ -296,11 +275,9 @@ async function handleRequest(
       return;
     }
 
-    let session = opts.runtime.sessions.get(body.sessionId);
-    if (session === undefined) {
-      session = new Session(body.sessionId);
-      opts.runtime.sessions.set(body.sessionId, session);
-    }
+    const session = opts.runtime.ctx
+      .require<SessionStore>("sessions")
+      .getOrCreate(body.sessionId);
 
     const controller = new AbortController();
     req.on("close", () => {
@@ -310,7 +287,7 @@ async function handleRequest(
     res.writeHead(200, { "Content-Type": "text/event-stream" });
 
     try {
-      const result = await runTurn({
+      const result = await opts.runtime.ctx.require<LoopService>("loop").runTurn({
         ctx: opts.runtime.ctx,
         session,
         text: body.text,
@@ -345,7 +322,7 @@ export async function startHost(opts: {
   port?: number;
 }): Promise<{ url: string; close: () => Promise<void> }> {
   const token = loadOrCreateToken(opts.homeDir);
-  const runtime = createRuntime(opts.workspaceRoot, opts.homeDir);
+  const runtime = await createRuntime(opts.workspaceRoot, opts.homeDir);
   const controllers = new Map<string, AbortController>();
 
   const server = createServer((req, res) => {
