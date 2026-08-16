@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { join } from "node:path";
 import { createFsTool } from "@flintloom/fs";
@@ -41,10 +41,9 @@ export function createRuntime(workspaceRoot: string, homeDir: string): Runtime {
   tools.register(createGrepTool());
   tools.register(createShellTool());
 
-  try {
-    loadConfig(readFileSync(join(workspaceRoot, "flintloom.yml"), "utf8"));
-  } catch {
-    // workspace may not include flintloom.yml; registration stays manual
+  const ymlPath = join(workspaceRoot, "flintloom.yml");
+  if (existsSync(ymlPath)) {
+    loadConfig(readFileSync(ymlPath, "utf8"));
   }
 
   const apiKey = resolveChatApiKey(homeDir);
@@ -65,6 +64,18 @@ export function createRuntime(workspaceRoot: string, homeDir: string): Runtime {
   ctx.provide("tools", tools);
 
   return { ctx, sessions, models, tools };
+}
+
+function formatHostError(err: unknown): string {
+  let message = err instanceof Error ? err.message : String(err);
+  if (message.length === 0) {
+    message = "internal error";
+  }
+  const apiKey = process.env.FLINTLOOM_API_KEY;
+  if (typeof apiKey === "string" && apiKey.length > 0 && message.includes(apiKey)) {
+    message = message.split(apiKey).join("[redacted]");
+  }
+  return message;
 }
 
 function send(res: ServerResponse, status: number, body?: string): void {
@@ -221,9 +232,10 @@ export async function startHost(opts: {
       workspaceRoot: opts.workspaceRoot,
       runtime,
       controllers,
-    }).catch(() => {
+    }).catch((err: unknown) => {
       if (!res.headersSent) {
-        send(res, 500);
+        res.writeHead(500, { "Content-Type": "text/plain" });
+        res.end(formatHostError(err));
       } else {
         res.end();
       }
