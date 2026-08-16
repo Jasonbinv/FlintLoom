@@ -1,0 +1,104 @@
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  background: #111111;
+  color: #e8e8e8;
+  font-family: system-ui, sans-serif;
+}
+
+.workbench {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.topbar {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #2a2a2a;
+  background: #1a1a1a;
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.log {
+  flex: 1;
+  overflow: auto;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.bubble {
+  max-width: 42rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.bubble.user {
+  align-self: flex-end;
+  background: #2b4a7a;
+}
+
+.bubble.assistant,
+.bubble.draft {
+  align-self: flex-start;
+  background: #222222;
+}
+
+.bubble.tool-call,
+.bubble.tool-result {
+  align-self: flex-start;
+  background: #1c1c1c;
+  color: #b8b8b8;
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+}
+
+.bubble.error {
+  align-self: flex-start;
+  background: #4a1c1c;
+}
+
+.composer {
+  display: flex;
+  gap: 0.6rem;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid #2a2a2a;
+  background: #1a1a1a;
+}
+
+.composer textarea {
+  flex: 1;
+  resize: none;
+  background: #111111;
+  color: inherit;
+  border: 1px solid #333333;
+  border-radius: 6px;
+  padding: 0.5rem 0.6rem;
+  font: inherit;
+}
+
+.composer button {
+  background: #3a6ea5;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0 1rem;
+  cursor: pointer;
+}

@@ -2,12 +2,16 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
-    "allowImportingTsExtensions": true
+    "allowImportingTsExtensions": true,
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
   "include": [
     "packages/*/src/**/*.ts",
     "packages/*/tests/**/*.ts",
     "apps/*/src/**/*.ts",
-    "apps/*/tests/**/*.ts"
+    "apps/*/src/**/*.tsx",
+    "apps/*/tests/**/*.ts",
+    "apps/*/tests/**/*.tsx"
   ]
 }

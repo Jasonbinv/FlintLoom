@@ -19,7 +19,7 @@ export async function forwardV1(opts: {
       Authorization: `Bearer ${opts.token}`,
       "Content-Type": "application/json",
     },
-    body: opts.body,
+    body: opts.body ? new Uint8Array(opts.body) : undefined,
   });
 
   return {
