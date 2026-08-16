@@ -134,6 +134,33 @@ describe("startHost", () => {
     }
   });
 
+  it("registers chat from workspace .env when process env is unset", () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-dotenv-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
+    writeFileSync(
+      join(workspaceRoot, ".env"),
+      [
+        "FLINTLOOM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "FLINTLOOM_API_KEY=sk-xxx",
+        "FLINTLOOM_CHAT_MODEL=qwen3.7-plus",
+      ].join("\n"),
+    );
+
+    const previousKey = process.env.FLINTLOOM_API_KEY;
+    delete process.env.FLINTLOOM_API_KEY;
+    try {
+      const runtime = createRuntime(workspaceRoot, homeDir);
+      const chat = runtime.models.snapshot().find((row) => row.kind === "chat");
+      expect(chat?.configured).toBe(true);
+    } finally {
+      if (previousKey === undefined) {
+        delete process.env.FLINTLOOM_API_KEY;
+      } else {
+        process.env.FLINTLOOM_API_KEY = previousKey;
+      }
+    }
+  });
+
   it("writes SSE end failed when runTurn throws after stream headers", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-ws-"));
     const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));

@@ -19,16 +19,52 @@ export type Runtime = {
   tools: ToolRegistry;
 };
 
-function resolveChatApiKey(homeDir: string): string | undefined {
-  const envKey = process.env.FLINTLOOM_API_KEY;
-  if (typeof envKey === "string" && envKey.length > 0) {
-    return envKey;
+function readDotEnv(filePath: string): Record<string, string> {
+  if (!existsSync(filePath)) {
+    return {};
   }
-  const credKey = readCredentials(homeDir).chatApiKey;
-  if (typeof credKey === "string" && credKey.length > 0) {
-    return credKey;
+  const result: Record<string, string> = {};
+  for (const rawLine of readFileSync(filePath, "utf8").split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (line.length === 0 || line.startsWith("#")) {
+      continue;
+    }
+    const eq = line.indexOf("=");
+    if (eq <= 0) {
+      continue;
+    }
+    const key = line.slice(0, eq).trim();
+    let value = line.slice(eq + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    result[key] = value;
+  }
+  return result;
+}
+
+function firstNonEmpty(...values: (string | undefined)[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.length > 0) {
+      return value;
+    }
   }
   return undefined;
+}
+
+function resolveChatApiKey(
+  homeDir: string,
+  fileEnv: Record<string, string>,
+): string | undefined {
+  const credKey = readCredentials(homeDir).chatApiKey;
+  return firstNonEmpty(
+    process.env.FLINTLOOM_API_KEY,
+    fileEnv.FLINTLOOM_API_KEY,
+    typeof credKey === "string" ? credKey : undefined,
+  );
 }
 
 export function createRuntime(workspaceRoot: string, homeDir: string): Runtime {
@@ -46,14 +82,21 @@ export function createRuntime(workspaceRoot: string, homeDir: string): Runtime {
     loadConfig(readFileSync(ymlPath, "utf8"));
   }
 
-  const apiKey = resolveChatApiKey(homeDir);
+  const fileEnv = readDotEnv(join(workspaceRoot, ".env"));
+  const apiKey = resolveChatApiKey(homeDir, fileEnv);
   if (apiKey !== undefined) {
     models.registerChat(
       "default",
       createOpenAiCompatChat({
-        baseUrl: process.env.FLINTLOOM_BASE_URL ?? "https://api.deepseek.com/v1",
+        baseUrl:
+          firstNonEmpty(process.env.FLINTLOOM_BASE_URL, fileEnv.FLINTLOOM_BASE_URL) ??
+          "https://api.deepseek.com/v1",
         apiKey,
-        model: process.env.FLINTLOOM_CHAT_MODEL ?? "deepseek-chat",
+        model:
+          firstNonEmpty(
+            process.env.FLINTLOOM_CHAT_MODEL,
+            fileEnv.FLINTLOOM_CHAT_MODEL,
+          ) ?? "deepseek-chat",
       }),
     );
     models.setDefault("chat", "default");
@@ -66,7 +109,11 @@ export function createRuntime(workspaceRoot: string, homeDir: string): Runtime {
   return { ctx, sessions, models, tools };
 }
 
-function formatHostError(err: unknown, homeDir: string): string {
+function formatHostError(
+  err: unknown,
+  homeDir: string,
+  workspaceRoot?: string,
+): string {
   let message = err instanceof Error ? err.message : String(err);
   if (message.length === 0) {
     message = "internal error";
@@ -75,6 +122,12 @@ function formatHostError(err: unknown, homeDir: string): string {
   const envKey = process.env.FLINTLOOM_API_KEY;
   if (typeof envKey === "string" && envKey.length > 0) {
     secrets.push(envKey);
+  }
+  if (workspaceRoot !== undefined) {
+    const fileKey = readDotEnv(join(workspaceRoot, ".env")).FLINTLOOM_API_KEY;
+    if (typeof fileKey === "string" && fileKey.length > 0) {
+      secrets.push(fileKey);
+    }
   }
   const credKey = readCredentials(homeDir).chatApiKey;
   if (typeof credKey === "string" && credKey.length > 0) {
@@ -250,7 +303,7 @@ export async function startHost(opts: {
     }).catch((err: unknown) => {
       if (!res.headersSent) {
         res.writeHead(500, { "Content-Type": "text/plain" });
-        res.end(formatHostError(err, opts.homeDir));
+        res.end(formatHostError(err, opts.homeDir, opts.workspaceRoot));
         return;
       }
       if (!res.writableEnded) {
