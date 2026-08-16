@@ -66,14 +66,24 @@ export function createRuntime(workspaceRoot: string, homeDir: string): Runtime {
   return { ctx, sessions, models, tools };
 }
 
-function formatHostError(err: unknown): string {
+function formatHostError(err: unknown, homeDir: string): string {
   let message = err instanceof Error ? err.message : String(err);
   if (message.length === 0) {
     message = "internal error";
   }
-  const apiKey = process.env.FLINTLOOM_API_KEY;
-  if (typeof apiKey === "string" && apiKey.length > 0 && message.includes(apiKey)) {
-    message = message.split(apiKey).join("[redacted]");
+  const secrets: string[] = [];
+  const envKey = process.env.FLINTLOOM_API_KEY;
+  if (typeof envKey === "string" && envKey.length > 0) {
+    secrets.push(envKey);
+  }
+  const credKey = readCredentials(homeDir).chatApiKey;
+  if (typeof credKey === "string" && credKey.length > 0) {
+    secrets.push(credKey);
+  }
+  for (const secret of secrets) {
+    if (message.includes(secret)) {
+      message = message.split(secret).join("[redacted]");
+    }
   }
   return message;
 }
@@ -191,26 +201,31 @@ async function handleRequest(
 
     res.writeHead(200, { "Content-Type": "text/event-stream" });
 
-    const result = await runTurn({
-      session,
-      text: body.text,
-      models: opts.runtime.models,
-      tools: opts.runtime.tools,
-      workspaceRoot: opts.workspaceRoot,
-      channel: "host",
-      signal: controller.signal,
-      onEvent: (event) => {
-        if (event.type === "turn/start") {
-          opts.controllers.set(event.turnId, controller);
-        }
-        writeSse(res, event);
-      },
-    });
+    try {
+      const result = await runTurn({
+        session,
+        text: body.text,
+        models: opts.runtime.models,
+        tools: opts.runtime.tools,
+        workspaceRoot: opts.workspaceRoot,
+        channel: "host",
+        signal: controller.signal,
+        onEvent: (event) => {
+          if (event.type === "turn/start") {
+            opts.controllers.set(event.turnId, controller);
+          }
+          writeSse(res, event);
+        },
+      });
 
-    opts.controllers.set(result.turnId, controller);
-    writeSse(res, { type: "end", status: result.status });
-    res.end();
-    opts.controllers.delete(result.turnId);
+      opts.controllers.set(result.turnId, controller);
+      writeSse(res, { type: "end", status: result.status });
+      res.end();
+      opts.controllers.delete(result.turnId);
+    } catch {
+      writeSse(res, { type: "end", status: "failed" });
+      res.end();
+    }
     return;
   }
 
@@ -235,8 +250,11 @@ export async function startHost(opts: {
     }).catch((err: unknown) => {
       if (!res.headersSent) {
         res.writeHead(500, { "Content-Type": "text/plain" });
-        res.end(formatHostError(err));
-      } else {
+        res.end(formatHostError(err, opts.homeDir));
+        return;
+      }
+      if (!res.writableEnded) {
+        writeSse(res, { type: "end", status: "failed" });
         res.end();
       }
     });
