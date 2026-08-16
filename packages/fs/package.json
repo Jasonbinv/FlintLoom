@@ -1,0 +1,11 @@
+{
+  "name": "@flintloom/fs",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@flintloom/tools": "workspace:*"
+  }
+}
