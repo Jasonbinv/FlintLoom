@@ -12,3 +12,4 @@ export {
   type GuardGateInput,
   type GuardProvider,
 } from "./registry.ts";
+export { default } from "./plugin.ts";
