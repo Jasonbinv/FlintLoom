@@ -7,7 +7,9 @@
   },
   "dependencies": {
     "@flintloom/kernel": "workspace:*",
-    "@flintloom/models": "workspace:*",
     "@flintloom/tools": "workspace:*"
+  },
+  "devDependencies": {
+    "@flintloom/models": "workspace:*"
   }
 }

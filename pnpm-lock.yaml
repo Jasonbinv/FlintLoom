@@ -105,9 +105,6 @@ importers:
       '@flintloom/kernel':
         specifier: workspace:*
         version: link:../kernel
-      '@flintloom/models':
-        specifier: workspace:*
-        version: link:../models
       '@flintloom/tools':
         specifier: workspace:*
         version: link:../tools
@@ -126,30 +123,36 @@ importers:
       unpdf:
         specifier: ^1.8.1
         version: 1.8.1
+    devDependencies:
+      '@flintloom/models':
+        specifier: workspace:*
+        version: link:../models
 
   packages/fs:
     dependencies:
       '@flintloom/kernel':
         specifier: workspace:*
         version: link:../kernel
-      '@flintloom/models':
-        specifier: workspace:*
-        version: link:../models
       '@flintloom/tools':
         specifier: workspace:*
         version: link:../tools
+    devDependencies:
+      '@flintloom/models':
+        specifier: workspace:*
+        version: link:../models
 
   packages/grep:
     dependencies:
       '@flintloom/kernel':
         specifier: workspace:*
         version: link:../kernel
-      '@flintloom/models':
-        specifier: workspace:*
-        version: link:../models
       '@flintloom/tools':
         specifier: workspace:*
         version: link:../tools
+    devDependencies:
+      '@flintloom/models':
+        specifier: workspace:*
+        version: link:../models
 
   packages/kernel:
     dependencies:
@@ -205,12 +208,13 @@ importers:
       '@flintloom/kernel':
         specifier: workspace:*
         version: link:../kernel
-      '@flintloom/models':
-        specifier: workspace:*
-        version: link:../models
       '@flintloom/tools':
         specifier: workspace:*
         version: link:../tools
+    devDependencies:
+      '@flintloom/models':
+        specifier: workspace:*
+        version: link:../models
 
   packages/tools:
     dependencies:
