@@ -1,7 +1,7 @@
 # FlintLoom 工作台（浏览器切片）设计
 
 日期：2026-08-16  
-状态：待审阅  
+状态：已审阅  
 产品：FlintLoom — A real agent. / 真正的 Agent。  
 范围：总 spec 第二刀的**第一块**。不做 Electron、文件预览、个人知识库、DocForge、A2UI。
 
@@ -35,30 +35,30 @@
 ```
 
 - 命令：`pnpm desktop`（仓库根 `package.json`）。
-- 启动顺序：若 `127.0.0.1:7331` 已在听则复用；否则用 `startHost({ workspaceRoot: process.cwd(), homeDir: os.homedir(), port: 7331 })` 拉起。然后起 Vite，`server.host = 127.0.0.1`，`server.port = 5173`。
+- 启动顺序：探测 `http://127.0.0.1:7331/v1/models`。连接失败则 `startHost({ workspaceRoot: process.cwd(), homeDir: os.homedir(), port: 7331 })`。已有进程：用本机 `loadOrCreateToken` 带 Bearer 再 GET；200 则复用，非 200 则退出并打印 `port 7331 in use`。然后起 Vite，`server.host = 127.0.0.1`，`server.port = 5173`。
 - 浏览器只访问 5173。不给 7331 加 CORS，页面不直连 7331。
-- 代理读取 `~/.flintloom/credentials` 的 `hostToken`（没有则走现有 `loadOrCreateToken`）。把 `Authorization: Bearer <token>` 加到转发请求上。响应原样回传（含 `text/event-stream`）。
+- 代理读取 `~/.flintloom/credentials` 的 `hostToken`（没有则 `loadOrCreateToken`）。转发时加上 `Authorization: Bearer <token>`。响应原样回传（含 `text/event-stream`）。
 - 工作区：host 的 `workspaceRoot` 为执行 `pnpm desktop` 时的 `process.cwd()`。这一刀不做工作区选择器。
-- 模型配置：继续用工作区 `.env` / `FLINTLOOM_*` / credentials `chatApiKey`。工作台不编辑密钥。
+- 模型配置：host 必须读取工作区 `.env` 的 `FLINTLOOM_*`（进程环境变量优先，其次 `.env`，再次 credentials `chatApiKey`）。工作台不编辑密钥。若该加载逻辑尚未合入 `dev`，本切片实现计划第一项补上。
 
 ## 4. 界面
 
-单列工作台（`apps/desktop`，React + Vite）：
+单列工作台（`apps/desktop`，React + Vite），**深色**单一主题：
 
 - 顶栏：产品名 FlintLoom；chat 是否已配置（来自 `GET /v1/models` 里 `kind === "chat"` 的 `configured`）。未配置时仍可发消息，失败气泡走 `model/error`。
 - 消息列表：
   - `user/message` → 用户气泡
   - `assistant/chunk` → 追加到当前助手草稿（流式）
-  - `assistant/message` → 助手气泡定稿
-  - `tool/call` → 工具行：名称 + 参数摘要
-  - `tool/result` → 工具结果（过长截断显示，默认前 2000 字符）
-  - `model/error` → 错误气泡
-  - 其它事件（`turn/start`、`turn/end`、SSE `{ type: "end", status }`）不单独成气泡；`end` 的 `status` 用于结束「发送中」状态
+  - `assistant/message` → 助手气泡定稿（草稿合并为这一条，不再另留 chunk 气泡）
+  - `tool/call` → 工具行：名称 + `JSON.stringify(args)` 截断至 200 字符
+  - `tool/result` → 工具结果，超过 2000 字符截断并加 `…`
+  - `model/error` → 错误气泡，展示 `message`
+  - `turn/start`、`turn/end`、SSE `{ type: "end", status }` 不单独成气泡；`end.status` 结束「发送中」
+- 发送：先在本地插入用户气泡，再 `POST /v1/turns`。该轮 SSE 里的 `user/message` **丢弃**（避免双气泡）。
+- 刷新：用同一 `sessionId` 调 `GET /v1/sessions/:id`；200 则按事件列表重建气泡（此时 **要** 渲染历史里的 `user/message`）；404 当新会话。
 - 底栏：多行输入；Enter 发送，Shift+Enter 换行；发送中按钮变为取消。
-- 取消：收到 `turn/start` 的 `turnId` 后，`POST /v1/turns/:id/cancel`（经同一代理）。
-- `sessionId`：每个浏览器标签页一个 UUID，放在 `sessionStorage`，刷新同标签续同一 session。
-
-视觉保持克制：深色或浅色单一主题即可，不仿 dataagent 营销页。
+- 取消：收到 `turn/start` 的 `turnId` 后，`POST /v1/turns/:id/cancel`（经同一代理）。取消前尚未收到 `turnId` 则按钮可点但请求等到有 id 再发。
+- `sessionId`：每个浏览器标签页一个 UUID，`sessionStorage` 键名 `flintloom.sessionId`。
 
 ## 5. 前端数据流
 
@@ -73,25 +73,30 @@
 ```text
 apps/desktop/
   package.json          @flintloom/desktop
+  index.html
+  tsconfig.json
   vite.config.ts        127.0.0.1:5173 + /v1 代理
   src/main.tsx
-  src/App.tsx           工作台壳
-  src/sse.ts            解析 SSE 行 → 事件
-  src/api.ts            models / turns / cancel（相对路径 /v1）
-  src/App.test.tsx      夹具渲染
-  src/sse.test.ts
-scripts/desktop-dev.ts  复用或拉起 host，再启动 Vite
+  src/App.tsx
+  src/sse.ts
+  src/api.ts
+  src/types.ts          与 host SSE 对齐的事件联合类型
+  tests/sse.test.ts
+  tests/App.test.tsx
+scripts/desktop-dev.ts
 ```
 
-根 `package.json`：`"desktop": "tsx scripts/desktop-dev.ts"`。
+根 `package.json`：`"desktop": "tsx scripts/desktop-dev.ts"`。  
+根 `vitest.config.ts` 增加 `apps/**/tests/**/*.test.tsx`。根 `tsconfig.json` `include` 增加 `apps/*/src/**/*.tsx`、`apps/*/tests/**/*.tsx`，desktop 的 tsconfig 设 `"jsx": "react-jsx"`。
 
-不新增 Express，不引入 `http-proxy`。Vite `configureServer` 中间件用内置 `fetch` 把 `/v1/*` 转到 `http://127.0.0.1:7331`，SSE 用响应 body 原样 pipe。host 启动复用 `@flintloom/host` 的 `startHost` / `loadOrCreateToken`。
+不新增 Express，不引入 `http-proxy`。Vite `configureServer` 中间件用内置 `fetch` 把 `/v1/*` 转到 `http://127.0.0.1:7331`，SSE 把上游 `body` 流式写入响应。host 启动复用 `@flintloom/host` 的 `startHost` / `loadOrCreateToken`。独立 `apps/host/src/listen.ts` 仅用于「只起 host、不起 Vite」，不是 `pnpm desktop` 的入口。
 
 ## 7. 测试
 
-- `sse.ts`：给定两行 `data:`（一段 `assistant/chunk` text `hi`，再 `{ type: "end", status: "ok" }`），解析结果含 chunk 与 end。
-- `App`：用固定 SSE 体（`user` 已由 UI 本地插入；夹具返回 `assistant/chunk` + `assistant/message` + `end`），不启动真实 host、不读 API key；断言助手气泡文本。
-- 再一例：夹具返回 `model/error`，断言错误气泡出现。
+- `sse.ts`：输入字符串含两行 `data:`（`assistant/chunk` text `hi`，再 `{ type: "end", status: "ok" }`），解析结果含 chunk 与 end。
+- `App`：mock `fetch`/`ReadableStream`，夹具 SSE 为 chunk `hi` + `assistant/message` `hello` + `end`；用户气泡由 UI 本地插入；断言出现 `hello`。不启动真实 host。
+- 再一例：夹具 `model/error`，断言错误气泡含 `message`。
+- `desktop-dev` 的 7331 探测可单测：对假 HTTP 服务，无进程 → 应调用 start；401 裸 GET 且 Bearer 200 → 不 start；Bearer 非 200 → 抛 `port 7331 in use`。
 - 现有 host/CLI/loop 测试不得被工作台改坏。
 
 ## 8. 安全
