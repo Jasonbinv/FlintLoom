@@ -6,15 +6,18 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "flint": "tsx apps/cli/src/bin.ts"
+    "flint": "tsx apps/cli/src/bin.ts",
+    "desktop": "tsx scripts/desktop-dev.ts"
   },
   "engines": {
     "node": ">=22"
   },
   "devDependencies": {
+    "@flintloom/host": "workspace:*",
     "@types/node": "^22.20.1",
     "tsx": "^4.20.5",
     "typescript": "^5.8.3",
+    "vite": "^6.3.5",
     "vitest": "^3.2.4"
   }
 }
