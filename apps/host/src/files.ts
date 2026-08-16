@@ -1,4 +1,5 @@
-import { extname, join } from "node:path";
+import { realpathSync } from "node:fs";
+import { extname, join, relative } from "node:path";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { detectType, parse } from "@flintloom/docforge";
 import { resolveInside } from "@flintloom/tools";
@@ -90,6 +91,11 @@ export function isHiddenRelPath(relPath: string): boolean {
   return false;
 }
 
+export function relFromWorkspace(workspaceRoot: string, absPath: string): string {
+  const rootReal = realpathSync.native(workspaceRoot);
+  return relative(rootReal, absPath).replaceAll("\\", "/");
+}
+
 export function normalizeRelPath(relPath: string | null): string | undefined {
   if (relPath === null || relPath === "") {
     return undefined;
@@ -138,6 +144,9 @@ export async function listWorkspaceFiles(
   }
 
   const absPath = resolveInside(workspaceRoot, relPath);
+  if (isHiddenRelPath(relFromWorkspace(workspaceRoot, absPath))) {
+    return "hidden";
+  }
 
   let st;
   try {
@@ -179,6 +188,9 @@ export async function previewWorkspaceFile(
   }
 
   const absPath = resolveInside(workspaceRoot, relPath);
+  if (isHiddenRelPath(relFromWorkspace(workspaceRoot, absPath))) {
+    return { path: relPath, kind: "failed", text: "failed: hidden" };
+  }
 
   let st;
   try {

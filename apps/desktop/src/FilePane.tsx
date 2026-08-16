@@ -20,17 +20,24 @@ export function FilePane({ onInsertPath }: Props) {
   const [previewError, setPreviewError] = useState(false);
   const previewAc = useRef<AbortController | undefined>(undefined);
 
-  async function loadPreview(filePath: string, signal?: AbortSignal) {
+  async function loadPreview(filePath: string, signal: AbortSignal) {
     try {
       const preview = await fetchPreview(filePath, signal);
-      if (signal?.aborted) return;
+      if (signal.aborted) return;
       setPreviewText(preview.text);
       setPreviewError(false);
     } catch (err) {
-      if (signal?.aborted) return;
+      if (signal.aborted) return;
       if (err instanceof DOMException && err.name === "AbortError") return;
       setPreviewError(true);
     }
+  }
+
+  function startPreview(filePath: string) {
+    previewAc.current?.abort();
+    const ac = new AbortController();
+    previewAc.current = ac;
+    return loadPreview(filePath, ac.signal);
   }
 
   useEffect(() => {
@@ -42,14 +49,17 @@ export function FilePane({ onInsertPath }: Props) {
         setTreeError(false);
         const firstFile = list.entries.find((e) => e.type === "file");
         if (firstFile) {
-          await loadPreview(childPath(".", firstFile.name), ac.signal);
+          await startPreview(childPath(".", firstFile.name));
         }
       })
       .catch(() => {
         if (ac.signal.aborted) return;
         setTreeError(true);
       });
-    return () => ac.abort();
+    return () => {
+      ac.abort();
+      previewAc.current?.abort();
+    };
   }, []);
 
   async function toggleDir(dirPath: string) {
@@ -78,10 +88,7 @@ export function FilePane({ onInsertPath }: Props) {
 
   async function openFile(filePath: string) {
     onInsertPath(filePath);
-    previewAc.current?.abort();
-    const ac = new AbortController();
-    previewAc.current = ac;
-    await loadPreview(filePath, ac.signal);
+    await startPreview(filePath);
   }
 
   function renderEntries(entries: FileEntry[], parent: string, depth: number) {

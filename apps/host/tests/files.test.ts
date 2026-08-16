@@ -1,14 +1,29 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { isHiddenRelPath } from "../src/files.ts";
+import { isHiddenRelPath, relFromWorkspace } from "../src/files.ts";
 import { loadOrCreateToken, startHost } from "../src/index.ts";
 
 describe("isHiddenRelPath", () => {
   it("hides .env but not .env.example", () => {
     expect(isHiddenRelPath(".env")).toBe(true);
     expect(isHiddenRelPath(".env.example")).toBe(false);
+  });
+});
+
+describe("relFromWorkspace", () => {
+  it("treats a resolved .env absPath as hidden even if the request name is visible", () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-files-rel-"));
+    writeFileSync(join(workspaceRoot, ".env"), "sk-secret\n");
+    writeFileSync(join(workspaceRoot, "visible.txt"), "ok\n");
+    const envAbs = realpathSync.native(join(workspaceRoot, ".env"));
+    expect(isHiddenRelPath(relFromWorkspace(workspaceRoot, envAbs))).toBe(true);
+    expect(
+      isHiddenRelPath(
+        relFromWorkspace(workspaceRoot, join(workspaceRoot, "visible.txt")),
+      ),
+    ).toBe(false);
   });
 });
 
@@ -175,5 +190,64 @@ describe("GET /v1/files and /v1/files/preview", () => {
     const { url } = await startWithFixture();
     const res = await fetch(`${url}/v1/files`);
     expect(res.status).toBe(401);
+  });
+
+  it("hides preview when a visible name resolves to a hidden file", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-files-link-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-files-link-home-"));
+    writeFileSync(join(workspaceRoot, ".env"), "sk-secret\n");
+    writeFileSync(join(workspaceRoot, "README.md"), "# Hello\n");
+    mkdirSync(join(workspaceRoot, "node_modules"), { recursive: true });
+
+    try {
+      symlinkSync(join(workspaceRoot, ".env"), join(workspaceRoot, "config.ts"));
+    } catch {
+      // Windows file symlinks may require Administrator or Developer Mode.
+      return;
+    }
+
+    const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+    close = host.close;
+    const token = loadOrCreateToken(homeDir);
+    const res = await fetch(`${host.url}/v1/files/preview?path=config.ts`, {
+      headers: authHeaders(token),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { kind: string; text: string };
+    expect(body.text).toBe("failed: hidden");
+    expect(body.text).not.toContain("sk-secret");
+  });
+
+  it("returns 404 when listing a visible name that resolves to a hidden directory", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-files-junc-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-files-junc-home-"));
+    mkdirSync(join(workspaceRoot, "node_modules"), { recursive: true });
+    writeFileSync(join(workspaceRoot, "README.md"), "# Hello\n");
+
+    try {
+      symlinkSync(
+        join(workspaceRoot, "node_modules"),
+        join(workspaceRoot, "vendor"),
+        "junction",
+      );
+    } catch {
+      try {
+        symlinkSync(
+          join(workspaceRoot, "node_modules"),
+          join(workspaceRoot, "vendor"),
+        );
+      } catch {
+        // Neither junction nor symlink could be created on this host.
+        return;
+      }
+    }
+
+    const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+    close = host.close;
+    const token = loadOrCreateToken(homeDir);
+    const res = await fetch(`${host.url}/v1/files?path=vendor`, {
+      headers: authHeaders(token),
+    });
+    expect(res.status).toBe(404);
   });
 });

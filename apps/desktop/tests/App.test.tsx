@@ -325,4 +325,94 @@ describe("App", () => {
     expect(document.body.textContent).toContain("README.md");
     expect(document.body.textContent).toContain("docs");
   });
+
+  it("keeps the later file preview when the first preview is delayed", async () => {
+    let releaseStale: (() => void) | undefined;
+    const staleGate = new Promise<void>((resolve) => {
+      releaseStale = resolve;
+    });
+
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = requestUrl(input);
+      if (url.includes("/v1/files/preview")) {
+        const path = new URL(url, "http://local").searchParams.get("path");
+        const signal = init?.signal;
+        if (path === "README.md") {
+          await new Promise<void>((resolve, reject) => {
+            const onAbort = () => {
+              reject(new DOMException("The operation was aborted.", "AbortError"));
+            };
+            if (signal?.aborted) {
+              onAbort();
+              return;
+            }
+            signal?.addEventListener("abort", onAbort, { once: true });
+            void staleGate.then(() => {
+              signal?.removeEventListener("abort", onAbort);
+              resolve();
+            });
+          });
+          return new Response(
+            JSON.stringify({
+              path: "README.md",
+              kind: "markdown",
+              text: "STALE-PREVIEW-TEXT",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            path: "notes.txt",
+            kind: "text",
+            text: "FRESH-PREVIEW-TEXT",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("/v1/files")) {
+        return new Response(
+          JSON.stringify({
+            path: ".",
+            entries: [
+              { name: "README.md", type: "file" },
+              { name: "notes.txt", type: "file" },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("/v1/models")) {
+        return new Response(JSON.stringify([{ kind: "chat", configured: false }]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/v1/sessions/")) {
+        return new Response(null, { status: 404 });
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    }) as typeof fetch;
+
+    await mountApp();
+    await waitForText("README.md");
+    await waitForText("notes.txt");
+
+    const notesButton = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "notes.txt",
+    );
+    if (!notesButton) throw new Error("no notes.txt button");
+    await act(async () => {
+      notesButton.click();
+    });
+    await waitForText("FRESH-PREVIEW-TEXT");
+
+    await act(async () => {
+      releaseStale?.();
+      await new Promise((r) => setTimeout(r, 40));
+    });
+
+    expect(document.body.textContent).toContain("FRESH-PREVIEW-TEXT");
+    expect(document.body.textContent).not.toContain("STALE-PREVIEW-TEXT");
+  });
 });
