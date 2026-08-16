@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { detectType } from "./detect.ts";
+import { parsePdf } from "./parsers/pdf.ts";
 import type { DocType, ProbeResult } from "./types.ts";
 
 const PARSEABLE: ReadonlySet<DocType> = new Set([
@@ -35,5 +36,19 @@ export async function probe(absPath: string): Promise<ProbeResult> {
   if (!PARSEABLE.has(type)) {
     return { type, parseable: false, reason: "unsupported type" };
   }
+
+  if (type === "pdf") {
+    try {
+      const pdf = await parsePdf(absPath);
+      return { type: "pdf", parseable: true, pages: pdf.pages };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (/password|encrypt/i.test(message)) {
+        return { type: "pdf", parseable: false, reason: "encrypted" };
+      }
+      return { type: "pdf", parseable: false, reason: "unreadable" };
+    }
+  }
+
   return { type, parseable: true };
 }

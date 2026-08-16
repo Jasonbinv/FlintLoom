@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { detectType } from "./detect.ts";
 import { parseHtml } from "./parsers/html.ts";
 import { parseMd } from "./parsers/md.ts";
+import { parsePdf } from "./parsers/pdf.ts";
 import { truncateOutput } from "./truncate.ts";
 
 function isNotFound(err: unknown): boolean {
@@ -34,6 +35,11 @@ export async function parse(absPath: string): Promise<string> {
       case "html":
         body = await parseHtml(absPath);
         break;
+      case "pdf": {
+        const pdf = await parsePdf(absPath);
+        body = pdf.markdown;
+        break;
+      }
       case "unknown":
         return "failed: unsupported type";
       default:

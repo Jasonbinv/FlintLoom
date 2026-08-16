@@ -1,10 +1,11 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "../src/parse.ts";
 import { probe } from "../src/probe.ts";
+import { EMPTY_PDF, HELLO_PDF } from "./helpers/pdf.ts";
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
 
@@ -51,5 +52,23 @@ describe("probe/parse md html unknown", () => {
     expect(text).toContain(
       "[truncated: output exceeded 200000 characters]",
     );
+  });
+
+  it("parses pdf pages and rejects empty text", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "flintloom-pdf-"));
+    const helloPath = join(dir, "sample.pdf");
+    const emptyPath = join(dir, "empty.pdf");
+    writeFileSync(helloPath, HELLO_PDF);
+    writeFileSync(emptyPath, EMPTY_PDF);
+
+    const helloProbe = await probe(helloPath);
+    expect(helloProbe.type).toBe("pdf");
+    expect(helloProbe.parseable).toBe(true);
+    expect(helloProbe.pages).toBe(1);
+    const hello = await parse(helloPath);
+    expect(hello).toContain("## Page 1");
+    expect(hello).toContain("Hello");
+
+    expect(await parse(emptyPath)).toBe("failed: empty text");
   });
 });

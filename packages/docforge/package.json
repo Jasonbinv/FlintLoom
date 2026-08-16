@@ -7,6 +7,7 @@
   },
   "dependencies": {
     "@flintloom/tools": "workspace:*",
-    "node-html-markdown": "^1.3.0"
+    "node-html-markdown": "^1.3.0",
+    "unpdf": "^1.8.1"
   }
 }
