@@ -4,5 +4,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "yaml": "^2.7.0"
   }
 }
