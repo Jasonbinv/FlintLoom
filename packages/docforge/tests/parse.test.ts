@@ -6,8 +6,14 @@ import { describe, expect, it } from "vitest";
 import { parse } from "../src/parse.ts";
 import { probe } from "../src/probe.ts";
 import { EMPTY_PDF, HELLO_PDF } from "./helpers/pdf.ts";
+import {
+  writeHelloDocx,
+  writeHelloPptx,
+  writeHelloXlsx,
+} from "./helpers/office.ts";
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
+
 
 describe("probe/parse md html unknown", () => {
   it("probes and parses markdown and html", async () => {
@@ -70,5 +76,32 @@ describe("probe/parse md html unknown", () => {
     expect(hello).toContain("Hello");
 
     expect(await parse(emptyPath)).toBe("failed: empty text");
+  });
+
+  it("parses docx pptx and xlsx", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "flintloom-office-"));
+    const docxPath = join(dir, "sample.docx");
+    const pptxPath = join(dir, "sample.pptx");
+    const xlsxPath = join(dir, "sample.xlsx");
+    await writeHelloDocx(docxPath);
+    await writeHelloPptx(pptxPath);
+    await writeHelloXlsx(xlsxPath);
+
+    expect((await probe(docxPath)).parseable).toBe(true);
+    expect(await parse(docxPath)).toContain("Hello");
+
+    const pptxProbe = await probe(pptxPath);
+    expect(pptxProbe.parseable).toBe(true);
+    expect(pptxProbe.pages).toBe(1);
+    const pptxMd = await parse(pptxPath);
+    expect(pptxMd).toContain("## Slide 1");
+    expect(pptxMd).toContain("Hello");
+
+    const xlsxProbe = await probe(xlsxPath);
+    expect(xlsxProbe.parseable).toBe(true);
+    expect(xlsxProbe.pages).toBe(1);
+    const xlsxMd = await parse(xlsxPath);
+    expect(xlsxMd).toContain("##");
+    expect(xlsxMd).toContain("Hello");
   });
 });

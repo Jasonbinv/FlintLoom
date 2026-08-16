@@ -30,6 +30,10 @@ function looksLikePdf(bytes: Uint8Array): boolean {
   );
 }
 
+function zipContains(bytes: Uint8Array, part: string): boolean {
+  return Buffer.from(bytes).includes(part);
+}
+
 export function detectType(filePath: string, bytes: Uint8Array): DocType {
   const ext = extname(filePath).toLowerCase();
   const fromExt = BY_EXT[ext];
@@ -41,6 +45,11 @@ export function detectType(filePath: string, bytes: Uint8Array): DocType {
   }
   if (looksLikeHtml(bytes)) {
     return "html";
+  }
+  if (bytes.length >= 2 && bytes[0] === 0x50 && bytes[1] === 0x4b) {
+    if (zipContains(bytes, "word/")) return "docx";
+    if (zipContains(bytes, "ppt/")) return "pptx";
+    if (zipContains(bytes, "xl/")) return "xlsx";
   }
   return "unknown";
 }

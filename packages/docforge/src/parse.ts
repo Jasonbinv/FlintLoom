@@ -1,8 +1,11 @@
 import { readFile } from "node:fs/promises";
 import { detectType } from "./detect.ts";
+import { parseDocx } from "./parsers/docx.ts";
 import { parseHtml } from "./parsers/html.ts";
 import { parseMd } from "./parsers/md.ts";
 import { parsePdf } from "./parsers/pdf.ts";
+import { parsePptx } from "./parsers/pptx.ts";
+import { parseXlsx } from "./parsers/xlsx.ts";
 import { truncateOutput } from "./truncate.ts";
 
 function isNotFound(err: unknown): boolean {
@@ -38,6 +41,19 @@ export async function parse(absPath: string): Promise<string> {
       case "pdf": {
         const pdf = await parsePdf(absPath);
         body = pdf.markdown;
+        break;
+      }
+      case "docx":
+        body = await parseDocx(absPath);
+        break;
+      case "pptx": {
+        const pptx = await parsePptx(absPath);
+        body = pptx.markdown;
+        break;
+      }
+      case "xlsx": {
+        const xlsx = await parseXlsx(absPath);
+        body = xlsx.markdown;
         break;
       }
       case "unknown":
