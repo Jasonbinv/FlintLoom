@@ -268,4 +268,61 @@ describe("App", () => {
     });
     expect(textarea.value).toBe("README.md");
   });
+
+  it("keeps root file tree when expanding a folder list fails", async () => {
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = requestUrl(input);
+      if (url.includes("/v1/files/preview")) {
+        return new Response(
+          JSON.stringify({
+            path: "README.md",
+            kind: "markdown",
+            text: "# Hello\n",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("/v1/files")) {
+        const path = new URL(url, "http://local").searchParams.get("path");
+        if (path === "." || path === null) {
+          return new Response(
+            JSON.stringify({
+              path: ".",
+              entries: [
+                { name: "docs", type: "dir" },
+                { name: "README.md", type: "file" },
+              ],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        throw new Error("network");
+      }
+      if (url.includes("/v1/models")) {
+        return new Response(JSON.stringify([{ kind: "chat", configured: false }]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/v1/sessions/")) {
+        return new Response(null, { status: 404 });
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    }) as typeof fetch;
+
+    await mountApp();
+    await waitForText("README.md");
+    await waitForText("docs");
+
+    const docsButton = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "docs",
+    );
+    if (!docsButton) throw new Error("no docs button");
+    await act(async () => {
+      docsButton.click();
+    });
+    await waitForText("host unreachable");
+    expect(document.body.textContent).toContain("README.md");
+    expect(document.body.textContent).toContain("docs");
+  });
 });

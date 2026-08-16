@@ -15,6 +15,7 @@ export function FilePane({ onInsertPath }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [children, setChildren] = useState<Record<string, FileEntry[]>>({});
   const [treeError, setTreeError] = useState(false);
+  const [dirErrors, setDirErrors] = useState<Set<string>>(() => new Set());
   const [previewText, setPreviewText] = useState("");
   const [previewError, setPreviewError] = useState(false);
   const previewAc = useRef<AbortController | undefined>(undefined);
@@ -64,9 +65,14 @@ export function FilePane({ onInsertPath }: Props) {
     try {
       const list = await fetchFiles(dirPath);
       setChildren((prev) => ({ ...prev, [dirPath]: list.entries }));
-      setTreeError(false);
+      setDirErrors((prev) => {
+        if (!prev.has(dirPath)) return prev;
+        const cleared = new Set(prev);
+        cleared.delete(dirPath);
+        return cleared;
+      });
     } catch {
-      setTreeError(true);
+      setDirErrors((prev) => new Set(prev).add(dirPath));
     }
   }
 
@@ -88,6 +94,9 @@ export function FilePane({ onInsertPath }: Props) {
             <button type="button" onClick={() => void toggleDir(path)}>
               {entry.name}
             </button>
+            {isOpen && dirErrors.has(path) ? (
+              <div style={{ paddingLeft: 12 }}>host unreachable</div>
+            ) : null}
             {isOpen && children[path]
               ? renderEntries(children[path], path, depth + 1)
               : null}
