@@ -23,13 +23,12 @@ function parseArgv(argv: string[]): { workspace: string; text: string } {
 }
 
 const { workspace, text } = parseArgv(process.argv.slice(2));
-const { models, tools } = createRuntime(workspace, homedir());
+const runtime = createRuntime(workspace, homedir());
 const session = new Session("cli");
 const { status } = await runTurn({
+  ctx: runtime.ctx,
   session,
   text,
-  models,
-  tools,
   workspaceRoot: workspace,
   channel: "cli",
   signal: new AbortController().signal,

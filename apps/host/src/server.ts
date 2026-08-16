@@ -311,10 +311,9 @@ async function handleRequest(
 
     try {
       const result = await runTurn({
+        ctx: opts.runtime.ctx,
         session,
         text: body.text,
-        models: opts.runtime.models,
-        tools: opts.runtime.tools,
         workspaceRoot: opts.workspaceRoot,
         channel: "host",
         signal: controller.signal,

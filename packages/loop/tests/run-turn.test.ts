@@ -4,12 +4,29 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createFsTool } from "@flintloom/fs";
 import { Context } from "@flintloom/kernel";
-import { ModelRegistry, type ChatProvider } from "@flintloom/models";
-import { Session, type SessionEvent } from "@flintloom/session";
-import { ToolRegistry } from "@flintloom/tools";
-import { runTurn } from "../src/index.ts";
+import modelsPlugin, {
+  type ChatProvider,
+  type ModelRegistry,
+} from "@flintloom/models";
+import { Session } from "@flintloom/session";
+import toolsPlugin, { type ToolRegistry } from "@flintloom/tools";
+import loopPlugin, { runTurn, type LoopService } from "../src/index.ts";
+
+function boot() {
+  const ctx = new Context();
+  ctx.plugin(modelsPlugin);
+  ctx.plugin(toolsPlugin);
+  ctx.plugin(loopPlugin);
+  return ctx;
+}
 
 describe("runTurn", () => {
+  it("loop plugin provides runTurn", async () => {
+    const ctx = boot();
+    const loop = ctx.require<LoopService>("loop");
+    expect(typeof loop.runTurn).toBe("function");
+  });
+
   it("runs fs tool then completes with assistant message", async () => {
     let streamCall = 0;
     const fakeChat: ChatProvider = {
@@ -28,13 +45,10 @@ describe("runTurn", () => {
       },
     };
 
-    const models = new ModelRegistry();
-    models.registerChat("fake", fakeChat);
-    models.setDefault("chat", "fake");
-
-    const ctx = new Context();
-    const tools = new ToolRegistry(ctx);
-    tools.register(createFsTool());
+    const ctx = boot();
+    ctx.require<ModelRegistry>("models").registerChat("fake", fakeChat);
+    ctx.require<ModelRegistry>("models").setDefault("chat", "fake");
+    ctx.require<ToolRegistry>("tools").register(createFsTool());
 
     const workspace = mkdtempSync(join(tmpdir(), "flintloom-loop-"));
     writeFileSync(join(workspace, "README.md"), "title-one");
@@ -42,10 +56,9 @@ describe("runTurn", () => {
     const session = new Session("s1");
 
     const result = await runTurn({
+      ctx,
       session,
       text: "read the readme",
-      models,
-      tools,
       workspaceRoot: workspace,
       channel: "test",
       signal: new AbortController().signal,
@@ -74,19 +87,16 @@ describe("runTurn", () => {
       },
     };
 
-    const models = new ModelRegistry();
-    models.registerChat("fake", fakeChat);
-    models.setDefault("chat", "fake");
+    const ctx = boot();
+    ctx.require<ModelRegistry>("models").registerChat("fake", fakeChat);
+    ctx.require<ModelRegistry>("models").setDefault("chat", "fake");
 
-    const ctx = new Context();
-    const tools = new ToolRegistry(ctx);
     const session = new Session("s3");
 
     const result = await runTurn({
+      ctx,
       session,
       text: "hello",
-      models,
-      tools,
       workspaceRoot: process.cwd(),
       channel: "test",
       signal: new AbortController().signal,
@@ -102,16 +112,13 @@ describe("runTurn", () => {
   });
 
   it("fails when chat model is missing", async () => {
-    const models = new ModelRegistry();
-    const ctx = new Context();
-    const tools = new ToolRegistry(ctx);
+    const ctx = boot();
     const session = new Session("s2");
 
     const result = await runTurn({
+      ctx,
       session,
       text: "hello",
-      models,
-      tools,
       workspaceRoot: process.cwd(),
       channel: "test",
       signal: new AbortController().signal,

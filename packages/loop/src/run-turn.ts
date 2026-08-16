@@ -1,3 +1,4 @@
+import type { Context } from "@flintloom/kernel";
 import {
   ModelKindMissingError,
   type ChatChunkToolCall,
@@ -11,10 +12,9 @@ const SYSTEM_MESSAGE =
 const MAX_STEPS = 8;
 
 export interface RunTurnInput {
+  ctx: Context;
   session: Session;
   text: string;
-  models: ModelRegistry;
-  tools: ToolRegistry;
   workspaceRoot: string;
   channel: string;
   signal: AbortSignal;
@@ -25,6 +25,10 @@ export interface RunTurnResult {
   turnId: string;
   status: "ok" | "failed" | "cancelled";
 }
+
+export type LoopService = {
+  runTurn(input: RunTurnInput): Promise<RunTurnResult>;
+};
 
 function appendEvent(
   session: Session,
@@ -62,11 +66,11 @@ function failChat(
 }
 
 export async function runTurn(input: RunTurnInput): Promise<RunTurnResult> {
+  const models = input.ctx.require<ModelRegistry>("models");
+  const tools = input.ctx.require<ToolRegistry>("tools");
   const {
     session,
     text,
-    models,
-    tools,
     workspaceRoot,
     channel,
     signal,
