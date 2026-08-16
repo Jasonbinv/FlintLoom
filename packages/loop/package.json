@@ -1,0 +1,16 @@
+{
+  "name": "@flintloom/loop",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@flintloom/models": "workspace:*",
+    "@flintloom/session": "workspace:*",
+    "@flintloom/tools": "workspace:*"
+  },
+  "devDependencies": {
+    "@flintloom/fs": "workspace:*"
+  }
+}
