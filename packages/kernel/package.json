@@ -1,0 +1,8 @@
+{
+  "name": "@flintloom/kernel",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}
