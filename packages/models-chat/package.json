@@ -1,0 +1,11 @@
+{
+  "name": "@flintloom/models-chat",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@flintloom/models": "workspace:*"
+  }
+}
