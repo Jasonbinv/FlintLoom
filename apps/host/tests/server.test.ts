@@ -58,6 +58,34 @@ describe("startHost", () => {
     await expect(createRuntime(workspaceRoot, homeDir)).rejects.toThrow(/plugins/);
   });
 
+  it("refuses to start when a plugin name cannot be imported", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-badpkg-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
+    writeFileSync(
+      join(workspaceRoot, "flintloom.yml"),
+      `plugins:
+  - id: missing
+    name: "@flintloom/does-not-exist-xyz"
+`,
+    );
+    await expect(createRuntime(workspaceRoot, homeDir)).rejects.toThrow(
+      /missing|@flintloom\/does-not-exist-xyz/,
+    );
+  });
+
+  it("yml with loop but no models fails with models", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-noloopdep-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
+    writeFileSync(
+      join(workspaceRoot, "flintloom.yml"),
+      `plugins:
+  - id: loop
+    name: "@flintloom/loop"
+`,
+    );
+    await expect(createRuntime(workspaceRoot, homeDir)).rejects.toThrow(/models/);
+  });
+
   it("omitting fs from yml omits the fs tool", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-nofs-"));
     const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));

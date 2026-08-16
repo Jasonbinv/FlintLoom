@@ -84,4 +84,18 @@ describe("Context", () => {
     const result = await ctx.waterfall("t", {}, async () => "term");
     expect(result).toBe("term");
   });
+
+  it("plugin apply 抛错后撤销已 provide 的键", () => {
+    const ctx = new Context();
+    expect(() =>
+      ctx.plugin({
+        name: "boom",
+        apply(c) {
+          c.provide("boom.k", 1);
+          throw new Error("apply-fail");
+        },
+      }),
+    ).toThrow(/apply-fail/);
+    expect(() => ctx.require("boom.k")).toThrow(/boom\.k/);
+  });
 });

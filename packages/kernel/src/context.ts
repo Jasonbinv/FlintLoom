@@ -81,7 +81,14 @@ export class Context {
     config: Record<string, unknown> = {},
   ): Disposer {
     const before = this.#disposers.length;
-    plugin.apply(this, config);
+    try {
+      plugin.apply(this, config);
+    } catch (err) {
+      const mine = this.#disposers.slice(before);
+      for (const d of mine.reverse()) d();
+      this.#disposers.length = before;
+      throw err;
+    }
     const mine = this.#disposers.slice(before);
     return () => {
       for (const d of mine.reverse()) d();
