@@ -123,6 +123,8 @@ describe("startHost", () => {
     expect(src).not.toMatch(/createDocIngestTool/);
     expect(src).not.toMatch(/@flintloom\/a2ui/);
     expect(src).not.toMatch(/createA2uiEmitTool/);
+    expect(src).not.toMatch(/createInfographicGetTool/);
+    expect(src).not.toMatch(/createInfographicPatchTool/);
   });
 
   it("returns 500 text/plain with the error message and redacts the api key", async () => {
@@ -286,6 +288,8 @@ describe("startHost", () => {
     expect(names).toContain("doc_ingest");
     expect(names).toContain("knowledge_search");
     expect(names).toContain("a2ui_emit");
+    expect(names).toContain("infographic_get");
+    expect(names).toContain("infographic_patch");
   });
 
   it("turn without a chat key emits model/error and failed", async () => {

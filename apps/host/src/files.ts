@@ -2,13 +2,18 @@ import { realpathSync } from "node:fs";
 import { extname, join, relative } from "node:path";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { detectType, parse } from "@flintloom/docforge";
+import {
+  isInfographicRelPath,
+  parseDocument,
+  renderSvg,
+} from "@flintloom/infographic";
 import { isHiddenRelPath, resolveInside } from "@flintloom/tools";
 
 export type FileEntry = { name: string; type: "file" | "dir" };
 export type FileList = { path: string; entries: FileEntry[] };
 export type FilePreview = {
   path: string;
-  kind: "markdown" | "text" | "failed";
+  kind: "markdown" | "text" | "svg" | "failed";
   text: string;
 };
 
@@ -176,6 +181,19 @@ export async function previewWorkspaceFile(
 
   if (st.isDirectory()) {
     return { path: relPath, kind: "failed", text: "failed: not a file" };
+  }
+
+  if (isInfographicRelPath(relPath)) {
+    if (st.size > 65536) {
+      return { path: relPath, kind: "failed", text: "failed: too large" };
+    }
+    const raw = (await readFile(absPath)).toString("utf8");
+    try {
+      return { path: relPath, kind: "svg", text: renderSvg(parseDocument(raw)) };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { path: relPath, kind: "failed", text: `failed: ${message}` };
+    }
   }
 
   const bytes = await readFile(absPath);

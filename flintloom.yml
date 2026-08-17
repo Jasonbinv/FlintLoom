@@ -18,6 +18,8 @@ plugins:
     name: "@flintloom/knowledge"
   - id: docforge
     name: "@flintloom/docforge"
+  - id: infographic
+    name: "@flintloom/infographic"
   - id: a2ui
     name: "@flintloom/a2ui"
   - id: loop
