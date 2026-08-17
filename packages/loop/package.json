@@ -12,6 +12,7 @@
     "@flintloom/tools": "workspace:*"
   },
   "devDependencies": {
+    "@flintloom/a2ui": "workspace:*",
     "@flintloom/fs": "workspace:*"
   }
 }

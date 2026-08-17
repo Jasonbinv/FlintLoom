@@ -225,6 +225,9 @@ importers:
         specifier: workspace:*
         version: link:../tools
     devDependencies:
+      '@flintloom/a2ui':
+        specifier: workspace:*
+        version: link:../a2ui
       '@flintloom/fs':
         specifier: workspace:*
         version: link:../fs
