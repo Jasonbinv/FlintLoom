@@ -20,6 +20,8 @@ export const ASSEMBLY = `plugins:
     name: "@flintloom/knowledge"
   - id: docforge
     name: "@flintloom/docforge"
+  - id: a2ui
+    name: "@flintloom/a2ui"
   - id: loop
     name: "@flintloom/loop"
 `;

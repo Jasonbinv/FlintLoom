@@ -2,10 +2,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { join } from "node:path";
 import { applyConfig, Context, loadConfig } from "@flintloom/kernel";
-import type { LoopService } from "@flintloom/loop";
+import type { LoopService, RunTurnResult } from "@flintloom/loop";
 import type { ModelRegistry } from "@flintloom/models";
-import type { SessionStore } from "@flintloom/session";
+import type { Session, SessionEvent, SessionStore } from "@flintloom/session";
 import { WorkspaceEscapeError } from "@flintloom/tools";
+import { cancelWaitingTurn, handleTurnActions } from "./a2ui.ts";
 import {
   listWorkspaceFiles,
   normalizeRelPath,
@@ -144,6 +145,61 @@ function writeSse(res: ServerResponse, data: unknown): void {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
+async function streamLoopResult(
+  req: IncomingMessage,
+  res: ServerResponse,
+  session: Session,
+  controllers: Map<string, AbortController>,
+  turns: Map<string, Session>,
+  work: (args: {
+    signal: AbortSignal;
+    onEvent: (event: SessionEvent) => void;
+  }) => Promise<RunTurnResult>,
+  knownTurnId?: string,
+): Promise<void> {
+  const controller = new AbortController();
+  const onClose = () => {
+    controller.abort();
+  };
+  req.on("close", onClose);
+
+  if (knownTurnId !== undefined) {
+    turns.set(knownTurnId, session);
+    controllers.set(knownTurnId, controller);
+  }
+
+  res.writeHead(200, { "Content-Type": "text/event-stream" });
+
+  try {
+    const result = await work({
+      signal: controller.signal,
+      onEvent: (event) => {
+        if (event.type === "turn/start") {
+          turns.set(event.turnId, session);
+          controllers.set(event.turnId, controller);
+        }
+        if (event.type === "turn/end") {
+          turns.delete(event.turnId);
+          controllers.delete(event.turnId);
+        }
+        writeSse(res, event);
+      },
+    });
+
+    if (result.status === "awaiting_action") {
+      req.off("close", onClose);
+    } else {
+      turns.delete(result.turnId);
+    }
+    controllers.delete(result.turnId);
+    writeSse(res, { type: "end", status: result.status });
+    res.end();
+  } catch {
+    writeSse(res, { type: "end", status: "failed" });
+    res.end();
+  }
+}
+
 async function readBody(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of req) {
@@ -186,6 +242,7 @@ async function handleRequest(
     workspaceRoot: string;
     runtime: Runtime;
     controllers: Map<string, AbortController>;
+    turns: Map<string, Session>;
   },
 ): Promise<void> {
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -202,6 +259,27 @@ async function handleRequest(
       url,
       workspaceRoot: opts.workspaceRoot,
       ctx: opts.runtime.ctx,
+    })
+  ) {
+    return;
+  }
+
+  if (
+    await handleTurnActions(req, res, {
+      pathname,
+      ctx: opts.runtime.ctx,
+      workspaceRoot: opts.workspaceRoot,
+      turns: opts.turns,
+      streamLoopResult: (sseReq, sseRes, session, work, turnId) =>
+        streamLoopResult(
+          sseReq,
+          sseRes,
+          session,
+          opts.controllers,
+          opts.turns,
+          work,
+          turnId,
+        ),
     })
   ) {
     return;
@@ -273,12 +351,20 @@ async function handleRequest(
 
   const cancelMatch = /^\/v1\/turns\/([^/]+)\/cancel$/.exec(pathname);
   if (req.method === "POST" && cancelMatch) {
-    const controller = opts.controllers.get(decodeURIComponent(cancelMatch[1]!));
-    if (controller === undefined) {
+    const turnId = decodeURIComponent(cancelMatch[1]!);
+    const controller = opts.controllers.get(turnId);
+    if (controller !== undefined) {
+      controller.abort();
+      send(res, 200);
+      return;
+    }
+    const session = opts.turns.get(turnId);
+    if (session === undefined) {
       send(res, 404);
       return;
     }
-    controller.abort();
+    cancelWaitingTurn(session, turnId);
+    opts.turns.delete(turnId);
     send(res, 200);
     return;
   }
@@ -294,37 +380,17 @@ async function handleRequest(
       .require<SessionStore>("sessions")
       .getOrCreate(body.sessionId);
 
-    const controller = new AbortController();
-    req.on("close", () => {
-      controller.abort();
-    });
-
-    res.writeHead(200, { "Content-Type": "text/event-stream" });
-
-    try {
-      const result = await opts.runtime.ctx.require<LoopService>("loop").runTurn({
+    await streamLoopResult(req, res, session, opts.controllers, opts.turns, ({ signal, onEvent }) =>
+      opts.runtime.ctx.require<LoopService>("loop").runTurn({
         ctx: opts.runtime.ctx,
         session,
         text: body.text,
         workspaceRoot: opts.workspaceRoot,
         channel: "host",
-        signal: controller.signal,
-        onEvent: (event) => {
-          if (event.type === "turn/start") {
-            opts.controllers.set(event.turnId, controller);
-          }
-          writeSse(res, event);
-        },
-      });
-
-      opts.controllers.set(result.turnId, controller);
-      writeSse(res, { type: "end", status: result.status });
-      res.end();
-      opts.controllers.delete(result.turnId);
-    } catch {
-      writeSse(res, { type: "end", status: "failed" });
-      res.end();
-    }
+        signal,
+        onEvent,
+      }),
+    );
     return;
   }
 
@@ -339,6 +405,7 @@ export async function startHost(opts: {
   const token = loadOrCreateToken(opts.homeDir);
   const runtime = await createRuntime(opts.workspaceRoot, opts.homeDir);
   const controllers = new Map<string, AbortController>();
+  const turns = new Map<string, Session>();
 
   const server = createServer((req, res) => {
     void handleRequest(req, res, {
@@ -346,6 +413,7 @@ export async function startHost(opts: {
       workspaceRoot: opts.workspaceRoot,
       runtime,
       controllers,
+      turns,
     }).catch((err: unknown) => {
       if (!res.headersSent) {
         res.writeHead(500, { "Content-Type": "text/plain" });

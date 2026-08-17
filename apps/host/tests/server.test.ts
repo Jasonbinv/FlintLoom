@@ -121,6 +121,8 @@ describe("startHost", () => {
     expect(src).not.toMatch(/createDocProbeTool/);
     expect(src).not.toMatch(/createDocParseTool/);
     expect(src).not.toMatch(/createDocIngestTool/);
+    expect(src).not.toMatch(/@flintloom\/a2ui/);
+    expect(src).not.toMatch(/createA2uiEmitTool/);
   });
 
   it("returns 500 text/plain with the error message and redacts the api key", async () => {
@@ -287,6 +289,7 @@ describe("startHost", () => {
     expect(names).toContain("doc_parse");
     expect(names).toContain("doc_ingest");
     expect(names).toContain("knowledge_search");
+    expect(names).toContain("a2ui_emit");
   });
 
   it("turn without a chat key emits model/error and failed", async () => {
