@@ -7,7 +7,7 @@ import { ModelRegistry } from "@flintloom/models";
 import { Session } from "@flintloom/session";
 import { ToolRegistry } from "@flintloom/tools";
 import { createRuntime, loadOrCreateToken, startHost } from "../src/index.ts";
-import { writeAssembly } from "./assembly.ts";
+import { ASSEMBLY, writeAssembly } from "./assembly.ts";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 
@@ -86,6 +86,22 @@ describe("startHost", () => {
     await expect(createRuntime(workspaceRoot, homeDir)).rejects.toThrow(/models/);
   });
 
+  it("omitting docforge from yml omits doc_generate", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-nodoc-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
+    writeFileSync(
+      join(workspaceRoot, "flintloom.yml"),
+      ASSEMBLY.replace(
+        `  - id: docforge\n    name: "@flintloom/docforge"\n`,
+        "",
+      ),
+    );
+    const { ctx } = await createRuntime(workspaceRoot, homeDir);
+    const names = ctx.require<ToolRegistry>("tools").schemas().map((s) => s.name);
+    expect(names).not.toContain("doc_generate");
+    expect(names).not.toContain("doc_parse");
+  });
+
   it("omitting fs from yml omits the fs tool", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-nofs-"));
     const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
@@ -121,6 +137,7 @@ describe("startHost", () => {
     expect(src).not.toMatch(/createDocProbeTool/);
     expect(src).not.toMatch(/createDocParseTool/);
     expect(src).not.toMatch(/createDocIngestTool/);
+    expect(src).not.toMatch(/createDocGenerateTool/);
     expect(src).not.toMatch(/@flintloom\/a2ui/);
     expect(src).not.toMatch(/createA2uiEmitTool/);
     expect(src).not.toMatch(/createInfographicGetTool/);
