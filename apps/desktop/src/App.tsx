@@ -187,7 +187,6 @@ export function App() {
     const turnId = turnIdRef.current;
     if (!turnId || submittingActionRef.current) return;
     submittingActionRef.current = true;
-    setWaitingAction(false);
     setSending(true);
     cancelWantedRef.current = false;
     try {
