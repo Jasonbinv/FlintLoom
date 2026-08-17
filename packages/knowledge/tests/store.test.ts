@@ -80,4 +80,20 @@ describe("openKnowledge", () => {
     expect(kb.search("alpha-only")).toHaveLength(1);
     kb.close();
   });
+
+  it("finds short Chinese and ASCII queries via LIKE when FTS trigram misses", () => {
+    const kb = openKnowledge(dbFile());
+    const ws = mkdtempSync(join(tmpdir(), "flintloom-kb-short-"));
+    kb.ingest({
+      workspaceRoot: ws,
+      relPath: "notes/zh.md",
+      title: "我的笔记",
+      status: "ok",
+      body: "正文里有笔记和 ab token\n",
+    });
+    expect(kb.search("笔").length).toBeGreaterThanOrEqual(1);
+    expect(kb.search("笔记").length).toBeGreaterThanOrEqual(1);
+    expect(kb.search("ab").length).toBeGreaterThanOrEqual(1);
+    kb.close();
+  });
 });

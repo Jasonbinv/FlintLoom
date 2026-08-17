@@ -93,6 +93,13 @@ describe("knowledge HTTP", () => {
     expect(listAfter.items.some((row) => row.path === ".env")).toBe(false);
 
     expect((await fetch(`${url}/v1/knowledge/search`, { headers: auth })).status).toBe(400);
+    expect(
+      (
+        await fetch(`${url}/v1/knowledge/search?q=${"x".repeat(201)}`, {
+          headers: auth,
+        })
+      ).status,
+    ).toBe(400);
   });
 
   it("returns 404 when knowledge plugin is omitted", async () => {

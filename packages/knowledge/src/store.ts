@@ -150,12 +150,20 @@ LIMIT 8
     },
 
     search(q: string): KnowledgeHit[] {
-      let rows: SearchRow[];
-      if (fts && ftsSearchStmt) {
-        rows = ftsSearchStmt.all(ftsLiteral(q)) as SearchRow[];
-      } else {
+      const likeSearch = (): SearchRow[] => {
         const pattern = `%${escapeLike(q)}%`;
-        rows = likeSearchStmt.all(pattern, pattern) as SearchRow[];
+        return likeSearchStmt.all(pattern, pattern) as SearchRow[];
+      };
+
+      let rows: SearchRow[];
+      // FTS5 trigram MATCH ignores queries shorter than 3 unicode characters.
+      if (fts && ftsSearchStmt && [...q].length >= 3) {
+        rows = ftsSearchStmt.all(ftsLiteral(q)) as SearchRow[];
+        if (rows.length === 0) {
+          rows = likeSearch();
+        }
+      } else {
+        rows = likeSearch();
       }
       return rows.map((row) => ({
         id: row.id,

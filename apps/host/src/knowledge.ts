@@ -110,7 +110,7 @@ export async function handleKnowledgeRequest(
 
   if (req.method === "GET" && opts.pathname === "/v1/knowledge/search") {
     const q = opts.url.searchParams.get("q")?.trim() ?? "";
-    if (q.length === 0) {
+    if (q.length === 0 || q.length > 200) {
       send(res, 400);
       return true;
     }
