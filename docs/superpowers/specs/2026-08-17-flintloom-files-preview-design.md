@@ -154,4 +154,4 @@ entries 按名称排序，目录与文件混排即可（locale `en`）。不含�
 
 ## 9. 与总 spec / 前切片的关系
 
-总 spec `GET /v1/files` 与 `GET /v1/files/preview` 本切片落地；preview 调用已有 `@flintloom/docforge` 的 `parse`/`detectType`，不另开解析流水线。信息图渲染器仍属第三刀。知识库下一刀。
+总 spec `GET /v1/files` 与 `GET /v1/files/preview` 本切片落地；preview 调用已有 `@flintloom/docforge` 的 `parse`/`detectType`，不另开解析流水线。信息图渲染器仍属第三刀。知识库见 [知识库设计](2026-08-17-flintloom-knowledge-design.md)。

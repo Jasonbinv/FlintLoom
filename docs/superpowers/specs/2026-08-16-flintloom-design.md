@@ -176,6 +176,7 @@ POST /v1/turns  { sessionId, text }
 - `POST /v1/knowledge/import`
 - `GET /v1/knowledge`
 - `GET /v1/knowledge/search?q=`
+- Agent 入库用 `doc_ingest`，检索用 `knowledge_search`（命中经 `tool/result` 进 session）。不自动 RAG。
 
 插件、通道与模型：
 
@@ -281,7 +282,7 @@ v1 内置通道：desktop、cli、webhook、telegram。ACP 作为同一接口上
 
 1. Kernel + session + loop + `ctx.models` + `models-chat` + fs/grep/shell + host + CLI — 一轮编程对话。当时 host 手工 `register`（已交付）。
 1.5. **插件组装** — yml 真正加载、`apply` / `effect` / `require`、loop 作为插件、`tools/pre-execute`。host/CLI 不再手工 register。见 [插件组装设计](2026-08-17-flintloom-plugin-composition-design.md)。
-2. 桌面工作台 + 预览 + DocForge 解析（已交付的块保持语义）；个人知识库 + `doc_ingest`（未做，**从出生就是插件**）。
+2. 桌面工作台 + 预览 + DocForge 解析（已交付，见 [文件预览设计](2026-08-17-flintloom-files-preview-design.md)）；个人知识库 + `doc_ingest`（**从出生就是插件**，见 [知识库设计](2026-08-17-flintloom-knowledge-design.md)）。
 3. A2UI + 信息图 + 其余 DocForge 工具（转换/生成/编辑/对比/摘要）— 均为插件，不改 host 组装。
 4. Webhook + Telegram 通道 + `flint plugin add`（安装器：拷 bundle、在 yml 加一行；组装机制已在 1.5 存在）。
 
