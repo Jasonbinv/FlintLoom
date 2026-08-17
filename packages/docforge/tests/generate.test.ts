@@ -1,9 +1,20 @@
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { parse } from "../src/parse.ts";
 import {
   buildDocument,
   copyMarkdown,
   formatFromOutRelPath,
+  generateDocument,
 } from "../src/generate.ts";
+
+const helloMd = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "fixtures/hello.md"),
+  "utf8",
+);
 
 describe("formatFromOutRelPath", () => {
   it("lowercases and rejects markdown htm", () => {
@@ -42,4 +53,39 @@ describe("copyMarkdown", () => {
     expect(copyMarkdown("a")).toBe("a\n");
     expect(copyMarkdown("a\n")).toBe("a\n");
   });
+});
+
+it("pdf and docx round-trip Hello and 发展 through parse", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "flintloom-gen-"));
+  const source = join(dir, "hello.md");
+  writeFileSync(source, helloMd);
+  const pdfPath = join(dir, "hello.pdf");
+  const docxPath = join(dir, "hello.docx");
+  await generateDocument(source, pdfPath);
+  await generateDocument(source, docxPath);
+  expect(await parse(pdfPath)).toContain("Hello");
+  expect(await parse(pdfPath)).toContain("发展");
+  expect(await parse(docxPath)).toContain("Hello");
+  expect(await parse(docxPath)).toContain("发展");
+});
+
+it("missing fontPath is unreadable and leaves out unchanged", async () => {
+  await expect(
+    buildDocument("pdf", "# Hello", { fontPath: join(tmpdir(), "no-such-font.otf") }),
+  ).rejects.toThrow(/unreadable/);
+  const dir = mkdtempSync(join(tmpdir(), "flintloom-gen-old-"));
+  const out = join(dir, "old.pdf");
+  writeFileSync(out, "OLD");
+  await expect(generateDocument(dir, out)).rejects.toThrow(/unreadable/);
+  expect(readFileSync(out, "utf8")).toBe("OLD");
+});
+
+it("rejects non-md source and huge files before parsing as utf8", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "flintloom-gen-bad-"));
+  const docx = join(dir, "x.docx");
+  writeFileSync(docx, "not-md");
+  await expect(generateDocument(docx, join(dir, "x.pdf"))).rejects.toThrow(/bad source/);
+  const huge = join(dir, "huge.md");
+  writeFileSync(huge, Buffer.alloc(800_001, 0x61));
+  await expect(generateDocument(huge, join(dir, "huge.pdf"))).rejects.toThrow(/too large/);
 });

@@ -19,7 +19,9 @@ export {
   GENERATE_MAX_BYTES,
   GENERATE_MAX_CHARS,
   buildDocument,
+  defaultFontPath,
   formatFromOutRelPath,
+  generateDocument,
   parseBlocks,
 } from "./generate.ts";
 export { createDocProbeTool, createDocParseTool, createDocIngestTool };
