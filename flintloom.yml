@@ -1,5 +1,9 @@
 # FlintLoom plugin assembly — one row per plugin bundle.
 plugins:
+  - id: models
+    name: "@flintloom/models"
+  - id: tools
+    name: "@flintloom/tools"
   - id: session
     name: "@flintloom/session"
   - id: models-chat
@@ -10,3 +14,13 @@ plugins:
     name: "@flintloom/grep"
   - id: shell
     name: "@flintloom/shell"
+  - id: knowledge
+    name: "@flintloom/knowledge"
+  - id: docforge
+    name: "@flintloom/docforge"
+  - id: infographic
+    name: "@flintloom/infographic"
+  - id: a2ui
+    name: "@flintloom/a2ui"
+  - id: loop
+    name: "@flintloom/loop"

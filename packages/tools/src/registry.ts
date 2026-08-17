@@ -1,10 +1,12 @@
-import type { Disposer } from "@flintloom/kernel";
-import type { ModelRegistry } from "@flintloom/models";
+import type { Context, Disposer } from "@flintloom/kernel";
 import type { ToolDefinition, ToolExec } from "./types.ts";
+import { TOOLS_PRE_EXECUTE } from "./types.ts";
 import { resolveInside } from "./workspace.ts";
 
 export class ToolRegistry {
   readonly #tools = new Map<string, ToolDefinition>();
+
+  constructor(private readonly ctx: Context) {}
 
   register(def: ToolDefinition): Disposer {
     this.#tools.set(def.name, def);
@@ -29,7 +31,6 @@ export class ToolRegistry {
     name: string,
     args: Record<string, unknown>,
     exec: ToolExec,
-    models: ModelRegistry,
   ): Promise<string> {
     const def = this.#tools.get(name);
     if (def === undefined) {
@@ -40,27 +41,16 @@ export class ToolRegistry {
       resolveInside(exec.workspaceRoot, args.path);
     }
 
-    const guard = models.resolveGuard();
-    if (guard !== undefined) {
-      const decision = await guard.gate(
-        {
-          tool: name,
-          args,
-          workspaceRoot: exec.workspaceRoot,
-          channel: exec.channel,
-        },
-        exec.signal,
-      );
-
-      if (decision === "deny") {
-        return `guard denied: ${name}`;
-      }
-
-      if (decision === "ask") {
-        return `guard denied: ${name} (ask not supported in slice 1)`;
-      }
-    }
-
-    return def.execute(args, exec);
+    return this.ctx.waterfall(
+      TOOLS_PRE_EXECUTE,
+      {
+        tool: name,
+        args,
+        workspaceRoot: exec.workspaceRoot,
+        channel: exec.channel,
+        signal: exec.signal,
+      },
+      () => def.execute(args, exec),
+    );
   }
 }

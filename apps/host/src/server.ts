@@ -1,72 +1,109 @@
 import { existsSync, readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { join } from "node:path";
-import { createFsTool } from "@flintloom/fs";
-import { createGrepTool } from "@flintloom/grep";
-import { Context, loadConfig } from "@flintloom/kernel";
-import { runTurn } from "@flintloom/loop";
-import { ModelRegistry } from "@flintloom/models";
-import { createOpenAiCompatChat } from "@flintloom/models-chat";
-import { Session } from "@flintloom/session";
-import { createShellTool } from "@flintloom/shell";
-import { ToolRegistry } from "@flintloom/tools";
+import { applyConfig, Context, loadConfig } from "@flintloom/kernel";
+import type { LoopService, RunTurnResult } from "@flintloom/loop";
+import type { ModelRegistry } from "@flintloom/models";
+import type { Session, SessionEvent, SessionStore } from "@flintloom/session";
+import { WorkspaceEscapeError } from "@flintloom/tools";
+import { cancelWaitingTurn, handleTurnActions, sessionHasWaitingTurn } from "./a2ui.ts";
+import {
+  listWorkspaceFiles,
+  normalizeRelPath,
+  previewWorkspaceFile,
+} from "./files.ts";
+import { handleKnowledgeRequest } from "./knowledge.ts";
 import { loadOrCreateToken, readCredentials } from "./token.ts";
 
-export type Runtime = {
-  ctx: Context;
-  sessions: Map<string, Session>;
-  models: ModelRegistry;
-  tools: ToolRegistry;
-};
+export type Runtime = { ctx: Context };
 
-function resolveChatApiKey(homeDir: string): string | undefined {
-  const envKey = process.env.FLINTLOOM_API_KEY;
-  if (typeof envKey === "string" && envKey.length > 0) {
-    return envKey;
+function readDotEnv(filePath: string): Record<string, string> {
+  if (!existsSync(filePath)) {
+    return {};
   }
-  const credKey = readCredentials(homeDir).chatApiKey;
-  if (typeof credKey === "string" && credKey.length > 0) {
-    return credKey;
+  const result: Record<string, string> = {};
+  for (const rawLine of readFileSync(filePath, "utf8").split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (line.length === 0 || line.startsWith("#")) {
+      continue;
+    }
+    const eq = line.indexOf("=");
+    if (eq <= 0) {
+      continue;
+    }
+    const key = line.slice(0, eq).trim();
+    let value = line.slice(eq + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    result[key] = value;
+  }
+  return result;
+}
+
+function firstNonEmpty(...values: (string | undefined)[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.length > 0) {
+      return value;
+    }
   }
   return undefined;
 }
 
-export function createRuntime(workspaceRoot: string, homeDir: string): Runtime {
-  const ctx = new Context();
-  const sessions = new Map<string, Session>();
-  const models = new ModelRegistry();
-  const tools = new ToolRegistry();
-
-  tools.register(createFsTool());
-  tools.register(createGrepTool());
-  tools.register(createShellTool());
-
-  const ymlPath = join(workspaceRoot, "flintloom.yml");
-  if (existsSync(ymlPath)) {
-    loadConfig(readFileSync(ymlPath, "utf8"));
-  }
-
-  const apiKey = resolveChatApiKey(homeDir);
-  if (apiKey !== undefined) {
-    models.registerChat(
-      "default",
-      createOpenAiCompatChat({
-        baseUrl: process.env.FLINTLOOM_BASE_URL ?? "https://api.deepseek.com/v1",
-        apiKey,
-        model: process.env.FLINTLOOM_CHAT_MODEL ?? "deepseek-chat",
-      }),
-    );
-    models.setDefault("chat", "default");
-  }
-
-  ctx.provide("sessions", sessions);
-  ctx.provide("models", models);
-  ctx.provide("tools", tools);
-
-  return { ctx, sessions, models, tools };
+function resolveChatApiKey(
+  homeDir: string,
+  fileEnv: Record<string, string>,
+): string | undefined {
+  const credKey = readCredentials(homeDir).chatApiKey;
+  return firstNonEmpty(
+    process.env.FLINTLOOM_API_KEY,
+    fileEnv.FLINTLOOM_API_KEY,
+    typeof credKey === "string" ? credKey : undefined,
+  );
 }
 
-function formatHostError(err: unknown, homeDir: string): string {
+export async function createRuntime(
+  workspaceRoot: string,
+  homeDir: string,
+): Promise<Runtime> {
+  const ymlPath = join(workspaceRoot, "flintloom.yml");
+  if (!existsSync(ymlPath)) {
+    throw new Error("plugins");
+  }
+  const config = loadConfig(readFileSync(ymlPath, "utf8"));
+  const fileEnv = readDotEnv(join(workspaceRoot, ".env"));
+  const apiKey = resolveChatApiKey(homeDir, fileEnv);
+  const runtimeConfigById: Record<string, Record<string, unknown>> = {};
+  if (apiKey !== undefined) {
+    runtimeConfigById["models-chat"] = {
+      apiKey,
+      baseUrl:
+        firstNonEmpty(process.env.FLINTLOOM_BASE_URL, fileEnv.FLINTLOOM_BASE_URL) ??
+        "https://api.deepseek.com/v1",
+      model:
+        firstNonEmpty(
+          process.env.FLINTLOOM_CHAT_MODEL,
+          fileEnv.FLINTLOOM_CHAT_MODEL,
+        ) ?? "deepseek-chat",
+    };
+  }
+  runtimeConfigById.knowledge = {
+    dbPath: join(homeDir, ".flintloom", "knowledge.sqlite"),
+  };
+
+  const ctx = new Context();
+  await applyConfig(ctx, config, { runtimeConfigById });
+  return { ctx };
+}
+
+function formatHostError(
+  err: unknown,
+  homeDir: string,
+  workspaceRoot?: string,
+): string {
   let message = err instanceof Error ? err.message : String(err);
   if (message.length === 0) {
     message = "internal error";
@@ -75,6 +112,12 @@ function formatHostError(err: unknown, homeDir: string): string {
   const envKey = process.env.FLINTLOOM_API_KEY;
   if (typeof envKey === "string" && envKey.length > 0) {
     secrets.push(envKey);
+  }
+  if (workspaceRoot !== undefined) {
+    const fileKey = readDotEnv(join(workspaceRoot, ".env")).FLINTLOOM_API_KEY;
+    if (typeof fileKey === "string" && fileKey.length > 0) {
+      secrets.push(fileKey);
+    }
   }
   const credKey = readCredentials(homeDir).chatApiKey;
   if (typeof credKey === "string" && credKey.length > 0) {
@@ -100,6 +143,102 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
 
 function writeSse(res: ServerResponse, data: unknown): void {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+export async function streamLoopResult(
+  req: IncomingMessage,
+  res: ServerResponse,
+  session: Session,
+  controllers: Map<string, AbortController>,
+  turns: Map<string, Session>,
+  work: (args: {
+    signal: AbortSignal;
+    onEvent: (event: SessionEvent) => void;
+  }) => Promise<RunTurnResult>,
+  knownTurnId?: string,
+): Promise<void> {
+  const controller = new AbortController();
+  const onClose = () => {
+    controller.abort();
+  };
+  let boundTurnId = knownTurnId;
+
+  try {
+    if (knownTurnId !== undefined) {
+      if (controllers.has(knownTurnId)) {
+        send(res, 409);
+        return;
+      }
+      turns.set(knownTurnId, session);
+      controllers.set(knownTurnId, controller);
+    }
+
+    req.on("close", onClose);
+
+    const ensureSse = (): void => {
+      if (!res.headersSent) {
+        res.writeHead(200, { "Content-Type": "text/event-stream" });
+      }
+    };
+
+    const result = await work({
+      signal: controller.signal,
+      onEvent: (event) => {
+        if (event.type === "turn/start") {
+          boundTurnId = event.turnId;
+          turns.set(event.turnId, session);
+          if (controllers.get(event.turnId) === undefined) {
+            controllers.set(event.turnId, controller);
+          }
+        }
+        if (event.type === "turn/end") {
+          turns.delete(event.turnId);
+          if (controllers.get(event.turnId) === controller) {
+            controllers.delete(event.turnId);
+          }
+        }
+        ensureSse();
+        writeSse(res, event);
+      },
+    });
+
+    if (result.status === "awaiting_action") {
+      req.off("close", onClose);
+    } else {
+      turns.delete(result.turnId);
+    }
+    ensureSse();
+    writeSse(res, { type: "end", status: result.status });
+    res.end();
+  } catch (err) {
+    const waiting = boundTurnId !== undefined && session.isWaiting(boundTurnId);
+    const notWaiting = err instanceof Error && err.message.includes("not waiting");
+    if (!res.headersSent) {
+      if (notWaiting) {
+        send(res, 409);
+      } else {
+        send(res, 500);
+      }
+      return;
+    }
+    if (waiting) {
+      writeSse(res, {
+        type: "model/error",
+        kind: "chat",
+        message: err instanceof Error ? err.message : String(err),
+      });
+      writeSse(res, { type: "end", status: "awaiting_action" });
+      res.end();
+      return;
+    }
+    writeSse(res, { type: "end", status: "failed" });
+    res.end();
+  } finally {
+    req.off("close", onClose);
+    if (boundTurnId !== undefined && controllers.get(boundTurnId) === controller) {
+      controllers.delete(boundTurnId);
+    }
+  }
 }
 
 async function readBody(req: IncomingMessage): Promise<string> {
@@ -144,23 +283,106 @@ async function handleRequest(
     workspaceRoot: string;
     runtime: Runtime;
     controllers: Map<string, AbortController>;
+    turns: Map<string, Session>;
   },
 ): Promise<void> {
-  const pathname = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
+  const url = new URL(req.url ?? "/", "http://127.0.0.1");
+  const pathname = url.pathname;
 
   if (pathname.startsWith("/v1/") && !isAuthorized(req, opts.token)) {
     send(res, 401);
     return;
   }
 
+  if (
+    await handleKnowledgeRequest(req, res, {
+      pathname,
+      url,
+      workspaceRoot: opts.workspaceRoot,
+      ctx: opts.runtime.ctx,
+    })
+  ) {
+    return;
+  }
+
+  if (
+    await handleTurnActions(req, res, {
+      pathname,
+      ctx: opts.runtime.ctx,
+      workspaceRoot: opts.workspaceRoot,
+      turns: opts.turns,
+      streamLoopResult: (sseReq, sseRes, session, work, turnId) =>
+        streamLoopResult(
+          sseReq,
+          sseRes,
+          session,
+          opts.controllers,
+          opts.turns,
+          work,
+          turnId,
+        ),
+      controllers: opts.controllers,
+    })
+  ) {
+    return;
+  }
+
   if (req.method === "GET" && pathname === "/v1/models") {
-    sendJson(res, 200, opts.runtime.models.snapshot());
+    sendJson(res, 200, opts.runtime.ctx.require<ModelRegistry>("models").snapshot());
+    return;
+  }
+
+  if (req.method === "GET" && pathname === "/v1/files/preview") {
+    const rel = normalizeRelPath(url.searchParams.get("path"));
+    if (rel === undefined) {
+      send(res, 400);
+      return;
+    }
+    try {
+      const result = await previewWorkspaceFile(opts.workspaceRoot, rel);
+      if (result === "not_found") {
+        send(res, 404);
+        return;
+      }
+      sendJson(res, 200, result);
+    } catch (err) {
+      if (err instanceof WorkspaceEscapeError) {
+        send(res, 400, err.message);
+        return;
+      }
+      throw err;
+    }
+    return;
+  }
+
+  if (req.method === "GET" && pathname === "/v1/files") {
+    const rel = normalizeRelPath(url.searchParams.get("path")) ?? ".";
+    try {
+      const result = await listWorkspaceFiles(opts.workspaceRoot, rel);
+      if (result === "hidden" || result === "not_found") {
+        send(res, 404);
+        return;
+      }
+      if (result === "not_directory") {
+        send(res, 400, "failed: not a directory");
+        return;
+      }
+      sendJson(res, 200, result);
+    } catch (err) {
+      if (err instanceof WorkspaceEscapeError) {
+        send(res, 400, err.message);
+        return;
+      }
+      throw err;
+    }
     return;
   }
 
   const sessionMatch = /^\/v1\/sessions\/([^/]+)$/.exec(pathname);
   if (req.method === "GET" && sessionMatch) {
-    const session = opts.runtime.sessions.get(decodeURIComponent(sessionMatch[1]!));
+    const session = opts.runtime.ctx
+      .require<SessionStore>("sessions")
+      .get(decodeURIComponent(sessionMatch[1]!));
     if (session === undefined) {
       send(res, 404);
       return;
@@ -171,12 +393,20 @@ async function handleRequest(
 
   const cancelMatch = /^\/v1\/turns\/([^/]+)\/cancel$/.exec(pathname);
   if (req.method === "POST" && cancelMatch) {
-    const controller = opts.controllers.get(decodeURIComponent(cancelMatch[1]!));
-    if (controller === undefined) {
+    const turnId = decodeURIComponent(cancelMatch[1]!);
+    const controller = opts.controllers.get(turnId);
+    if (controller !== undefined) {
+      controller.abort();
+      send(res, 200);
+      return;
+    }
+    const session = opts.turns.get(turnId);
+    if (session === undefined) {
       send(res, 404);
       return;
     }
-    controller.abort();
+    cancelWaitingTurn(session, turnId);
+    opts.turns.delete(turnId);
     send(res, 200);
     return;
   }
@@ -188,44 +418,26 @@ async function handleRequest(
       return;
     }
 
-    let session = opts.runtime.sessions.get(body.sessionId);
-    if (session === undefined) {
-      session = new Session(body.sessionId);
-      opts.runtime.sessions.set(body.sessionId, session);
+    const session = opts.runtime.ctx
+      .require<SessionStore>("sessions")
+      .getOrCreate(body.sessionId);
+
+    if (sessionHasWaitingTurn(session)) {
+      send(res, 409);
+      return;
     }
 
-    const controller = new AbortController();
-    req.on("close", () => {
-      controller.abort();
-    });
-
-    res.writeHead(200, { "Content-Type": "text/event-stream" });
-
-    try {
-      const result = await runTurn({
+    await streamLoopResult(req, res, session, opts.controllers, opts.turns, ({ signal, onEvent }) =>
+      opts.runtime.ctx.require<LoopService>("loop").runTurn({
+        ctx: opts.runtime.ctx,
         session,
         text: body.text,
-        models: opts.runtime.models,
-        tools: opts.runtime.tools,
         workspaceRoot: opts.workspaceRoot,
         channel: "host",
-        signal: controller.signal,
-        onEvent: (event) => {
-          if (event.type === "turn/start") {
-            opts.controllers.set(event.turnId, controller);
-          }
-          writeSse(res, event);
-        },
-      });
-
-      opts.controllers.set(result.turnId, controller);
-      writeSse(res, { type: "end", status: result.status });
-      res.end();
-      opts.controllers.delete(result.turnId);
-    } catch {
-      writeSse(res, { type: "end", status: "failed" });
-      res.end();
-    }
+        signal,
+        onEvent,
+      }),
+    );
     return;
   }
 
@@ -238,8 +450,9 @@ export async function startHost(opts: {
   port?: number;
 }): Promise<{ url: string; close: () => Promise<void> }> {
   const token = loadOrCreateToken(opts.homeDir);
-  const runtime = createRuntime(opts.workspaceRoot, opts.homeDir);
+  const runtime = await createRuntime(opts.workspaceRoot, opts.homeDir);
   const controllers = new Map<string, AbortController>();
+  const turns = new Map<string, Session>();
 
   const server = createServer((req, res) => {
     void handleRequest(req, res, {
@@ -247,10 +460,11 @@ export async function startHost(opts: {
       workspaceRoot: opts.workspaceRoot,
       runtime,
       controllers,
+      turns,
     }).catch((err: unknown) => {
       if (!res.headersSent) {
         res.writeHead(500, { "Content-Type": "text/plain" });
-        res.end(formatHostError(err, opts.homeDir));
+        res.end(formatHostError(err, opts.homeDir, opts.workspaceRoot));
         return;
       }
       if (!res.writableEnded) {

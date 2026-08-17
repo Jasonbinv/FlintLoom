@@ -161,4 +161,37 @@ describe("Session", () => {
       { role: "tool", content: "b", toolCallId: "call-b", name: "grep" },
     ]);
   });
+
+  it("isWaiting and deriveMessages for a2ui action", () => {
+    const session = new Session("s-a2ui");
+    session.append({ type: "turn/start", turnId: "t1" });
+    session.append({
+      type: "a2ui/surface",
+      turnId: "t1",
+      surfaceId: "main",
+      wait: true,
+      messages: [{ version: "v0.9", createSurface: { surfaceId: "main", catalogId: "flintloom:a2ui:core" } }],
+    });
+    expect(session.isWaiting("t1")).toBe(true);
+    expect(session.deriveMessages()).toEqual([]);
+    session.append({
+      type: "a2ui/action",
+      turnId: "t1",
+      surfaceId: "main",
+      name: "confirm",
+    });
+    expect(session.isWaiting("t1")).toBe(false);
+    expect(session.deriveMessages()).toEqual([
+      {
+        role: "user",
+        content: JSON.stringify({
+          type: "a2ui/action",
+          surfaceId: "main",
+          name: "confirm",
+        }),
+      },
+    ]);
+    session.append({ type: "turn/end", turnId: "t1", status: "ok" });
+    expect(session.isWaiting("t1")).toBe(false);
+  });
 });

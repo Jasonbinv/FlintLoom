@@ -1,0 +1,15 @@
+{
+  "name": "@flintloom/knowledge",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@flintloom/kernel": "workspace:*",
+    "@flintloom/tools": "workspace:*"
+  },
+  "devDependencies": {
+    "@flintloom/models": "workspace:*"
+  }
+}

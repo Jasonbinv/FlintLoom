@@ -1,0 +1,33 @@
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+export const ASSEMBLY = `plugins:
+  - id: models
+    name: "@flintloom/models"
+  - id: tools
+    name: "@flintloom/tools"
+  - id: session
+    name: "@flintloom/session"
+  - id: models-chat
+    name: "@flintloom/models-chat"
+  - id: fs
+    name: "@flintloom/fs"
+  - id: grep
+    name: "@flintloom/grep"
+  - id: shell
+    name: "@flintloom/shell"
+  - id: knowledge
+    name: "@flintloom/knowledge"
+  - id: docforge
+    name: "@flintloom/docforge"
+  - id: infographic
+    name: "@flintloom/infographic"
+  - id: a2ui
+    name: "@flintloom/a2ui"
+  - id: loop
+    name: "@flintloom/loop"
+`;
+
+export function writeAssembly(workspaceRoot: string): void {
+  writeFileSync(join(workspaceRoot, "flintloom.yml"), ASSEMBLY);
+}

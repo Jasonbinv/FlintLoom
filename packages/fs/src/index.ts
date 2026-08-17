@@ -1,6 +1,11 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { resolveInside, type ToolDefinition } from "@flintloom/tools";
+import type { Context, FlintPlugin } from "@flintloom/kernel";
+import {
+  resolveInside,
+  type ToolDefinition,
+  type ToolRegistry,
+} from "@flintloom/tools";
 
 const READ_LIMIT = 200_000;
 
@@ -48,3 +53,13 @@ export function createFsTool(): ToolDefinition {
     },
   };
 }
+
+const plugin: FlintPlugin = {
+  name: "@flintloom/fs",
+  apply(ctx: Context) {
+    const tools = ctx.require<ToolRegistry>("tools");
+    ctx.effect(tools.register(createFsTool()));
+  },
+};
+
+export default plugin;

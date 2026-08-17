@@ -6,11 +6,13 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@flintloom/kernel": "workspace:*",
     "@flintloom/models": "workspace:*",
     "@flintloom/session": "workspace:*",
     "@flintloom/tools": "workspace:*"
   },
   "devDependencies": {
+    "@flintloom/a2ui": "workspace:*",
     "@flintloom/fs": "workspace:*"
   }
 }

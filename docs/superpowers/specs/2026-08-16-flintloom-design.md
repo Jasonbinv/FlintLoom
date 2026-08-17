@@ -53,7 +53,9 @@ Flint 和 Loom 同属一个 TypeScript/Node 进程。桌面只连接 `127.0.0.1`
 
 模型不是 loop 里写死的「一个 LLM」，而是 Loom 上的 **`ctx.models` 注册表**：每一种能力是一个 kind，每种 kind 可以挂多个 provider（云 API、本地、兼容网关）。真正的 Agent 会说话、会看、会听、会画、会检索，也会在动手前被看管；这些都是模型，不是另一套系统。
 
-组装文件：`flintloom.yml`。每个插件导出 `apply(ctx)` 和 dispose。卸载时注册一并撤销。学 Cordis 的可逆 effect，不依赖 `@deepseek-ai/cordis`。
+组装文件：`flintloom.yml`，开机按行 **真正** `import` 并 `ctx.plugin`。每个 Loom 包 default export `apply(ctx)`；登记必须走 `ctx.effect` / `provide` / `hook`，卸载时一并撤销。yml 从上到下即依赖顺序；`ctx.require(key)` 取不到则拒绝启动。学 Cordis 的可逆 effect，不依赖 `@deepseek-ai/cordis`，不 vendor Cordis。
+
+kernel 另提供一条 waterfall：`tools/pre-execute`。工作区确定性闸门永远在 waterfall 之前；`guard` 是 `tools` 插件登记的第一条监听，不能放宽越界路径。host / CLI 只 boot 然后 `ctx.require("loop").runTurn`，不手工 `register` 工具或 chat provider。详情见 [插件组装刀](2026-08-17-flintloom-plugin-composition-design.md)。
 
 ## 4. 模型层
 
@@ -87,7 +89,7 @@ v1 **必须能跑** 的只有 `chat`（OpenAI 兼容流式 HTTP，含 tool call�
 
 ### 4.3 Guard：保护工具执行
 
-工作区路径、超时、输出上限是 **确定性闸门，永远先跑，guard 不能放宽**。
+工作区路径、超时、输出上限是 **确定性闸门，永远先跑，guard 不能放宽**。闸门之后走 `tools/pre-execute` waterfall；`guard.gate` 是该事件上的监听，不是写死在 loop 里的分支。
 
 `guard` 是可选的专用模型，用来 **维护和保护工具执行**，不是聊天模型兼职：
 
@@ -100,14 +102,16 @@ Guard **不是** 企业审批流，也 **不是** 用同一个 chat 模型再问
 
 ## 5. 包划分
 
+每个 Loom 包（下表 `packages/*`，不含 `apps/*`）必须 default export `{ name, apply(ctx) }`。host / CLI 只负责 boot 与 I/O，不 import 工具工厂。
+
 | 包 | 职责 |
 |---|---|
-| `packages/kernel` | `ctx`、插件加载/卸载、`flintloom.yml` |
-| `packages/session` | 只追加的 session log；模型历史从 log 投影 |
-| `packages/loop` | turn / step 驱动；向 `ctx.models` 要 `chat`，不直连厂商 SDK |
-| `packages/models` | 模型注册表：kind、default、凭证引用、解析失败即报错 |
+| `packages/kernel` | `ctx`（provide / require / effect / hook / waterfall）、按 yml 加载/卸载 |
+| `packages/session` | 只追加的 session log；`ctx.sessions`；模型历史从 log 投影 |
+| `packages/loop` | `ctx.loop.runTurn`；向 `ctx.models` 要 `chat`，不直连厂商 SDK |
+| `packages/models` | `ctx.models` 注册表：kind、default、凭证引用、解析失败即报错 |
 | `packages/models-chat` | v1：OpenAI 兼容对话 / 工具调用 / 流式 HTTP |
-| `packages/tools` | 工具注册与执行闸门；先确定性策略，再可选 `guard` |
+| `packages/tools` | `ctx.tools`；确定性闸门 + `tools/pre-execute`（含可选 `guard` 监听） |
 | `packages/fs`、`grep`、`shell` | 工作区沙箱内的编程工具 |
 | `packages/skill` | 本地 skill 目录 + `skill` 工具 |
 | `packages/mcp` | 配置里一行一个 MCP server；工具以 `mcp__<server>__<name>` 登记到 `ctx.tools` |
@@ -139,7 +143,7 @@ POST /v1/turns  { sessionId, text }
   向 ctx.models 解析 kind=chat 的默认模型并流式请求
     chunk            → SSE
     a2ui_emit        → 校验 → 写入 log 的 a2ui.surface → SSE
-    其它 tool_call   → 工作区确定性闸门 → 可选 guard.gate → 执行
+    其它 tool_call   → 工作区确定性闸门 → tools/pre-execute（含可选 guard.gate）→ 执行
                      → 可选 guard.steward → tool/result 写入 log
     若还欠模型一步   → 下一 step
   追加 assistant/message
@@ -172,6 +176,7 @@ POST /v1/turns  { sessionId, text }
 - `POST /v1/knowledge/import`
 - `GET /v1/knowledge`
 - `GET /v1/knowledge/search?q=`
+- Agent 入库用 `doc_ingest`，检索用 `knowledge_search`（命中经 `tool/result` 进 session）。不自动 RAG。
 
 插件、通道与模型：
 
@@ -181,13 +186,13 @@ POST /v1/turns  { sessionId, text }
 
 ## 8. A2UI 与信息图
 
-A2UI 使用公开的 v0.9 协议。类型和 React host 在本仓编写（允许官方 `@a2ui/react`；不允许搬 dataagent 的 `renderer/src/a2ui`）。
+A2UI 使用公开的 v0.9 协议。类型和 React host 在本仓编写（允许官方 `@a2ui/react`；不允许搬 dataagent 的 `renderer/src/a2ui`）。本片落地见 [A2UI 交互核心设计](2026-08-17-flintloom-a2ui-design.md)：本仓子集 host、catalogId `flintloom:a2ui:core`、同一 turn 新 SSE 续跑。
 
-v1 组件目录：text、markdown、button、choice、data table、chart、infographic。
+v1 组件目录：text、markdown、button、choice、data table、chart、infographic。交互核心刀：Column / Row + Text / Markdown / Button / ChoicePicker。table / chart / infographic 后续。
 
-`a2ui_emit` 校验 envelope。非法 JSON 作为工具错误返回给模型。用户操作会继续这一轮（不是只审计不执行）。
+`a2ui_emit` 校验 envelope。非法 JSON 作为工具错误返回给模型。用户操作会继续这一轮（不是只审计不执行）：`POST /v1/turns/:id/actions` + `continueTurn`，不挂起第一轮 HTTP。
 
-信息图以工作区文件存在（`*.infographic.json`）。工具：`infographic_get`、`infographic_patch`。工作台预览和 A2UI 的 infographic 组件共用一个本地渲染器。禁止拉取远程 icon/CDN。SVG 必须消毒。超大 payload 直接拒绝。
+信息图以工作区文件存在（`*.infographic.json`）。工具：`infographic_get`、`infographic_patch`。工作台预览和 A2UI 的 infographic 组件共用一个本地渲染器。禁止拉取远程 icon/CDN。SVG 必须消毒。超大 payload 直接拒绝。本片落地见 [信息图盒线核心设计](2026-08-17-flintloom-infographic-design.md)：盒线图、操作列表 patch、Files 预览 `kind: "svg"`；A2UI Infographic 组件仍留后续。
 
 ## 9. Channel
 
@@ -207,7 +212,7 @@ v1 内置通道：desktop、cli、webhook、telegram。ACP 作为同一接口上
 | `doc_parse` | pdf / docx / pptx / xlsx / html / md → 结构化 markdown |
 | `doc_ingest` | 解析后写入个人知识库 |
 | `doc_convert` | 上述格式互转；说明保真损失 |
-| `doc_generate` | markdown/数据 → md / docx / pdf / html |
+| `doc_generate` | 工作区 markdown → md / html / docx / pdf（见 [生成设计](2026-08-17-flintloom-docforge-generate-design.md)）。从结构化数据生成仍留后续 |
 | `doc_edit` | 对工作区文档打补丁 |
 | `doc_compare` | 两份文档 diff |
 | `doc_summarize` | 基于 parse 结果 + 模型；摘要写入 log，全文不塞进下一次 prompt |
@@ -218,7 +223,8 @@ v1 内置通道：desktop、cli、webhook、telegram。ACP 作为同一接口上
 
 | 失败 | 行为 |
 |---|---|
-| `flintloom.yml` 损坏、插件加载失败、未配置 `chat` | 进程拒绝启动 |
+| 工作区没有 / 损坏 `flintloom.yml`、插件 `import`/`apply` 失败、`id` 重复、`require` 缺失 | 进程拒绝启动 |
+| 未配置 `chat` | 进程允许启动；该 turn 失败并写 `model/error` |
 | 某 step 需要的 kind 未配置（如 asr） | 该次调用失败并写 log；不拿 `chat` 冒充 |
 | `chat` HTTP 错误 | SSE 发 `error`，turn 标 `failed`，log 记一条失败事件；同一 turn 不静默换模型 |
 | `guard` 返回 `deny` | 不执行工具；工具错误回给 `chat`；turn 继续 |
@@ -250,8 +256,9 @@ v1 内置通道：desktop、cli、webhook、telegram。ACP 作为同一接口上
 ## 14. 测试
 
 - loop 用假 `chat`：用户 → 读文件 → 回复。
+- yml 省略某工具插件则 schema 无该工具；dispose 后登记撤销。
 - 未配置的 kind 解析失败，且不得回退到 `chat`。
-- `guard.deny` 时工具进程未启动。
+- `guard.deny` 时工具进程未启动（闸门在 `tools/pre-execute` 之前仍拦截越界路径）。
 - 不变量：请求里每一段模型可见字符串都能从 session log 重建。
 - DocForge：md/docx/pdf 的解析与转换夹具（外加一份失败的二进制）。
 - A2UI：拒绝非法 envelope；接受带按钮的 surface，并在 action 后续跑。
@@ -271,11 +278,12 @@ v1 内置通道：desktop、cli、webhook、telegram。ACP 作为同一接口上
 
 ## 16. 实现顺序
 
-一个产品，四刀（每一刀结束时 `flint` 必须能跑）：
+一个产品，按此顺序（每一刀结束时 `flint` 必须能跑）：
 
-1. Kernel + session + loop + `ctx.models` + `models-chat` + fs/grep/shell + host + CLI — 一轮编程对话。`guard` 接口与假 provider 测试要在；真实 guard 模型可后配。
-2. 桌面工作台 + 预览 + 个人知识库 + DocForge 入库/解析。
-3. A2UI + 信息图 + 其余 DocForge 工具（转换/生成/编辑/对比/摘要）。
-4. Webhook + Telegram 通道 + `flint plugin add`。
+1. Kernel + session + loop + `ctx.models` + `models-chat` + fs/grep/shell + host + CLI — 一轮编程对话。当时 host 手工 `register`（已交付）。
+1.5. **插件组装** — yml 真正加载、`apply` / `effect` / `require`、loop 作为插件、`tools/pre-execute`。host/CLI 不再手工 register。见 [插件组装设计](2026-08-17-flintloom-plugin-composition-design.md)。
+2. 桌面工作台 + 预览 + DocForge 解析（已交付，见 [文件预览设计](2026-08-17-flintloom-files-preview-design.md)）；个人知识库 + `doc_ingest`（**从出生就是插件**，见 [知识库设计](2026-08-17-flintloom-knowledge-design.md)）。
+3. A2UI 交互核心（见 [A2UI 设计](2026-08-17-flintloom-a2ui-design.md)）+ 信息图（见 [信息图设计](2026-08-17-flintloom-infographic-design.md)）+ 其余 DocForge 工具（生成见 [生成设计](2026-08-17-flintloom-docforge-generate-design.md)；转换/编辑/对比/摘要仍待拆）— 均为插件，不改 host 组装。A2UI 核心与信息图 / 其余 DocForge 分开写计划。
+4. Webhook + Telegram 通道 + `flint plugin add`（安装器：拷 bundle、在 yml 加一行；组装机制已在 1.5 存在）。
 
-第一刀对应第一份实现计划。第 2–4 刀在同一份 spec 上继续拆计划。
+第 2–4 刀在同一份总 spec 上继续拆计划。新 Loom 包必须带 `apply`，禁止再往 `createRuntime` 里堆 `register`。
