@@ -20,6 +20,9 @@ importers:
       '@flintloom/host':
         specifier: workspace:*
         version: link:apps/host
+      '@flintloom/knowledge':
+        specifier: workspace:*
+        version: link:packages/knowledge
       '@flintloom/loop':
         specifier: workspace:*
         version: link:packages/loop
@@ -174,6 +177,19 @@ importers:
       yaml:
         specifier: ^2.7.0
         version: 2.9.0
+
+  packages/knowledge:
+    dependencies:
+      '@flintloom/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      '@flintloom/tools':
+        specifier: workspace:*
+        version: link:../tools
+    devDependencies:
+      '@flintloom/models':
+        specifier: workspace:*
+        version: link:../models
 
   packages/loop:
     dependencies:

@@ -17,6 +17,7 @@
     "@flintloom/fs": "workspace:*",
     "@flintloom/grep": "workspace:*",
     "@flintloom/host": "workspace:*",
+    "@flintloom/knowledge": "workspace:*",
     "@flintloom/loop": "workspace:*",
     "@flintloom/models": "workspace:*",
     "@flintloom/models-chat": "workspace:*",
