@@ -22,6 +22,46 @@ const DUP_USER_SSE =
   `data: {"type":"assistant/message","text":"hello"}\n\n` +
   `data: {"type":"end","status":"ok"}\n\n`;
 
+function confirmMessages(surfaceId = "main") {
+  return [
+    {
+      version: "v0.9" as const,
+      createSurface: { surfaceId, catalogId: "flintloom:a2ui:core" },
+    },
+    {
+      version: "v0.9" as const,
+      updateComponents: {
+        surfaceId,
+        components: [
+          { id: "root", component: "Column", children: ["title", "ok"] },
+          { id: "title", component: "Text", text: "Continue?" },
+          {
+            id: "ok",
+            component: "Button",
+            child: "ok-label",
+            action: { event: { name: "confirm" } },
+          },
+          { id: "ok-label", component: "Text", text: "OK" },
+        ],
+      },
+    },
+  ];
+}
+
+const ACTIONS_SSE =
+  `data: {"type":"assistant/message","text":"after-click"}\n\n` +
+  `data: {"type":"end","status":"ok"}\n\n`;
+
+const SURFACE_SSE =
+  `data: {"type":"turn/start","turnId":"t-wait"}\n\n` +
+  `data: ${JSON.stringify({
+    type: "a2ui/surface",
+    turnId: "t-wait",
+    surfaceId: "main",
+    wait: true,
+    messages: confirmMessages(),
+  })}\n\n` + `data: {"type":"end","status":"awaiting_action"}\n\n`;
+
 let root: Root | undefined;
 let container: HTMLDivElement | undefined;
 
@@ -35,6 +75,7 @@ function installFetch(opts: {
   models?: Response | Error;
   session?: Response | Error;
   turn?: Response | Error;
+  actions?: Response | Error;
   files?: Response | Error;
   preview?: Response | Error;
   knowledge?: Response | Error;
@@ -132,6 +173,16 @@ function installFetch(opts: {
     }
     if (url.includes("/cancel")) {
       return new Response(null, { status: 200 });
+    }
+    if (url.includes("/actions")) {
+      if (opts.actions instanceof Error) throw opts.actions;
+      return (
+        opts.actions ??
+        new Response(ACTIONS_SSE, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        })
+      );
     }
     if (url.includes("/v1/turns")) {
       if (opts.turn instanceof Error) throw opts.turn;
@@ -637,5 +688,64 @@ describe("App", () => {
 
     expect(document.body.textContent).toContain("FRESH-PREVIEW-TEXT");
     expect(document.body.textContent).not.toContain("STALE-PREVIEW-TEXT");
+  });
+
+  it("renders a2ui surface and waits with send disabled and cancel visible", async () => {
+    installFetch({
+      turn: new Response(SURFACE_SSE, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    });
+    await mountApp();
+    await typeAndSend("hi");
+    await waitForText("OK");
+    const okButton = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "OK",
+    );
+    expect(okButton).toBeTruthy();
+    const sendButton = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "发送",
+    );
+    expect(sendButton).toBeTruthy();
+    expect(sendButton!.disabled).toBe(true);
+    const cancelButton = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "取消",
+    );
+    expect(cancelButton).toBeTruthy();
+  });
+
+  it("posts confirm action to /actions with surfaceId main", async () => {
+    installFetch({
+      turn: new Response(SURFACE_SSE, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    });
+    await mountApp();
+    await typeAndSend("hi");
+    await waitForText("OK");
+    const okButton = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "OK",
+    );
+    if (!okButton) throw new Error("no OK button");
+    await act(async () => {
+      okButton.click();
+    });
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const actionCall = fetchMock.mock.calls.find(([input, init]) => {
+      const url = requestUrl(input as RequestInfo | URL);
+      return (
+        url.includes("/actions") &&
+        (init as RequestInit | undefined)?.method === "POST"
+      );
+    });
+    expect(actionCall).toBeTruthy();
+    const body = JSON.parse(String((actionCall![1] as RequestInit).body)) as {
+      name: string;
+      surfaceId: string;
+    };
+    expect(body.name).toBe("confirm");
+    expect(body.surfaceId).toBe("main");
   });
 });

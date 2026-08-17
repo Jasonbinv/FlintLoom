@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { cancelTurn, fetchModels, fetchSession, postTurn } from "./api.ts";
+import { A2uiSurface } from "./A2uiSurface.tsx";
+import { cancelTurn, fetchModels, fetchSession, postTurn, postTurnAction } from "./api.ts";
 import { FilePane } from "./FilePane.tsx";
 import { insertPath } from "./files.ts";
 import type { WorkbenchEvent } from "./types.ts";
@@ -12,7 +13,8 @@ type Bubble =
   | { id: string; kind: "assistant"; text: string }
   | { id: string; kind: "tool-call"; name: string; argsText: string }
   | { id: string; kind: "tool-result"; text: string }
-  | { id: string; kind: "error"; message: string };
+  | { id: string; kind: "error"; message: string }
+  | { id: string; kind: "a2ui"; surfaceId: string; messages: unknown[]; turnId: string };
 
 function sessionId(): string {
   let id = sessionStorage.getItem(SESSION_KEY);
@@ -43,9 +45,46 @@ function bubbleFromHistory(event: WorkbenchEvent, id: string): Bubble | undefine
     }
     case "model/error":
       return { id, kind: "error", message: event.message };
+    case "a2ui/surface":
+      return {
+        id,
+        kind: "a2ui",
+        surfaceId: event.surfaceId,
+        messages: event.messages,
+        turnId: event.turnId,
+      };
     default:
       return undefined;
   }
+}
+
+function waitingTurnId(events: WorkbenchEvent[]): string | undefined {
+  let turnId: string | undefined;
+  let ended = false;
+  let lastSurfaceWait = false;
+  let actionAfterSurface = false;
+
+  for (const event of events) {
+    if (event.type === "turn/start") {
+      turnId = event.turnId;
+      ended = false;
+      lastSurfaceWait = false;
+      actionAfterSurface = false;
+    } else if (event.type === "turn/end") {
+      ended = true;
+    } else if (event.type === "end") {
+      if (event.status !== "awaiting_action") ended = true;
+    } else if (event.type === "a2ui/surface") {
+      turnId = event.turnId;
+      lastSurfaceWait = event.wait;
+      actionAfterSurface = false;
+    } else if (event.type === "a2ui/action") {
+      actionAfterSurface = true;
+    }
+  }
+
+  if (!ended && lastSurfaceWait && !actionAfterSurface) return turnId;
+  return undefined;
 }
 
 export function App() {
@@ -59,8 +98,45 @@ export function App() {
   const [draft, setDraft] = useState("");
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [waitingAction, setWaitingAction] = useState(false);
 
   const allocId = () => String(++nextId.current);
+
+  function handleEvent(event: WorkbenchEvent) {
+    if (event.type === "user/message") return;
+    if (event.type === "turn/start") {
+      turnIdRef.current = event.turnId;
+      if (cancelWantedRef.current) void cancelTurn(event.turnId);
+      return;
+    }
+    if (event.type === "end") {
+      if (event.status === "awaiting_action") {
+        setWaitingAction(true);
+        setSending(false);
+      } else {
+        setWaitingAction(false);
+        setSending(false);
+      }
+      return;
+    }
+    if (event.type === "assistant/chunk") {
+      setDraft((current) => current + event.text);
+      return;
+    }
+    if (event.type === "assistant/message") {
+      setDraft("");
+      setBubbles((prev) => [
+        ...prev,
+        { id: allocId(), kind: "assistant", text: event.text },
+      ]);
+      return;
+    }
+    if (event.type === "a2ui/surface") {
+      turnIdRef.current = event.turnId;
+    }
+    const bubble = bubbleFromHistory(event, allocId());
+    if (bubble) setBubbles((prev) => [...prev, bubble]);
+  }
 
   useEffect(() => {
     const ac = new AbortController();
@@ -81,13 +157,18 @@ export function App() {
         if (bubble) loaded.push(bubble);
       }
       setBubbles(loaded);
+      const waiting = waitingTurnId(session.events);
+      if (waiting) {
+        setWaitingAction(true);
+        turnIdRef.current = waiting;
+      }
     });
     return () => ac.abort();
   }, []);
 
   async function send() {
     const text = input.trim();
-    if (!text || sending) return;
+    if (!text || sending || waitingAction) return;
     setInput("");
     setBubbles((prev) => [...prev, { id: allocId(), kind: "user", text }]);
     setSending(true);
@@ -95,32 +176,19 @@ export function App() {
     turnIdRef.current = undefined;
     cancelWantedRef.current = false;
     try {
-      await postTurn(sid.current, text, (event) => {
-        if (event.type === "user/message") return;
-        if (event.type === "turn/start") {
-          turnIdRef.current = event.turnId;
-          if (cancelWantedRef.current) void cancelTurn(event.turnId);
-          return;
-        }
-        if (event.type === "end") {
-          setSending(false);
-          return;
-        }
-        if (event.type === "assistant/chunk") {
-          setDraft((current) => current + event.text);
-          return;
-        }
-        if (event.type === "assistant/message") {
-          setDraft("");
-          setBubbles((prev) => [
-            ...prev,
-            { id: allocId(), kind: "assistant", text: event.text },
-          ]);
-          return;
-        }
-        const bubble = bubbleFromHistory(event, allocId());
-        if (bubble) setBubbles((prev) => [...prev, bubble]);
-      });
+      await postTurn(sid.current, text, handleEvent);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function submitAction(surfaceId: string, name: string, data?: unknown) {
+    const turnId = turnIdRef.current;
+    if (!turnId || sending) return;
+    setSending(true);
+    cancelWantedRef.current = false;
+    try {
+      await postTurnAction(turnId, { surfaceId, name, data }, handleEvent);
     } finally {
       setSending(false);
     }
@@ -129,6 +197,8 @@ export function App() {
   function onCancel() {
     cancelWantedRef.current = true;
     if (turnIdRef.current) void cancelTurn(turnIdRef.current);
+    setWaitingAction(false);
+    setSending(false);
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -161,6 +231,15 @@ export function App() {
                 {bubble.kind === "tool-call" &&
                   `${bubble.name} ${bubble.argsText}`}
                 {bubble.kind === "tool-result" && bubble.text}
+                {bubble.kind === "a2ui" && (
+                  <A2uiSurface
+                    messages={bubble.messages}
+                    interactive={waitingAction && bubble.turnId === turnIdRef.current}
+                    onAction={(name, data) => {
+                      void submitAction(bubble.surfaceId, name, data);
+                    }}
+                  />
+                )}
               </div>
             ))}
             {draft ? <div className="bubble assistant draft">{draft}</div> : null}
@@ -172,15 +251,18 @@ export function App() {
               onKeyDown={onKeyDown}
               rows={3}
             />
-            {sending ? (
+            <button
+              type="button"
+              disabled={sending || waitingAction || !input.trim()}
+              onClick={() => void send()}
+            >
+              发送
+            </button>
+            {waitingAction || sending ? (
               <button type="button" onClick={onCancel}>
                 取消
               </button>
-            ) : (
-              <button type="button" onClick={() => void send()}>
-                发送
-              </button>
-            )}
+            ) : null}
           </footer>
         </div>
         <FilePane

@@ -219,6 +219,26 @@ body,
   background: #4a1c1c;
 }
 
+.bubble.a2ui {
+  align-self: flex-start;
+  background: #1a1a1a;
+  border: 1px solid #3a3a3a;
+  padding: 0.75rem 0.9rem;
+}
+
+.a2ui-column {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.a2ui-row {
+  display: flex;
+  flex-direction: row;
+  gap: 0.5rem;
+  align-items: center;
+}
+
 .composer {
   display: flex;
   gap: 0.6rem;
@@ -245,4 +265,9 @@ body,
   border-radius: 6px;
   padding: 0 1rem;
   cursor: pointer;
+}
+
+.composer button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }

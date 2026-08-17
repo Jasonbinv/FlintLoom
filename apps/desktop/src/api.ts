@@ -35,15 +35,38 @@ export async function postTurn(
   onEvent: (event: WorkbenchEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
+  await postSse("/v1/turns", { sessionId, text }, onEvent, signal);
+}
+
+export async function postTurnAction(
+  turnId: string,
+  body: { surfaceId: string; name: string; context?: unknown; data?: unknown },
+  onEvent: (event: WorkbenchEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  await postSse(
+    `/v1/turns/${encodeURIComponent(turnId)}/actions`,
+    body,
+    onEvent,
+    signal,
+  );
+}
+
+async function postSse(
+  url: string,
+  body: unknown,
+  onEvent: (event: WorkbenchEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
   let res: Response;
   try {
-    res = await fetch("/v1/turns", {
+    res = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Accept: "text/event-stream",
       },
-      body: JSON.stringify({ sessionId, text }),
+      body: JSON.stringify(body),
       signal,
     });
   } catch {
