@@ -12,6 +12,7 @@
     "exceljs": "^4.4.0",
     "jszip": "^3.10.1",
     "mammoth": "^1.12.1",
+    "marked": "^18.0.9",
     "node-html-markdown": "^1.3.0",
     "unpdf": "^1.8.1"
   },

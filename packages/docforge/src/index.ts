@@ -14,6 +14,14 @@ export { parse } from "./parse.ts";
 export { truncateOutput } from "./truncate.ts";
 export { ingestWorkspaceFile } from "./ingest.ts";
 export type { IngestOutcome } from "./ingest.ts";
+export type { Block, GenerateFormat } from "./generate.ts";
+export {
+  GENERATE_MAX_BYTES,
+  GENERATE_MAX_CHARS,
+  buildDocument,
+  formatFromOutRelPath,
+  parseBlocks,
+} from "./generate.ts";
 export { createDocProbeTool, createDocParseTool, createDocIngestTool };
 
 const plugin: FlintPlugin = {
