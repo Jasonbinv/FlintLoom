@@ -2,6 +2,7 @@ import type { Context, FlintPlugin } from "@flintloom/kernel";
 import type { KnowledgeService } from "@flintloom/knowledge";
 import type { ToolRegistry } from "@flintloom/tools";
 import {
+  createDocGenerateTool,
   createDocIngestTool,
   createDocParseTool,
   createDocProbeTool,
@@ -24,7 +25,12 @@ export {
   generateDocument,
   parseBlocks,
 } from "./generate.ts";
-export { createDocProbeTool, createDocParseTool, createDocIngestTool };
+export {
+  createDocProbeTool,
+  createDocParseTool,
+  createDocGenerateTool,
+  createDocIngestTool,
+};
 
 const plugin: FlintPlugin = {
   name: "@flintloom/docforge",
@@ -33,6 +39,7 @@ const plugin: FlintPlugin = {
     const kb = ctx.require<KnowledgeService>("knowledge");
     ctx.effect(tools.register(createDocProbeTool()));
     ctx.effect(tools.register(createDocParseTool()));
+    ctx.effect(tools.register(createDocGenerateTool()));
     ctx.effect(tools.register(createDocIngestTool(kb)));
   },
 };
