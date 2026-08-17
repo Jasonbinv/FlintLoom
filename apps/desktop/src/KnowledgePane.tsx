@@ -84,7 +84,8 @@ export function KnowledgePane({ selectedPath }: Props) {
     if (!selectedPath) return;
     try {
       await importKnowledge(selectedPath);
-      refresh(query);
+      setQuery("");
+      refresh("");
     } catch {
       setError(true);
     }
