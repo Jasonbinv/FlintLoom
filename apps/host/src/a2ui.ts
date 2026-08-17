@@ -96,6 +96,32 @@ function lastSurfaceMessages(session: Session, turnId: string): unknown[] | unde
   return undefined;
 }
 
+export function lastTurnStartId(session: Session): string | undefined {
+  const events = session.events();
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i];
+    if (event?.type === "turn/start") {
+      return event.turnId;
+    }
+  }
+  return undefined;
+}
+
+export function sessionHasWaitingTurn(session: Session): boolean {
+  const ids = new Set<string>();
+  for (const event of session.events()) {
+    if (event.type === "turn/start") {
+      ids.add(event.turnId);
+    }
+  }
+  for (const turnId of ids) {
+    if (session.isWaiting(turnId)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function cancelWaitingTurn(session: Session, turnId: string): boolean {
   if (!session.isWaiting(turnId)) {
     return false;
@@ -112,6 +138,7 @@ export async function handleTurnActions(
     ctx: Context;
     workspaceRoot: string;
     turns: Map<string, Session>;
+    controllers: Map<string, AbortController>;
     streamLoopResult: StreamLoopResultFn;
   },
 ): Promise<boolean> {
@@ -139,7 +166,15 @@ export async function handleTurnActions(
   }
 
   const session = opts.turns.get(turnId);
-  if (session === undefined || !session.isWaiting(turnId)) {
+  if (
+    session === undefined ||
+    !session.isWaiting(turnId) ||
+    lastTurnStartId(session) !== turnId
+  ) {
+    send(res, 409);
+    return true;
+  }
+  if (opts.controllers.has(turnId)) {
     send(res, 409);
     return true;
   }

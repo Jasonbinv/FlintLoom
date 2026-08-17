@@ -76,6 +76,7 @@ function installFetch(opts: {
   session?: Response | Error;
   turn?: Response | Error;
   actions?: Response | Error;
+  cancel?: Response | Error;
   files?: Response | Error;
   preview?: Response | Error;
   knowledge?: Response | Error;
@@ -172,7 +173,8 @@ function installFetch(opts: {
       return opts.session ?? new Response(null, { status: 404 });
     }
     if (url.includes("/cancel")) {
-      return new Response(null, { status: 200 });
+      if (opts.cancel instanceof Error) throw opts.cancel;
+      return opts.cancel ?? new Response(null, { status: 200 });
     }
     if (url.includes("/actions")) {
       if (opts.actions instanceof Error) throw opts.actions;
@@ -744,9 +746,11 @@ describe("App", () => {
     const body = JSON.parse(String((actionCall![1] as RequestInit).body)) as {
       name: string;
       surfaceId: string;
+      data?: unknown;
     };
     expect(body.name).toBe("confirm");
     expect(body.surfaceId).toBe("main");
+    expect(body.data).toEqual({});
   });
 
   it("posts /actions only once when OK is clicked twice in the same tick", async () => {
@@ -776,5 +780,199 @@ describe("App", () => {
       );
     });
     expect(actionCalls).toHaveLength(1);
+  });
+
+  it("button click posts the current picker value in data", async () => {
+    const messages = [
+      {
+        version: "v0.9" as const,
+        createSurface: { surfaceId: "main", catalogId: "flintloom:a2ui:core" },
+      },
+      {
+        version: "v0.9" as const,
+        updateDataModel: { surfaceId: "main", path: "/color", value: "red" },
+      },
+      {
+        version: "v0.9" as const,
+        updateComponents: {
+          surfaceId: "main",
+          components: [
+            { id: "root", component: "Column", children: ["pick", "ok"] },
+            {
+              id: "pick",
+              component: "ChoicePicker",
+              options: [
+                { label: "Red", value: "red" },
+                { label: "Blue", value: "blue" },
+              ],
+              value: { path: "/color" },
+            },
+            {
+              id: "ok",
+              component: "Button",
+              child: "ok-label",
+              action: { event: { name: "confirm" } },
+            },
+            { id: "ok-label", component: "Text", text: "OK" },
+          ],
+        },
+      },
+    ];
+    const sse =
+      `data: {"type":"turn/start","turnId":"t-wait"}\n\n` +
+      `data: ${JSON.stringify({
+        type: "a2ui/surface",
+        turnId: "t-wait",
+        surfaceId: "main",
+        wait: true,
+        messages,
+      })}\n\n` + `data: {"type":"end","status":"awaiting_action"}\n\n`;
+    installFetch({
+      turn: new Response(sse, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    });
+    await mountApp();
+    await typeAndSend("hi");
+    await waitForText("OK");
+    const select = document.querySelector("select");
+    if (!select) throw new Error("no select");
+    await act(async () => {
+      const proto = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value");
+      proto?.set?.call(select, "blue");
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const okButton = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "OK",
+    );
+    if (!okButton) throw new Error("no OK button");
+    await act(async () => {
+      okButton.click();
+    });
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const actionCall = fetchMock.mock.calls.find(([input, init]) => {
+      const url = requestUrl(input as RequestInfo | URL);
+      return (
+        url.includes("/actions") &&
+        (init as RequestInit | undefined)?.method === "POST"
+      );
+    });
+    expect(actionCall).toBeTruthy();
+    const body = JSON.parse(String((actionCall![1] as RequestInit).body)) as {
+      name: string;
+      data: { color?: string };
+    };
+    expect(body.name).toBe("confirm");
+    expect(body.data.color).toBe("blue");
+  });
+
+  it("choice-picker-only posts name choice with the current value", async () => {
+    const messages = [
+      {
+        version: "v0.9" as const,
+        createSurface: { surfaceId: "main", catalogId: "flintloom:a2ui:core" },
+      },
+      {
+        version: "v0.9" as const,
+        updateDataModel: { surfaceId: "main", path: "/color", value: "red" },
+      },
+      {
+        version: "v0.9" as const,
+        updateComponents: {
+          surfaceId: "main",
+          components: [
+            { id: "root", component: "Column", children: ["title", "pick"] },
+            { id: "title", component: "Text", text: { path: "/color" } },
+            {
+              id: "pick",
+              component: "ChoicePicker",
+              options: [
+                { label: "Red", value: "red" },
+                { label: "Blue", value: "blue" },
+              ],
+              value: { path: "/color" },
+            },
+          ],
+        },
+      },
+    ];
+    const sse =
+      `data: {"type":"turn/start","turnId":"t-wait"}\n\n` +
+      `data: ${JSON.stringify({
+        type: "a2ui/surface",
+        turnId: "t-wait",
+        surfaceId: "main",
+        wait: true,
+        messages,
+      })}\n\n` + `data: {"type":"end","status":"awaiting_action"}\n\n`;
+    installFetch({
+      turn: new Response(sse, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    });
+    await mountApp();
+    await typeAndSend("hi");
+    await waitForText("red");
+    const start = Date.now();
+    let actionCall: unknown[] | undefined;
+    while (Date.now() - start < 2000) {
+      const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+      actionCall = fetchMock.mock.calls.find(([input, init]) => {
+        const url = requestUrl(input as RequestInfo | URL);
+        return (
+          url.includes("/actions") &&
+          (init as RequestInit | undefined)?.method === "POST"
+        );
+      });
+      if (actionCall) break;
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 15));
+      });
+    }
+    expect(actionCall).toBeTruthy();
+    const body = JSON.parse(String((actionCall![1] as RequestInit).body)) as {
+      name: string;
+      data: { color?: string };
+    };
+    expect(body.name).toBe("choice");
+    expect(body.data.color).toBe("red");
+  });
+
+  it("keeps send disabled when cancel is not HTTP 200", async () => {
+    installFetch({
+      turn: new Response(SURFACE_SSE, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+      cancel: new Response(null, { status: 500 }),
+    });
+    await mountApp();
+    await typeAndSend("hi");
+    await waitForText("OK");
+    const textarea = document.querySelector("textarea");
+    if (!textarea) throw new Error("no textarea");
+    await act(async () => {
+      const proto = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        "value",
+      );
+      proto?.set?.call(textarea, "next");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const sendButton = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "发送",
+    );
+    expect(sendButton?.disabled).toBe(true);
+    const cancelButton = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "取消",
+    );
+    if (!cancelButton) throw new Error("no cancel");
+    await act(async () => {
+      cancelButton.click();
+      await Promise.resolve();
+    });
+    expect(sendButton?.disabled).toBe(true);
   });
 });

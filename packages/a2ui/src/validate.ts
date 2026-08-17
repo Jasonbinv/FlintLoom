@@ -10,6 +10,7 @@ import {
 const ENVELOPE_KEYS = ["createSurface", "updateComponents", "updateDataModel", "deleteSurface"] as const;
 const KNOWN_COMPONENTS = new Set(["Column", "Row", "Text", "Markdown", "Button", "ChoicePicker"]);
 const MAX_PAYLOAD = 65536;
+const PATH_RE = /^\/(?:[A-Za-z0-9_]+(?:\/[A-Za-z0-9_]+)*)?$/;
 
 function fail(message: string): never {
   throw new Error(message);
@@ -17,6 +18,10 @@ function fail(message: string): never {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isLegalPath(path: string): boolean {
+  return PATH_RE.test(path);
 }
 
 function checkRemoteUrls(value: unknown): void {
@@ -36,11 +41,71 @@ function checkRemoteUrls(value: unknown): void {
     return;
   }
   const keys = Object.keys(value);
-  if (keys.length === 1 && keys[0] === "path" && typeof value.path === "string" && value.path.startsWith("/")) {
+  if (keys.length === 1 && keys[0] === "path" && typeof value.path === "string") {
+    if (!isLegalPath(value.path)) {
+      fail("bad path");
+    }
     return;
   }
   for (const v of Object.values(value)) {
     checkRemoteUrls(v);
+  }
+}
+
+function checkPathBindings(value: unknown): void {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      checkPathBindings(item);
+    }
+    return;
+  }
+  if (!isRecord(value)) {
+    return;
+  }
+  const keys = Object.keys(value);
+  if (keys.length === 1 && keys[0] === "path") {
+    if (typeof value.path !== "string" || !isLegalPath(value.path)) {
+      fail("bad path");
+    }
+    return;
+  }
+  for (const v of Object.values(value)) {
+    checkPathBindings(v);
+  }
+}
+
+function validateComponentShape(comp: A2uiComponent): void {
+  if (comp.component === "Column" || comp.component === "Row") {
+    if (!Array.isArray(comp.children) || comp.children.some((c) => typeof c !== "string")) {
+      fail("bad children");
+    }
+    return;
+  }
+  if (comp.component === "Button") {
+    if (typeof comp.child !== "string" || comp.child.length === 0) {
+      fail("bad button");
+    }
+    const actionObj = comp.action;
+    if (
+      !isRecord(actionObj) ||
+      !isRecord(actionObj.event) ||
+      typeof actionObj.event.name !== "string" ||
+      actionObj.event.name.length === 0
+    ) {
+      fail("bad button");
+    }
+    return;
+  }
+  if (comp.component === "ChoicePicker") {
+    const options = comp.options;
+    if (!Array.isArray(options) || options.length < 1 || options.length > 20) {
+      fail("bad options");
+    }
+    for (const item of options) {
+      if (!isRecord(item) || typeof item.label !== "string" || typeof item.value !== "string") {
+        fail("bad options");
+      }
+    }
   }
 }
 
@@ -73,7 +138,9 @@ function mergeComponents(messages: A2uiMessage[]): Map<string, A2uiComponent> {
       if (!KNOWN_COMPONENTS.has(comp.component)) {
         fail("unknown component");
       }
-      map.set(comp.id, comp as A2uiComponent);
+      const typed = comp as A2uiComponent;
+      validateComponentShape(typed);
+      map.set(comp.id, typed);
     }
   }
   return map;
@@ -83,7 +150,9 @@ function validateRefs(components: Map<string, A2uiComponent>): void {
   for (const comp of components.values()) {
     if (comp.component === "Column" || comp.component === "Row") {
       const children = comp.children;
-      if (!Array.isArray(children)) continue;
+      if (!Array.isArray(children)) {
+        fail("bad children");
+      }
       for (const child of children) {
         if (typeof child !== "string" || !components.has(child)) {
           fail("bad ref");
@@ -99,9 +168,33 @@ function validateRefs(components: Map<string, A2uiComponent>): void {
   }
 }
 
+function reachableIds(components: Map<string, A2uiComponent>): Set<string> {
+  const seen = new Set<string>();
+  const stack = ["root"];
+  while (stack.length > 0) {
+    const id = stack.pop()!;
+    if (seen.has(id)) continue;
+    const comp = components.get(id);
+    if (!comp) continue;
+    seen.add(id);
+    if (comp.component === "Column" || comp.component === "Row") {
+      const children = comp.children;
+      if (Array.isArray(children)) {
+        for (const child of children) {
+          if (typeof child === "string") stack.push(child);
+        }
+      }
+    } else if (comp.component === "Button" && typeof comp.child === "string") {
+      stack.push(comp.child);
+    }
+  }
+  return seen;
+}
+
 function hasWaitComponents(components: Map<string, A2uiComponent>): boolean {
-  for (const comp of components.values()) {
-    if (comp.component === "Button" || comp.component === "ChoicePicker") {
+  for (const id of reachableIds(components)) {
+    const comp = components.get(id);
+    if (comp?.component === "Button" || comp?.component === "ChoicePicker") {
       return true;
     }
   }
@@ -134,6 +227,12 @@ function validateMessages(raw: unknown): { messages: A2uiMessage[]; surfaceId: s
 
   for (const msg of messages) {
     checkRemoteUrls(msg);
+    checkPathBindings(msg);
+    if ("updateDataModel" in msg && msg.updateDataModel.path !== undefined) {
+      if (typeof msg.updateDataModel.path !== "string" || !isLegalPath(msg.updateDataModel.path)) {
+        fail("bad path");
+      }
+    }
   }
 
   const components = mergeComponents(messages);
@@ -154,7 +253,10 @@ function validateActionAgainstTree(action: A2uiAction, messages: unknown[]): voi
   }
 
   const components = mergeComponents(parsed);
-  const buttons = [...components.values()].filter((c) => c.component === "Button");
+  const reachable = reachableIds(components);
+  const buttons = [...reachable]
+    .map((id) => components.get(id))
+    .filter((c): c is A2uiComponent => c?.component === "Button");
   if (buttons.length > 0) {
     const names = buttons
       .map((b) => {
@@ -171,7 +273,7 @@ function validateActionAgainstTree(action: A2uiAction, messages: unknown[]): voi
     return;
   }
 
-  const hasChoicePicker = [...components.values()].some((c) => c.component === "ChoicePicker");
+  const hasChoicePicker = [...reachable].some((id) => components.get(id)?.component === "ChoicePicker");
   if (hasChoicePicker) {
     if (action.name !== "choice") {
       fail("unknown action");

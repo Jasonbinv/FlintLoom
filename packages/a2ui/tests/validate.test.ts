@@ -79,4 +79,178 @@ describe("createA2uiService", () => {
     expect(() => svc.validateAction({ surfaceId: "main", name: "confirm" }, messages)).not.toThrow();
     expect(() => svc.validateAction({ surfaceId: "main", name: "nope" }, messages)).toThrow(/unknown action/);
   });
+
+  it("requires button fields, layout children, picker options, and legal paths", () => {
+    const svc = createA2uiService();
+    const catalog = { version: "v0.9" as const, createSurface: { surfaceId: "s", catalogId: "flintloom:a2ui:core" } };
+    expect(() =>
+      svc.validateEmit([
+        catalog,
+        {
+          version: "v0.9",
+          updateComponents: {
+            surfaceId: "s",
+            components: [{ id: "root", component: "Column" }],
+          },
+        },
+      ]),
+    ).toThrow(/bad children/);
+    expect(() =>
+      svc.validateEmit([
+        catalog,
+        {
+          version: "v0.9",
+          updateComponents: {
+            surfaceId: "s",
+            components: [
+              { id: "root", component: "Column", children: ["ok"] },
+              { id: "ok", component: "Button", child: "ok-label" },
+              { id: "ok-label", component: "Text", text: "OK" },
+            ],
+          },
+        },
+      ]),
+    ).toThrow(/bad button/);
+    expect(() =>
+      svc.validateEmit([
+        catalog,
+        {
+          version: "v0.9",
+          updateComponents: {
+            surfaceId: "s",
+            components: [
+              { id: "root", component: "Column", children: ["ok"] },
+              {
+                id: "ok",
+                component: "Button",
+                child: "ok-label",
+                action: { event: { name: "" } },
+              },
+              { id: "ok-label", component: "Text", text: "OK" },
+            ],
+          },
+        },
+      ]),
+    ).toThrow(/bad button/);
+    expect(() =>
+      svc.validateEmit([
+        catalog,
+        {
+          version: "v0.9",
+          updateComponents: {
+            surfaceId: "s",
+            components: [
+              { id: "root", component: "Column", children: ["pick"] },
+              { id: "pick", component: "ChoicePicker", options: [] },
+            ],
+          },
+        },
+      ]),
+    ).toThrow(/bad options/);
+    expect(() =>
+      svc.validateEmit([
+        catalog,
+        {
+          version: "v0.9",
+          updateComponents: {
+            surfaceId: "s",
+            components: [
+              { id: "root", component: "Column", children: ["pick"] },
+              {
+                id: "pick",
+                component: "ChoicePicker",
+                options: Array.from({ length: 21 }, (_, i) => ({ label: `L${i}`, value: `v${i}` })),
+              },
+            ],
+          },
+        },
+      ]),
+    ).toThrow(/bad options/);
+    expect(() =>
+      svc.validateEmit([
+        catalog,
+        {
+          version: "v0.9",
+          updateComponents: {
+            surfaceId: "s",
+            components: [{ id: "root", component: "Text", text: { path: "/foo-bar" } }],
+          },
+        },
+      ]),
+    ).toThrow(/bad path/);
+    expect(() =>
+      svc.validateEmit([
+        catalog,
+        {
+          version: "v0.9",
+          updateDataModel: { surfaceId: "s", path: "title", value: "x" },
+        },
+        {
+          version: "v0.9",
+          updateComponents: {
+            surfaceId: "s",
+            components: [{ id: "root", component: "Text", text: { path: "/title" } }],
+          },
+        },
+      ]),
+    ).toThrow(/bad path/);
+  });
+
+  it("sets wait from the reachable tree, not an unreachable sibling", () => {
+    const svc = createA2uiService();
+    const snap = svc.validateEmit([
+      { version: "v0.9", createSurface: { surfaceId: "s", catalogId: "flintloom:a2ui:core" } },
+      {
+        version: "v0.9",
+        updateComponents: {
+          surfaceId: "s",
+          components: [
+            { id: "root", component: "Column", children: ["title"] },
+            { id: "title", component: "Text", text: "hi" },
+            {
+              id: "ok",
+              component: "Button",
+              child: "ok-label",
+              action: { event: { name: "confirm" } },
+            },
+            { id: "ok-label", component: "Text", text: "OK" },
+          ],
+        },
+      },
+    ]);
+    expect(snap.wait).toBe(false);
+    expect(() =>
+      svc.validateAction({ surfaceId: "s", name: "confirm" }, snap.messages),
+    ).toThrow(/unknown action/);
+  });
+
+  it("accepts a reachable choice picker as wait and honors updateDataModel paths", () => {
+    const svc = createA2uiService();
+    const messages = [
+      { version: "v0.9" as const, createSurface: { surfaceId: "s", catalogId: "flintloom:a2ui:core" } },
+      { version: "v0.9" as const, updateDataModel: { surfaceId: "s", path: "/color", value: "red" } },
+      {
+        version: "v0.9" as const,
+        updateComponents: {
+          surfaceId: "s",
+          components: [
+            { id: "root", component: "Column", children: ["title", "pick"] },
+            { id: "title", component: "Text", text: { path: "/color" } },
+            {
+              id: "pick",
+              component: "ChoicePicker",
+              options: [
+                { label: "Red", value: "red" },
+                { label: "Blue", value: "blue" },
+              ],
+              value: { path: "/color" },
+            },
+          ],
+        },
+      },
+    ];
+    const snap = svc.validateEmit(messages);
+    expect(snap.wait).toBe(true);
+    expect(() => svc.validateAction({ surfaceId: "s", name: "choice" }, messages)).not.toThrow();
+  });
 });

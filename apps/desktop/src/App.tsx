@@ -107,15 +107,28 @@ export function App() {
     if (event.type === "user/message") return;
     if (event.type === "turn/start") {
       turnIdRef.current = event.turnId;
-      if (cancelWantedRef.current) void cancelTurn(event.turnId);
+      if (cancelWantedRef.current) {
+        void cancelTurn(event.turnId).then((ok) => {
+          if (ok) {
+            setWaitingAction(false);
+            setSending(false);
+          }
+        });
+      }
       return;
     }
     if (event.type === "end") {
       if (event.status === "awaiting_action") {
         setWaitingAction(true);
         setSending(false);
-      } else {
+      } else if (
+        event.status === "ok" ||
+        event.status === "failed" ||
+        event.status === "cancelled"
+      ) {
         setWaitingAction(false);
+        setSending(false);
+      } else {
         setSending(false);
       }
       return;
@@ -197,12 +210,16 @@ export function App() {
     }
   }
 
-  function onCancel() {
+  async function onCancel() {
     cancelWantedRef.current = true;
     submittingActionRef.current = false;
-    if (turnIdRef.current) void cancelTurn(turnIdRef.current);
-    setWaitingAction(false);
-    setSending(false);
+    const turnId = turnIdRef.current;
+    if (!turnId) return;
+    const ok = await cancelTurn(turnId);
+    if (ok) {
+      setWaitingAction(false);
+      setSending(false);
+    }
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -267,7 +284,7 @@ export function App() {
               发送
             </button>
             {waitingAction || sending ? (
-              <button type="button" onClick={onCancel}>
+              <button type="button" onClick={() => void onCancel()}>
                 取消
               </button>
             ) : null}

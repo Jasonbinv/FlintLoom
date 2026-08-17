@@ -23,10 +23,15 @@ export async function fetchSession(
   return (await res.json()) as { events: WorkbenchEvent[] };
 }
 
-export async function cancelTurn(turnId: string): Promise<void> {
-  await fetch(`/v1/turns/${encodeURIComponent(turnId)}/cancel`, {
-    method: "POST",
-  });
+export async function cancelTurn(turnId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/v1/turns/${encodeURIComponent(turnId)}/cancel`, {
+      method: "POST",
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 export async function postTurn(

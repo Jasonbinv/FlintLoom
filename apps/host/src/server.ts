@@ -6,7 +6,7 @@ import type { LoopService, RunTurnResult } from "@flintloom/loop";
 import type { ModelRegistry } from "@flintloom/models";
 import type { Session, SessionEvent, SessionStore } from "@flintloom/session";
 import { WorkspaceEscapeError } from "@flintloom/tools";
-import { cancelWaitingTurn, handleTurnActions } from "./a2ui.ts";
+import { cancelWaitingTurn, handleTurnActions, sessionHasWaitingTurn } from "./a2ui.ts";
 import {
   listWorkspaceFiles,
   normalizeRelPath,
@@ -145,7 +145,7 @@ function writeSse(res: ServerResponse, data: unknown): void {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
-async function streamLoopResult(
+export async function streamLoopResult(
   req: IncomingMessage,
   res: ServerResponse,
   session: Session,
@@ -161,27 +161,43 @@ async function streamLoopResult(
   const onClose = () => {
     controller.abort();
   };
-  req.on("close", onClose);
-
-  if (knownTurnId !== undefined) {
-    turns.set(knownTurnId, session);
-    controllers.set(knownTurnId, controller);
-  }
-
-  res.writeHead(200, { "Content-Type": "text/event-stream" });
+  let boundTurnId = knownTurnId;
 
   try {
+    if (knownTurnId !== undefined) {
+      if (controllers.has(knownTurnId)) {
+        send(res, 409);
+        return;
+      }
+      turns.set(knownTurnId, session);
+      controllers.set(knownTurnId, controller);
+    }
+
+    req.on("close", onClose);
+
+    const ensureSse = (): void => {
+      if (!res.headersSent) {
+        res.writeHead(200, { "Content-Type": "text/event-stream" });
+      }
+    };
+
     const result = await work({
       signal: controller.signal,
       onEvent: (event) => {
         if (event.type === "turn/start") {
+          boundTurnId = event.turnId;
           turns.set(event.turnId, session);
-          controllers.set(event.turnId, controller);
+          if (controllers.get(event.turnId) === undefined) {
+            controllers.set(event.turnId, controller);
+          }
         }
         if (event.type === "turn/end") {
           turns.delete(event.turnId);
-          controllers.delete(event.turnId);
+          if (controllers.get(event.turnId) === controller) {
+            controllers.delete(event.turnId);
+          }
         }
+        ensureSse();
         writeSse(res, event);
       },
     });
@@ -191,12 +207,37 @@ async function streamLoopResult(
     } else {
       turns.delete(result.turnId);
     }
-    controllers.delete(result.turnId);
+    ensureSse();
     writeSse(res, { type: "end", status: result.status });
     res.end();
-  } catch {
+  } catch (err) {
+    const waiting = boundTurnId !== undefined && session.isWaiting(boundTurnId);
+    const notWaiting = err instanceof Error && err.message.includes("not waiting");
+    if (!res.headersSent) {
+      if (notWaiting) {
+        send(res, 409);
+      } else {
+        send(res, 500);
+      }
+      return;
+    }
+    if (waiting) {
+      writeSse(res, {
+        type: "model/error",
+        kind: "chat",
+        message: err instanceof Error ? err.message : String(err),
+      });
+      writeSse(res, { type: "end", status: "awaiting_action" });
+      res.end();
+      return;
+    }
     writeSse(res, { type: "end", status: "failed" });
     res.end();
+  } finally {
+    req.off("close", onClose);
+    if (boundTurnId !== undefined && controllers.get(boundTurnId) === controller) {
+      controllers.delete(boundTurnId);
+    }
   }
 }
 
@@ -280,6 +321,7 @@ async function handleRequest(
           work,
           turnId,
         ),
+      controllers: opts.controllers,
     })
   ) {
     return;
@@ -379,6 +421,11 @@ async function handleRequest(
     const session = opts.runtime.ctx
       .require<SessionStore>("sessions")
       .getOrCreate(body.sessionId);
+
+    if (sessionHasWaitingTurn(session)) {
+      send(res, 409);
+      return;
+    }
 
     await streamLoopResult(req, res, session, opts.controllers, opts.turns, ({ signal, onEvent }) =>
       opts.runtime.ctx.require<LoopService>("loop").runTurn({

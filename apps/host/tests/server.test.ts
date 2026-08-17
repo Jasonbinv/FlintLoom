@@ -247,7 +247,7 @@ describe("startHost", () => {
     }
   });
 
-  it("writes SSE end failed when runTurn throws after stream headers", async () => {
+  it("returns 500 when runTurn throws before SSE headers", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-ws-"));
     const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
     writeAssembly(workspaceRoot);
@@ -268,12 +268,8 @@ describe("startHost", () => {
         },
         body: JSON.stringify({ sessionId: "s1", text: "hi" }),
       });
-      expect(res.status).toBe(200);
-      expect(res.headers.get("content-type")).toMatch(/text\/event-stream/);
-      const text = await res.text();
-      expect(text).toContain(
-        `data: ${JSON.stringify({ type: "end", status: "failed" })}`,
-      );
+      expect(res.status).toBe(500);
+      expect(res.headers.get("content-type") ?? "").not.toMatch(/text\/event-stream/);
     } finally {
       Session.prototype.append = original;
     }
