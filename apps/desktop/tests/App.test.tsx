@@ -469,6 +469,84 @@ describe("App", () => {
     expect(body.path).toBe("README.md");
   });
 
+  it("refreshes knowledge list (not search) after import when search had text", async () => {
+    installFetch();
+    await mountApp();
+    await waitForText("README.md");
+
+    const knowledgeTab = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "Knowledge",
+    );
+    const filesTab = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "Files",
+    );
+    if (!knowledgeTab || !filesTab) throw new Error("missing tabs");
+
+    await act(async () => {
+      knowledgeTab.click();
+    });
+    await waitForText("notes/a.md");
+
+    const searchInput = document.querySelector("input.knowledge-search");
+    if (!searchInput) throw new Error("no knowledge search input");
+    await act(async () => {
+      const proto = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      );
+      proto?.set?.call(searchInput, "foo");
+      searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    await act(async () => {
+      filesTab.click();
+    });
+    await waitForText("README.md");
+
+    const fileButton = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "README.md",
+    );
+    if (!fileButton) throw new Error("no README.md button");
+    await act(async () => {
+      fileButton.click();
+    });
+
+    await act(async () => {
+      knowledgeTab.click();
+    });
+    await waitForText("notes/a.md");
+
+    const importButton = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "Import",
+    );
+    if (!importButton) throw new Error("no Import button");
+    await act(async () => {
+      importButton.click();
+    });
+
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const importCallIdx = fetchMock.mock.calls.findIndex(([input, init]) => {
+      const url = requestUrl(input as RequestInfo | URL);
+      return (
+        url.includes("/v1/knowledge/import") &&
+        (init as RequestInit | undefined)?.method === "POST"
+      );
+    });
+    expect(importCallIdx).toBeGreaterThanOrEqual(0);
+
+    const callsAfterImport = fetchMock.mock.calls.slice(importCallIdx + 1);
+    const listRefresh = callsAfterImport.find(([input, init]) => {
+      const url = requestUrl(input as RequestInfo | URL);
+      const method = (init as RequestInit | undefined)?.method ?? "GET";
+      return (
+        method === "GET" &&
+        url.includes("/v1/knowledge") &&
+        !url.includes("/search")
+      );
+    });
+    expect(listRefresh).toBeTruthy();
+  });
+
   it("shows host unreachable when knowledge fetch throws", async () => {
     installFetch({ knowledge: new Error("network") });
     await mountApp();
