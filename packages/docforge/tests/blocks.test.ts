@@ -45,4 +45,11 @@ describe("parseBlocks", () => {
       false,
     );
   });
+
+  it("falls back to href for empty-label links", () => {
+    const blocks = parseBlocks("see [](http://example.com) end");
+    expect(
+      blocks.some((b) => b.type === "paragraph" && b.text.includes("http://example.com")),
+    ).toBe(true);
+  });
 });

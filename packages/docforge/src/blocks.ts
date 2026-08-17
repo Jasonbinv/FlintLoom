@@ -12,7 +12,7 @@ function flattenInline(tokens: Token[] | undefined): string {
         break;
       case "link": {
         const label = flattenInline(token.tokens);
-        out += label.length > 0 ? label : token.text;
+        out += label.length > 0 ? label : token.href || token.text;
         break;
       }
       case "strong":

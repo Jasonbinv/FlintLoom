@@ -238,12 +238,12 @@ export function createDocGenerateTool(): ToolDefinition {
         }
       }
       try {
-        const result = await generateDocument(absSource, absOut);
+        await generateDocument(absSource, absOut);
         return JSON.stringify({
           status: "ok",
           source: sourceRel,
           out: outRel,
-          format: result.format,
+          format,
         });
       } catch (err) {
         return failFromError(err);

@@ -89,3 +89,12 @@ it("rejects non-md source and huge files before parsing as utf8", async () => {
   writeFileSync(huge, Buffer.alloc(800_001, 0x61));
   await expect(generateDocument(huge, join(dir, "huge.pdf"))).rejects.toThrow(/too large/);
 });
+
+it("rejects markdown over GENERATE_MAX_CHARS under byte cap", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "flintloom-gen-chars-"));
+  const overChars = join(dir, "over-chars.md");
+  writeFileSync(overChars, "a".repeat(200_001));
+  await expect(generateDocument(overChars, join(dir, "out.pdf"))).rejects.toThrow(
+    /too large/,
+  );
+});
