@@ -186,11 +186,11 @@ POST /v1/turns  { sessionId, text }
 
 ## 8. A2UI 与信息图
 
-A2UI 使用公开的 v0.9 协议。类型和 React host 在本仓编写（允许官方 `@a2ui/react`；不允许搬 dataagent 的 `renderer/src/a2ui`）。
+A2UI 使用公开的 v0.9 协议。类型和 React host 在本仓编写（允许官方 `@a2ui/react`；不允许搬 dataagent 的 `renderer/src/a2ui`）。本片落地见 [A2UI 交互核心设计](2026-08-17-flintloom-a2ui-design.md)：本仓子集 host、catalogId `flintloom:a2ui:core`、同一 turn 新 SSE 续跑。
 
-v1 组件目录：text、markdown、button、choice、data table、chart、infographic。
+v1 组件目录：text、markdown、button、choice、data table、chart、infographic。交互核心刀：Column / Row + Text / Markdown / Button / ChoicePicker。table / chart / infographic 后续。
 
-`a2ui_emit` 校验 envelope。非法 JSON 作为工具错误返回给模型。用户操作会继续这一轮（不是只审计不执行）。
+`a2ui_emit` 校验 envelope。非法 JSON 作为工具错误返回给模型。用户操作会继续这一轮（不是只审计不执行）：`POST /v1/turns/:id/actions` + `continueTurn`，不挂起第一轮 HTTP。
 
 信息图以工作区文件存在（`*.infographic.json`）。工具：`infographic_get`、`infographic_patch`。工作台预览和 A2UI 的 infographic 组件共用一个本地渲染器。禁止拉取远程 icon/CDN。SVG 必须消毒。超大 payload 直接拒绝。
 
@@ -283,7 +283,7 @@ v1 内置通道：desktop、cli、webhook、telegram。ACP 作为同一接口上
 1. Kernel + session + loop + `ctx.models` + `models-chat` + fs/grep/shell + host + CLI — 一轮编程对话。当时 host 手工 `register`（已交付）。
 1.5. **插件组装** — yml 真正加载、`apply` / `effect` / `require`、loop 作为插件、`tools/pre-execute`。host/CLI 不再手工 register。见 [插件组装设计](2026-08-17-flintloom-plugin-composition-design.md)。
 2. 桌面工作台 + 预览 + DocForge 解析（已交付，见 [文件预览设计](2026-08-17-flintloom-files-preview-design.md)）；个人知识库 + `doc_ingest`（**从出生就是插件**，见 [知识库设计](2026-08-17-flintloom-knowledge-design.md)）。
-3. A2UI + 信息图 + 其余 DocForge 工具（转换/生成/编辑/对比/摘要）— 均为插件，不改 host 组装。
+3. A2UI 交互核心（见 [A2UI 设计](2026-08-17-flintloom-a2ui-design.md)）+ 信息图 + 其余 DocForge 工具（转换/生成/编辑/对比/摘要）— 均为插件，不改 host 组装。A2UI 核心与信息图 / 其余 DocForge 分开写计划。
 4. Webhook + Telegram 通道 + `flint plugin add`（安装器：拷 bundle、在 yml 加一行；组装机制已在 1.5 存在）。
 
 第 2–4 刀在同一份总 spec 上继续拆计划。新 Loom 包必须带 `apply`，禁止再往 `createRuntime` 里堆 `register`。
