@@ -474,14 +474,18 @@ describe("App", () => {
     await mountApp();
     await waitForText("README.md");
 
+    const fileButton = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "README.md",
+    );
+    if (!fileButton) throw new Error("no README.md button");
+    await act(async () => {
+      fileButton.click();
+    });
+
     const knowledgeTab = Array.from(document.querySelectorAll("button")).find(
       (b) => b.textContent === "Knowledge",
     );
-    const filesTab = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "Files",
-    );
-    if (!knowledgeTab || !filesTab) throw new Error("missing tabs");
-
+    if (!knowledgeTab) throw new Error("no Knowledge tab");
     await act(async () => {
       knowledgeTab.click();
     });
@@ -498,28 +502,11 @@ describe("App", () => {
       searchInput.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
-    await act(async () => {
-      filesTab.click();
-    });
-    await waitForText("README.md");
-
-    const fileButton = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "README.md",
-    );
-    if (!fileButton) throw new Error("no README.md button");
-    await act(async () => {
-      fileButton.click();
-    });
-
-    await act(async () => {
-      knowledgeTab.click();
-    });
-    await waitForText("notes/a.md");
-
     const importButton = Array.from(document.querySelectorAll("button")).find(
       (b) => b.textContent === "Import",
     );
     if (!importButton) throw new Error("no Import button");
+    expect(importButton.disabled).toBe(false);
     await act(async () => {
       importButton.click();
     });
