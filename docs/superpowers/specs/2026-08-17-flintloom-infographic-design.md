@@ -1,7 +1,7 @@
 # FlintLoom 信息图（盒线核心）设计
 
 日期：2026-08-17  
-状态：待审阅  
+状态：已复核  
 产品：FlintLoom — A real agent. / 真正的 Agent。  
 范围：总 spec 第三刀的 **信息图块**。插件 `@flintloom/infographic`、工具 `infographic_get` / `infographic_patch`、工作区 `*.infographic.json`、Files 预览出消毒 SVG。从出生就是插件：禁止再往 `createRuntime` 里 `register`。本片 **不改** A2UI catalog。
 
@@ -26,10 +26,12 @@
 | 预览与插件 | host `files.ts` **可以** import `parseDocument` / `renderSvg`（与 DocForge 预览相同）。yml 去掉 infographic → schema 无两工具；`*.infographic.json` **仍**出 SVG。 |
 | 工具工厂 | `apps/host/src` 不得出现 `createInfographicGetTool` / `createInfographicPatchTool`。 |
 | loop / session | 不改。不 import `@flintloom/infographic`。不暂停 turn。 |
-| 上限 | UTF-8 **字节**数 > 65536（读入或写出）→ 失败。 |
+| 上限 | 先 `stat.size` 再读盘；`size > 65536` 或将要写出的 UTF-8 字节 > 65536 → `too large`。不要把超大文件当 JSON 读进内存。 |
+| 路径辅助 | 包导出 `isInfographicRelPath`。host 预览与两工具必须调用它，禁止各写一份 `endsWith`。 |
 | 远程 | 任意字符串含 `http://` 或 `https://` → 整份非法（与 A2UI 相同）。 |
 | 消毒 | 构造时只 emit `svg` / `rect` / `line` / `polygon` / `text`。桌面用 `data:image/svg+xml` 的 `<img>`，不用 `dangerouslySetInnerHTML`。 |
 | 并发 | 两个 patch 不排队，后写覆盖先写（与 `fs` 相同）。 |
+| host 依赖 | `apps/host/package.json` 增加 `@flintloom/infographic`（与 DocForge 相同，供 `files.ts` import）。 |
 
 相对路径做后缀判断时先把 `\` 换成 `/` 再 **小写**，以 `.infographic.json` 结尾（故 `Foo.Infographic.JSON` 走信息图，`notes.json` 不走）。
 
@@ -73,7 +75,7 @@ yml 在 `docforge` 与 `a2ui` 之间插入：
     name: "@flintloom/infographic"
 ```
 
-`apply` **必须** `require("tools")`。不 `require` knowledge / docforge / a2ui / loop。去掉 infographic 行 → 启动成功。根 `package.json` 把 `@flintloom/infographic` 列为 `devDependencies`。`createRuntime` 不为 infographic 写 `runtimeConfigById`。
+`apply` **必须** `require("tools")`。不 `require` knowledge / docforge / a2ui / loop。去掉 infographic 行 → 启动成功。根 `package.json` 把 `@flintloom/infographic` 列为 `devDependencies`。`apps/host/package.json` `dependencies` 加上它（`files.ts` 静态 import）。`createRuntime` 不为 infographic 写 `runtimeConfigById`。
 
 信息图插件在依赖上只需要 `tools`；放在 docforge 之后只是文档分组。yml 无 docforge、有 infographic → 仍应启动。
 
@@ -103,7 +105,9 @@ type InfographicDocument = {
 
 只允许这两个顶层键。节点/边对象不得有未列字段。`id` / `from` / `to` 匹配 `^[A-Za-z0-9_-]+$` 且非空。`id` 在 `nodes` 内唯一。`x` / `y` 为有限 JSON number（拒绝 `NaN` / `Infinity`）。`label` 为字符串；边的 `label` 省略则不画边字。每条边的 `(from, to)` 唯一；`from` / `to` 必须引用已有 node id。自环允许。
 
-`parseDocument(raw: string): InfographicDocument` 失败抛 `Error`，`message` 仅为短英文：`bad json` / `too large` / `bad document` / `bad id` / `duplicate id` / `unknown node` / `duplicate edge` / `remote url`。
+`isInfographicRelPath(relPath: string): boolean`：`\\` → `/` 后 **小写**，以 `.infographic.json` 结尾。
+
+`parseDocument(raw: string): InfographicDocument` 失败抛 `Error`，`message` 仅为短英文：`bad json` / `too large` / `bad document` / `bad id` / `duplicate id` / `unknown node` / `duplicate edge` / `remote url`。`Buffer.byteLength(raw, "utf8") > 65536` → `too large`。
 
 ### 5.2 `applyOps`
 
@@ -118,7 +122,11 @@ type InfographicOp =
 function applyOps(doc: InfographicDocument, ops: unknown): InfographicDocument;
 ```
 
-整批应用，失败则调用方看到的磁盘文件不变。`ops` 不是长度 ≥ 1 的数组 → `empty ops`。未知 `op` → `bad op`。`updateNode` 必须至少带 `label` / `x` / `y` 之一，否则 `bad op`。应用后再跑与 `parseDocument` 相同的文档规则（含 64KiB：按将要写出的 UTF-8 计）。
+**按数组顺序**应用到 **拷贝**上，失败抛错且不改入参 `doc`。`ops` 不是长度 ≥ 1 的数组 → `empty ops`。未知 `op`、op 对象含未列字段、`updateNode` 未带 `label`/`x`/`y` 任一 → `bad op`。
+
+应用中：`addNode` 时 id 已存在 → `duplicate id`；`updateNode` / `removeNode` 找不到 id → `unknown node`；`addEdge` 时 `(from, to)` 已存在 → `duplicate edge`；`addEdge` 的端点当时还不在图上 → `unknown node`（同一批里必须先 `addNode` 再 `addEdge`）；`removeEdge` 找不到 `(from, to)` → `unknown edge`。
+
+全部 op 成功后再跑与 `parseDocument` 相同的文档规则（含 64KiB：`Buffer.byteLength(JSON.stringify(next, null, 2) + "\n", "utf8")`）。自环允许；渲染成退化线段即可，不必特判。
 
 写出：`JSON.stringify(doc, null, 2) + "\n"`。
 
@@ -130,7 +138,7 @@ function applyOps(doc: InfographicDocument, ops: unknown): InfographicDocument;
 
 ### 5.4 工具
 
-两者都先 `resolveInside`。`signal.aborted` → `aborted`。隐藏路径 → `failed: hidden`（不读盘正文）。相对路径（规范化后小写）不以 `.infographic.json` 结尾 → `failed: bad path`。
+两者都先 `resolveInside`。`signal.aborted` → `aborted`。隐藏路径（请求 path 或 resolve 后的 rel，与 ingest 相同）→ `failed: hidden`（不读盘正文）。`!isInfographicRelPath` → `failed: bad path`。已存在文件 `stat.size > 65536` → `failed: too large`（不把正文当 JSON 解析）。
 
 `infographic_get({ path })`
 
@@ -172,7 +180,7 @@ const plugin: FlintPlugin = {
 
 ### 5.6 Host 预览
 
-`FilePreview.kind` 增加 `"svg"`。`previewWorkspaceFile` 在 DocForge 分支与 `isTextPreviewCandidate` **之前**：若 relPath 小写以 `.infographic.json` 结尾，则读入字节（**不用** 200_000 字符文本截断）；长度 > 65536 → `{ kind: "failed", text: "failed: too large" }`；否则 UTF-8 → `parseDocument` + `renderSvg`。失败 → `{ kind: "failed", text: "failed: <reason>" }`。隐藏 / 目录 / 不存在语义与今日 files 预览相同。
+`FilePreview.kind` 增加 `"svg"`。`previewWorkspaceFile` 在 DocForge 分支与 `isTextPreviewCandidate` **之前**：若 `isInfographicRelPath(relPath)`，则 `stat`；`size > 65536` → `{ kind: "failed", text: "failed: too large" }`（不 `readFile`）；否则读 UTF-8 → `parseDocument` + `renderSvg`。失败 → `{ kind: "failed", text: "failed: <reason>" }`。隐藏 / 目录 / 不存在语义与今日 files 预览相同。**不用** 200_000 字符文本截断。
 
 普通 `*.json` 仍 `kind: "text"`。
 
@@ -202,7 +210,8 @@ factory 扫描：禁止 `createInfographicGetTool`、`createInfographicPatchTool
 | patch 不存在且无 addNode | `failed: not found` | — |
 | 父目录不存在 | `failed: not found` | — |
 | 目录 | `failed: not a file` | 200 `kind: failed` |
-| 非法 JSON / 超限 / 坏 id / 坏边 / `http(s)` | `failed: …`，文件不动 | 200 `kind: failed` |
+| 已存在且 `stat.size > 65536` | `failed: too large` | 200 `kind: failed` `too large` |
+| 非法 JSON / 坏 id / 坏边 / `http(s)` / 写出超限 | `failed: …`，文件不动 | 200 `kind: failed` |
 | abort | `aborted` | 预览 abort 与今日相同 |
 | yml 无 infographic | schema 无两工具 | 预览仍出 SVG |
 | 预览失败 | — | 聊天不受影响 |
@@ -222,7 +231,7 @@ factory 扫描：禁止 `createInfographicGetTool`、`createInfographicPatchTool
 全部不依赖真实 API key。
 
 1. `parseDocument`：合法两节点一边通过；缺 id / 重复 id / 悬空边 / `https://` / 超 64KiB 失败。
-2. `applyOps`：`addNode` 建档；`updateNode` 改 label；`removeNode` 带走边；非法边不改变调用方传入的意图——工具层断言磁盘不变。
+2. `applyOps`：按序 `addNode` 再 `addEdge`；`updateNode` 改 label；`removeNode` 带走边；入参不被变异；缺 id → `unknown node`。工具层：非法 patch 后磁盘不变。
 3. `renderSvg`：含节点 label；`&` 转成 `&amp;`；无 `href`、无 `<script>`。
 4. `infographic_get` / `patch`：成功形状如上；缺 path / `bad path` / abort；越界抛 `WorkspaceEscapeError`。
 5. 插件 `stop()` 后 schema 无这两个工具。
