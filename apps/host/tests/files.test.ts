@@ -2,16 +2,10 @@ import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { isHiddenRelPath, relFromWorkspace } from "../src/files.ts";
+import { isHiddenRelPath } from "@flintloom/tools";
+import { relFromWorkspace } from "../src/files.ts";
 import { loadOrCreateToken, startHost } from "../src/index.ts";
 import { writeAssembly } from "./assembly.ts";
-
-describe("isHiddenRelPath", () => {
-  it("hides .env but not .env.example", () => {
-    expect(isHiddenRelPath(".env")).toBe(true);
-    expect(isHiddenRelPath(".env.example")).toBe(false);
-  });
-});
 
 describe("relFromWorkspace", () => {
   it("treats a resolved .env absPath as hidden even if the request name is visible", () => {

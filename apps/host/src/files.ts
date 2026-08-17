@@ -2,7 +2,7 @@ import { realpathSync } from "node:fs";
 import { extname, join, relative } from "node:path";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { detectType, parse } from "@flintloom/docforge";
-import { resolveInside } from "@flintloom/tools";
+import { isHiddenRelPath, resolveInside } from "@flintloom/tools";
 
 export type FileEntry = { name: string; type: "file" | "dir" };
 export type FileList = { path: string; entries: FileEntry[] };
@@ -14,8 +14,6 @@ export type FilePreview = {
 
 const READ_LIMIT = 200_000;
 const TRUNCATE_SUFFIX = `\n\n[truncated: output exceeded ${READ_LIMIT} characters]`;
-
-const HIDDEN_NAMES = new Set([".git", "node_modules", "dist", "credentials"]);
 
 const DOCFORGE_TYPES = new Set([
   "md",
@@ -63,32 +61,6 @@ function isNotFound(err: unknown): boolean {
     "code" in err &&
     (err as { code: string }).code === "ENOENT"
   );
-}
-
-function isHiddenName(name: string): boolean {
-  if (HIDDEN_NAMES.has(name)) {
-    return true;
-  }
-  if (/^\.env(?!\.example$)/.test(name)) {
-    return true;
-  }
-  if (extname(name) === ".env") {
-    return true;
-  }
-  return false;
-}
-
-export function isHiddenRelPath(relPath: string): boolean {
-  const normalized = relPath.replaceAll("\\", "/");
-  for (const segment of normalized.split("/")) {
-    if (segment.length === 0 || segment === ".") {
-      continue;
-    }
-    if (isHiddenName(segment)) {
-      return true;
-    }
-  }
-  return false;
 }
 
 export function relFromWorkspace(workspaceRoot: string, absPath: string): string {
@@ -165,7 +137,7 @@ export async function listWorkspaceFiles(
   const names = await readdir(absPath);
   const entries: FileEntry[] = [];
   for (const name of names) {
-    if (isHiddenName(name)) {
+    if (isHiddenRelPath(name)) {
       continue;
     }
     const childStat = await stat(join(absPath, name));
