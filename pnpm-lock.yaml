@@ -123,6 +123,9 @@ importers:
       '@flintloom/kernel':
         specifier: workspace:*
         version: link:../kernel
+      '@flintloom/knowledge':
+        specifier: workspace:*
+        version: link:../knowledge
       '@flintloom/tools':
         specifier: workspace:*
         version: link:../tools

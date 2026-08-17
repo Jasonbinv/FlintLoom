@@ -1,4 +1,6 @@
+import type { KnowledgeService } from "@flintloom/knowledge";
 import { resolveInside, type ToolDefinition } from "@flintloom/tools";
+import { ingestWorkspaceFile } from "./ingest.ts";
 import { parse } from "./parse.ts";
 import { probe } from "./probe.ts";
 import type { ProbeResult } from "./types.ts";
@@ -65,6 +67,51 @@ export function createDocParseTool(): ToolDefinition {
       }
       const absPath = resolveInside(exec.workspaceRoot, inputPath);
       return parse(absPath);
+    },
+  };
+}
+
+export function createDocIngestTool(kb: KnowledgeService): ToolDefinition {
+  return {
+    name: "doc_ingest",
+    description:
+      "Parse a workspace document and ingest it into the local knowledge base.",
+    parameters: {
+      type: "object",
+      properties: { path: { type: "string" } },
+      required: ["path"],
+    },
+    async execute(args, exec) {
+      const outcome = await ingestWorkspaceFile(
+        kb,
+        exec.workspaceRoot,
+        pathArg(args),
+        exec.signal,
+      );
+      switch (outcome.kind) {
+        case "aborted":
+          return "aborted";
+        case "missing_path":
+          return "failed: missing path";
+        case "hidden":
+          return "failed: hidden";
+        case "not_found":
+          return "failed: not found";
+        case "not_a_file":
+          return "failed: not a file";
+        case "written": {
+          const payload: Record<string, unknown> = {
+            status: outcome.record.status,
+            id: outcome.record.id,
+            path: outcome.record.path,
+            title: outcome.record.title,
+          };
+          if (outcome.record.failReason !== undefined) {
+            payload.failReason = outcome.record.failReason;
+          }
+          return JSON.stringify(payload);
+        }
+      }
     },
   };
 }
