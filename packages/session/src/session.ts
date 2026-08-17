@@ -13,6 +13,41 @@ export class Session {
     return [...this.#events];
   }
 
+  isWaiting(turnId: string): boolean {
+    let started = false;
+    let ended = false;
+    let lastSurfaceWait: boolean | undefined;
+    let actionAfterLastSurface = false;
+
+    for (const event of this.#events) {
+      if (event.type === "turn/start" && event.turnId === turnId) {
+        started = true;
+        ended = false;
+        lastSurfaceWait = undefined;
+        actionAfterLastSurface = false;
+      } else if (event.type === "turn/end" && event.turnId === turnId) {
+        if (started) {
+          ended = true;
+        }
+      } else if (started && !ended && "turnId" in event && event.turnId === turnId) {
+        if (event.type === "a2ui/surface") {
+          lastSurfaceWait = event.wait;
+          actionAfterLastSurface = false;
+        } else if (event.type === "a2ui/action") {
+          actionAfterLastSurface = true;
+        }
+      }
+    }
+
+    if (!started || ended) {
+      return false;
+    }
+    if (lastSurfaceWait !== true || actionAfterLastSurface) {
+      return false;
+    }
+    return true;
+  }
+
   deriveMessages(): ChatMessage[] {
     const messages: ChatMessage[] = [];
     let pendingCalls: { id: string; name: string; args: unknown }[] = [];
@@ -53,6 +88,21 @@ export class Session {
             content: event.text,
             toolCallId: event.callId,
             name: event.name,
+          });
+          break;
+        case "a2ui/surface":
+          break;
+        case "a2ui/action":
+          flushCalls();
+          messages.push({
+            role: "user",
+            content: JSON.stringify({
+              type: "a2ui/action",
+              surfaceId: event.surfaceId,
+              name: event.name,
+              ...(event.context !== undefined ? { context: event.context } : {}),
+              ...(event.data !== undefined ? { data: event.data } : {}),
+            }),
           });
           break;
       }
