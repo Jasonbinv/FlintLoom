@@ -23,6 +23,9 @@ importers:
       '@flintloom/host':
         specifier: workspace:*
         version: link:apps/host
+      '@flintloom/infographic':
+        specifier: workspace:*
+        version: link:packages/infographic
       '@flintloom/knowledge':
         specifier: workspace:*
         version: link:packages/knowledge
@@ -179,6 +182,19 @@ importers:
         version: link:../models
 
   packages/grep:
+    dependencies:
+      '@flintloom/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      '@flintloom/tools':
+        specifier: workspace:*
+        version: link:../tools
+    devDependencies:
+      '@flintloom/models':
+        specifier: workspace:*
+        version: link:../models
+
+  packages/infographic:
     dependencies:
       '@flintloom/kernel':
         specifier: workspace:*

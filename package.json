@@ -18,6 +18,7 @@
     "@flintloom/fs": "workspace:*",
     "@flintloom/grep": "workspace:*",
     "@flintloom/host": "workspace:*",
+    "@flintloom/infographic": "workspace:*",
     "@flintloom/knowledge": "workspace:*",
     "@flintloom/loop": "workspace:*",
     "@flintloom/models": "workspace:*",
