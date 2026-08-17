@@ -56,10 +56,102 @@ body,
   min-height: 0;
 }
 
+.side-tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.35rem 0.5rem 0;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.side-tabs button {
+  background: transparent;
+  color: inherit;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 0.4rem 0.6rem;
+  cursor: pointer;
+  font: inherit;
+}
+
+.side-tabs button.active {
+  border-bottom-color: #3a6ea5;
+}
+
 .file-tree {
   flex: 0.7;
   overflow: auto;
   padding: 0.5rem;
+}
+
+.knowledge-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.knowledge-search {
+  margin: 0.5rem;
+  background: #111111;
+  color: inherit;
+  border: 1px solid #333333;
+  border-radius: 6px;
+  padding: 0.4rem 0.5rem;
+  font: inherit;
+}
+
+.knowledge-list {
+  flex: 0.7;
+  overflow: auto;
+  padding: 0 0.5rem 0.5rem;
+}
+
+.knowledge-item button {
+  background: transparent;
+  color: inherit;
+  border: none;
+  padding: 0.2rem 0.4rem;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  width: 100%;
+}
+
+.knowledge-detail {
+  flex: 1;
+  overflow: auto;
+  margin: 0;
+  padding: 0.75rem;
+  border-top: 1px solid #2a2a2a;
+  background: #0f0f0f;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+}
+
+.knowledge-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-top: 1px solid #2a2a2a;
+}
+
+.knowledge-footer button {
+  background: #3a6ea5;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.35rem 0.8rem;
+  cursor: pointer;
+  font: inherit;
+}
+
+.knowledge-footer button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .file-node button {

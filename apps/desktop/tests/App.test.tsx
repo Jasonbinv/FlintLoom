@@ -37,9 +37,58 @@ function installFetch(opts: {
   turn?: Response | Error;
   files?: Response | Error;
   preview?: Response | Error;
+  knowledge?: Response | Error;
+  knowledgeSearch?: Response | Error;
+  knowledgeImport?: Response | Error;
 } = {}) {
-  globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+  globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = requestUrl(input);
+    if (url.includes("/v1/knowledge/search")) {
+      if (opts.knowledgeSearch instanceof Error) throw opts.knowledgeSearch;
+      return (
+        opts.knowledgeSearch ??
+        new Response(JSON.stringify({ hits: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      );
+    }
+    if (url.includes("/v1/knowledge/import")) {
+      if (opts.knowledgeImport instanceof Error) throw opts.knowledgeImport;
+      return (
+        opts.knowledgeImport ??
+        new Response(
+          JSON.stringify({
+            id: 1,
+            path: "README.md",
+            title: "Hello",
+            status: "ok",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        )
+      );
+    }
+    if (url.includes("/v1/knowledge")) {
+      if (opts.knowledge instanceof Error) throw opts.knowledge;
+      return (
+        opts.knowledge ??
+        new Response(
+          JSON.stringify({
+            items: [
+              {
+                id: 1,
+                path: "notes/a.md",
+                title: "Notes",
+                status: "ok",
+                ingestedAt: 1,
+                current: true,
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        )
+      );
+    }
     if (url.includes("/v1/files/preview")) {
       if (opts.preview instanceof Error) throw opts.preview;
       return (
@@ -324,6 +373,115 @@ describe("App", () => {
     await waitForText("host unreachable");
     expect(document.body.textContent).toContain("README.md");
     expect(document.body.textContent).toContain("docs");
+  });
+
+  it("shows Files and Knowledge tabs with Files default", async () => {
+    installFetch();
+    await mountApp();
+    await waitForText("README.md");
+    const filesTab = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "Files",
+    );
+    const knowledgeTab = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "Knowledge",
+    );
+    expect(filesTab).toBeTruthy();
+    expect(knowledgeTab).toBeTruthy();
+    expect(document.body.textContent).toContain("README.md");
+  });
+
+  it("loads knowledge list with Import disabled until a file is clicked", async () => {
+    installFetch();
+    await mountApp();
+    await waitForText("README.md");
+    const knowledgeTab = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "Knowledge",
+    );
+    if (!knowledgeTab) throw new Error("no Knowledge tab");
+    await act(async () => {
+      knowledgeTab.click();
+    });
+    await waitForText("notes/a.md");
+    const importButton = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "Import",
+    );
+    if (!importButton) throw new Error("no Import button");
+    expect(importButton.disabled).toBe(true);
+  });
+
+  it("imports selected file path after clicking a file", async () => {
+    installFetch();
+    await mountApp();
+    await waitForText("README.md");
+
+    const knowledgeTab = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "Knowledge",
+    );
+    const filesTab = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "Files",
+    );
+    if (!knowledgeTab || !filesTab) throw new Error("missing tabs");
+
+    await act(async () => {
+      knowledgeTab.click();
+    });
+    await waitForText("notes/a.md");
+
+    await act(async () => {
+      filesTab.click();
+    });
+    await waitForText("README.md");
+
+    const fileButton = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "README.md",
+    );
+    if (!fileButton) throw new Error("no README.md button");
+    await act(async () => {
+      fileButton.click();
+    });
+
+    await act(async () => {
+      knowledgeTab.click();
+    });
+    await waitForText("notes/a.md");
+
+    const importButton = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "Import",
+    );
+    if (!importButton) throw new Error("no Import button");
+    expect(importButton.disabled).toBe(false);
+    await act(async () => {
+      importButton.click();
+    });
+
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const importCall = fetchMock.mock.calls.find(([input, init]) => {
+      const url = requestUrl(input as RequestInfo | URL);
+      return (
+        url.includes("/v1/knowledge/import") &&
+        (init as RequestInit | undefined)?.method === "POST"
+      );
+    });
+    expect(importCall).toBeTruthy();
+    const body = JSON.parse(String((importCall![1] as RequestInit).body)) as {
+      path: string;
+    };
+    expect(body.path).toBe("README.md");
+  });
+
+  it("shows host unreachable when knowledge fetch throws", async () => {
+    installFetch({ knowledge: new Error("network") });
+    await mountApp();
+    await waitForText("README.md");
+    const knowledgeTab = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "Knowledge",
+    );
+    if (!knowledgeTab) throw new Error("no Knowledge tab");
+    await act(async () => {
+      knowledgeTab.click();
+    });
+    await waitForText("host unreachable");
+    expect(document.body.textContent).toContain("host unreachable");
   });
 
   it("keeps the later file preview when the first preview is delayed", async () => {

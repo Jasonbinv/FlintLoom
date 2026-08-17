@@ -5,12 +5,15 @@ import {
   fetchPreview,
   type FileEntry,
 } from "./files.ts";
+import { KnowledgePane } from "./KnowledgePane.tsx";
 
 type Props = {
   onInsertPath: (path: string) => void;
 };
 
 export function FilePane({ onInsertPath }: Props) {
+  const [tab, setTab] = useState<"files" | "knowledge">("files");
+  const [selectedFile, setSelectedFile] = useState<string>();
   const [rootEntries, setRootEntries] = useState<FileEntry[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [children, setChildren] = useState<Record<string, FileEntry[]>>({});
@@ -87,6 +90,7 @@ export function FilePane({ onInsertPath }: Props) {
   }
 
   async function openFile(filePath: string) {
+    setSelectedFile(filePath);
     onInsertPath(filePath);
     await startPreview(filePath);
   }
@@ -122,16 +126,38 @@ export function FilePane({ onInsertPath }: Props) {
 
   return (
     <aside className="file-pane">
-      <div className="file-tree">
-        {treeError ? (
-          <div>host unreachable</div>
-        ) : (
-          renderEntries(rootEntries, ".", 0)
-        )}
+      <div className="side-tabs">
+        <button
+          type="button"
+          className={tab === "files" ? "active" : undefined}
+          onClick={() => setTab("files")}
+        >
+          Files
+        </button>
+        <button
+          type="button"
+          className={tab === "knowledge" ? "active" : undefined}
+          onClick={() => setTab("knowledge")}
+        >
+          Knowledge
+        </button>
       </div>
-      <pre className="file-preview">
-        {previewError ? "host unreachable" : previewText}
-      </pre>
+      {tab === "files" ? (
+        <>
+          <div className="file-tree">
+            {treeError ? (
+              <div>host unreachable</div>
+            ) : (
+              renderEntries(rootEntries, ".", 0)
+            )}
+          </div>
+          <pre className="file-preview">
+            {previewError ? "host unreachable" : previewText}
+          </pre>
+        </>
+      ) : (
+        <KnowledgePane selectedPath={selectedFile} />
+      )}
     </aside>
   );
 }
