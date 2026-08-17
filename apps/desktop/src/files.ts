@@ -2,7 +2,7 @@ export type FileEntry = { name: string; type: "file" | "dir" };
 export type FileList = { path: string; entries: FileEntry[] };
 export type FilePreview = {
   path: string;
-  kind: "markdown" | "text" | "failed";
+  kind: "markdown" | "text" | "failed" | "svg";
   text: string;
 };
 

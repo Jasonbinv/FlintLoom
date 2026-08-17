@@ -177,6 +177,12 @@ body,
   font-size: 0.85rem;
 }
 
+.file-preview-svg img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
 .log {
   flex: 1;
   overflow: auto;

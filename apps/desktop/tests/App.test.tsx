@@ -133,29 +133,25 @@ function installFetch(opts: {
     }
     if (url.includes("/v1/files/preview")) {
       if (opts.preview instanceof Error) throw opts.preview;
-      return (
-        opts.preview ??
-        new Response(
-          JSON.stringify({
-            path: "README.md",
-            kind: "markdown",
-            text: "# Hello\n",
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        )
+      if (opts.preview) return opts.preview.clone();
+      return new Response(
+        JSON.stringify({
+          path: "README.md",
+          kind: "markdown",
+          text: "# Hello\n",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
       );
     }
     if (url.includes("/v1/files")) {
       if (opts.files instanceof Error) throw opts.files;
-      return (
-        opts.files ??
-        new Response(
-          JSON.stringify({
-            path: ".",
-            entries: [{ name: "README.md", type: "file" }],
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        )
+      if (opts.files) return opts.files.clone();
+      return new Response(
+        JSON.stringify({
+          path: ".",
+          entries: [{ name: "README.md", type: "file" }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
       );
     }
     if (url.includes("/v1/models")) {
@@ -369,6 +365,45 @@ describe("App", () => {
       fileButton.click();
     });
     expect(textarea.value).toBe("README.md");
+  });
+
+  it("renders infographic preview as an image without json source", async () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg"><text>Parse</text></svg>`;
+    installFetch({
+      files: new Response(
+        JSON.stringify({
+          path: ".",
+          entries: [{ name: "flow.infographic.json", type: "file" }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+      preview: new Response(
+        JSON.stringify({
+          path: "flow.infographic.json",
+          kind: "svg",
+          text: svg,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    await waitForText("flow.infographic.json");
+    const fileButton = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "flow.infographic.json",
+    );
+    if (!fileButton) throw new Error("no infographic button");
+    await act(async () => {
+      fileButton.click();
+    });
+    const img = document.querySelector("img");
+    if (!img) throw new Error("no preview img");
+    expect(img.getAttribute("alt")).toBe("flow.infographic.json");
+    expect(img.getAttribute("src") ?? "").toContain("data:image/svg+xml");
+    expect(img.getAttribute("src") ?? "").toContain(encodeURIComponent("<svg"));
+    expect(document.querySelector("pre.file-preview")?.textContent ?? "").not.toContain(
+      `"kind":"svg"`,
+    );
+    expect(document.body.textContent).not.toContain('"nodes"');
   });
 
   it("keeps root file tree when expanding a folder list fails", async () => {

@@ -20,6 +20,9 @@ export function FilePane({ onInsertPath }: Props) {
   const [treeError, setTreeError] = useState(false);
   const [dirErrors, setDirErrors] = useState<Set<string>>(() => new Set());
   const [previewText, setPreviewText] = useState("");
+  const [previewKind, setPreviewKind] = useState<
+    "markdown" | "text" | "failed" | "svg"
+  >("text");
   const [previewError, setPreviewError] = useState(false);
   const previewAc = useRef<AbortController | undefined>(undefined);
 
@@ -27,6 +30,7 @@ export function FilePane({ onInsertPath }: Props) {
     try {
       const preview = await fetchPreview(filePath, signal);
       if (signal.aborted) return;
+      setPreviewKind(preview.kind);
       setPreviewText(preview.text);
       setPreviewError(false);
     } catch (err) {
@@ -151,9 +155,18 @@ export function FilePane({ onInsertPath }: Props) {
               renderEntries(rootEntries, ".", 0)
             )}
           </div>
-          <pre className="file-preview">
-            {previewError ? "host unreachable" : previewText}
-          </pre>
+          {previewKind === "svg" && !previewError ? (
+            <div className="file-preview file-preview-svg">
+              <img
+                alt={selectedFile ?? ""}
+                src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(previewText)}`}
+              />
+            </div>
+          ) : (
+            <pre className="file-preview">
+              {previewError ? "host unreachable" : previewText}
+            </pre>
+          )}
         </>
       ) : (
         <KnowledgePane selectedPath={selectedFile} />
