@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      '@flintloom/a2ui':
+        specifier: workspace:*
+        version: link:packages/a2ui
       '@flintloom/docforge':
         specifier: workspace:*
         version: link:packages/docforge
@@ -117,6 +120,19 @@ importers:
       '@flintloom/tools':
         specifier: workspace:*
         version: link:../../packages/tools
+
+  packages/a2ui:
+    dependencies:
+      '@flintloom/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      '@flintloom/tools':
+        specifier: workspace:*
+        version: link:../tools
+    devDependencies:
+      '@flintloom/models':
+        specifier: workspace:*
+        version: link:../models
 
   packages/docforge:
     dependencies:

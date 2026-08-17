@@ -13,6 +13,7 @@
     "node": ">=22"
   },
   "devDependencies": {
+    "@flintloom/a2ui": "workspace:*",
     "@flintloom/docforge": "workspace:*",
     "@flintloom/fs": "workspace:*",
     "@flintloom/grep": "workspace:*",
