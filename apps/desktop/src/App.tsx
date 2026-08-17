@@ -92,6 +92,7 @@ export function App() {
   const nextId = useRef(0);
   const turnIdRef = useRef<string | undefined>();
   const cancelWantedRef = useRef(false);
+  const submittingActionRef = useRef(false);
   const [hostDown, setHostDown] = useState(false);
   const [chatConfigured, setChatConfigured] = useState<boolean | undefined>();
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
@@ -184,18 +185,22 @@ export function App() {
 
   async function submitAction(surfaceId: string, name: string, data?: unknown) {
     const turnId = turnIdRef.current;
-    if (!turnId || sending) return;
+    if (!turnId || submittingActionRef.current) return;
+    submittingActionRef.current = true;
+    setWaitingAction(false);
     setSending(true);
     cancelWantedRef.current = false;
     try {
       await postTurnAction(turnId, { surfaceId, name, data }, handleEvent);
     } finally {
+      submittingActionRef.current = false;
       setSending(false);
     }
   }
 
   function onCancel() {
     cancelWantedRef.current = true;
+    submittingActionRef.current = false;
     if (turnIdRef.current) void cancelTurn(turnIdRef.current);
     setWaitingAction(false);
     setSending(false);
@@ -234,7 +239,11 @@ export function App() {
                 {bubble.kind === "a2ui" && (
                   <A2uiSurface
                     messages={bubble.messages}
-                    interactive={waitingAction && bubble.turnId === turnIdRef.current}
+                    interactive={
+                      waitingAction &&
+                      !sending &&
+                      bubble.turnId === turnIdRef.current
+                    }
                     onAction={(name, data) => {
                       void submitAction(bubble.surfaceId, name, data);
                     }}

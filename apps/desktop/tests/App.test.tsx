@@ -748,4 +748,33 @@ describe("App", () => {
     expect(body.name).toBe("confirm");
     expect(body.surfaceId).toBe("main");
   });
+
+  it("posts /actions only once when OK is clicked twice in the same tick", async () => {
+    installFetch({
+      turn: new Response(SURFACE_SSE, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    });
+    await mountApp();
+    await typeAndSend("hi");
+    await waitForText("OK");
+    const okButton = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "OK",
+    );
+    if (!okButton) throw new Error("no OK button");
+    await act(async () => {
+      okButton.click();
+      okButton.click();
+    });
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const actionCalls = fetchMock.mock.calls.filter(([input, init]) => {
+      const url = requestUrl(input as RequestInfo | URL);
+      return (
+        url.includes("/actions") &&
+        (init as RequestInit | undefined)?.method === "POST"
+      );
+    });
+    expect(actionCalls).toHaveLength(1);
+  });
 });
