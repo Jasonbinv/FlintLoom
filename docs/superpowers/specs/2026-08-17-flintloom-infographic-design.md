@@ -132,7 +132,7 @@ function applyOps(doc: InfographicDocument, ops: unknown): InfographicDocument;
 
 ### 5.3 `renderSvg`
 
-纯函数，无 `fs`、无网络。节点画成固定 `120×40` 的 `rect`（左上角为 `x,y`）；边为中心到中心的 `line`，终点一个小 `polygon` 箭头；`text` 为 XML 转义后的 label。viewBox 为所有节点盒加 `24` 边距；没有节点时 viewBox `0 0 200 80`。不输出 `href`、事件属性、`foreignObject`、`<script>`、`<style>`、`<use>`。
+纯函数，无 `fs`、无网络。节点画成固定 `120×40` 的 `rect`（左上角为 `x,y`）；边为中心到中心的 `line`，终点一个小 `polygon` 箭头；`text` 为 XML 转义后的 label。描边与文字 `#e8e8e8`，节点填充 `#1a1a1a`（Files 预览是深色底）；`<svg>` 不设背景。viewBox 为所有节点盒加 `24` 边距；没有节点时 viewBox `0 0 200 80`。不输出 `href`、事件属性、`foreignObject`、`<script>`、`<style>`、`<use>`。
 
 「消毒」= 闭集构造 + XML 转义，不引入独立 sanitizer 库。
 
