@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -108,15 +108,19 @@ describe("startHost", () => {
   });
 
   it("host src does not import tool factories", () => {
-    const server = readFileSync(join(here, "../src/server.ts"), "utf8");
-    const index = readFileSync(join(here, "../src/index.ts"), "utf8");
-    const src = server + index;
+    const srcDir = join(here, "../src");
+    const src = readdirSync(srcDir)
+      .filter((name) => name.endsWith(".ts"))
+      .map((name) => readFileSync(join(srcDir, name), "utf8"))
+      .join("\n");
     expect(src).not.toMatch(/@flintloom\/fs/);
     expect(src).not.toMatch(/@flintloom\/grep/);
     expect(src).not.toMatch(/@flintloom\/shell/);
     expect(src).not.toMatch(/@flintloom\/models-chat/);
+    expect(src).not.toMatch(/@flintloom\/knowledge/);
     expect(src).not.toMatch(/createDocProbeTool/);
     expect(src).not.toMatch(/createDocParseTool/);
+    expect(src).not.toMatch(/createDocIngestTool/);
   });
 
   it("returns 500 text/plain with the error message and redacts the api key", async () => {
@@ -281,6 +285,8 @@ describe("startHost", () => {
     const names = ctx.require<ToolRegistry>("tools").schemas().map((row) => row.name);
     expect(names).toContain("doc_probe");
     expect(names).toContain("doc_parse");
+    expect(names).toContain("doc_ingest");
+    expect(names).toContain("knowledge_search");
   });
 
   it("turn without a chat key emits model/error and failed", async () => {

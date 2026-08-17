@@ -11,6 +11,7 @@ import {
   normalizeRelPath,
   previewWorkspaceFile,
 } from "./files.ts";
+import { handleKnowledgeRequest } from "./knowledge.ts";
 import { loadOrCreateToken, readCredentials } from "./token.ts";
 
 export type Runtime = { ctx: Context };
@@ -88,6 +89,9 @@ export async function createRuntime(
         ) ?? "deepseek-chat",
     };
   }
+  runtimeConfigById.knowledge = {
+    dbPath: join(homeDir, ".flintloom", "knowledge.sqlite"),
+  };
 
   const ctx = new Context();
   await applyConfig(ctx, config, { runtimeConfigById });
@@ -189,6 +193,17 @@ async function handleRequest(
 
   if (pathname.startsWith("/v1/") && !isAuthorized(req, opts.token)) {
     send(res, 401);
+    return;
+  }
+
+  if (
+    await handleKnowledgeRequest(req, res, {
+      pathname,
+      url,
+      workspaceRoot: opts.workspaceRoot,
+      ctx: opts.runtime.ctx,
+    })
+  ) {
     return;
   }
 

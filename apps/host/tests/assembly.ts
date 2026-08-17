@@ -16,6 +16,8 @@ export const ASSEMBLY = `plugins:
     name: "@flintloom/grep"
   - id: shell
     name: "@flintloom/shell"
+  - id: knowledge
+    name: "@flintloom/knowledge"
   - id: docforge
     name: "@flintloom/docforge"
   - id: loop
