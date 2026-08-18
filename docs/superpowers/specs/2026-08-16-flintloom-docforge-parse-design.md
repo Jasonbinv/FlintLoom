@@ -179,5 +179,5 @@ tools.register(createDocParseTool());
 
 总 spec §10 / §16 第二刀：本切片交付 `doc_probe` + `doc_parse`。  
 `doc_ingest` 与预览 HTTP/UI 是第二刀后续块。  
-`doc_generate` 见 [生成设计](2026-08-17-flintloom-docforge-generate-design.md)。`doc_convert` 见 [转换设计](2026-08-18-flintloom-docforge-convert-design.md)。edit/compare/summarize 仍待拆。  
+`doc_generate` 见 [生成设计](2026-08-17-flintloom-docforge-generate-design.md)。`doc_convert` 见 [转换设计](2026-08-18-flintloom-docforge-convert-design.md)。`doc_edit` 见 [编辑设计](2026-08-18-flintloom-docforge-edit-design.md)。compare/summarize 仍待拆。  
 工作台继续只消费现有 SSE；解析结果以现有 `tool/call` / `tool/result` 气泡出现。
