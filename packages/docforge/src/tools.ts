@@ -3,6 +3,7 @@ import { dirname, relative } from "node:path";
 import { stat } from "node:fs/promises";
 import type { KnowledgeService } from "@flintloom/knowledge";
 import { isHiddenRelPath, resolveInside, type ToolDefinition } from "@flintloom/tools";
+import { convertDocument } from "./convert.ts";
 import {
   GENERATE_MAX_BYTES,
   formatFromOutRelPath,
@@ -24,6 +25,9 @@ const FAIL_REASONS = new Set([
   "missing parent",
   "too large",
   "unreadable",
+  "empty text",
+  "encrypted",
+  "unsupported type",
 ]);
 
 function strArg(args: Record<string, unknown>, key: string): string | undefined {
@@ -244,6 +248,101 @@ export function createDocGenerateTool(): ToolDefinition {
           source: sourceRel,
           out: outRel,
           format,
+        });
+      } catch (err) {
+        return failFromError(err);
+      }
+    },
+  };
+}
+
+export function createDocConvertTool(): ToolDefinition {
+  return {
+    name: "doc_convert",
+    description:
+      "Convert a workspace document (md, html, pdf, docx, pptx, or xlsx) to md, html, docx, or pdf. Pass source and out; format is the out extension. pptx and xlsx cannot be out. Do not use this to generate from scratch; write markdown first or use doc_generate for md sources if you prefer.",
+    parameters: {
+      type: "object",
+      properties: {
+        source: { type: "string" },
+        out: { type: "string" },
+      },
+      required: ["source", "out"],
+    },
+    async execute(args, exec) {
+      if (exec.signal.aborted) {
+        return "aborted";
+      }
+      const source = strArg(args, "source");
+      if (source === undefined) {
+        return "failed: missing source";
+      }
+      const out = strArg(args, "out");
+      if (out === undefined) {
+        return "failed: missing out";
+      }
+      const absSource = resolveInside(exec.workspaceRoot, source);
+      const absOut = resolveInside(exec.workspaceRoot, out);
+      const realRoot = realpathSync.native(exec.workspaceRoot);
+      const sourceRel = relative(realRoot, absSource).replaceAll("\\", "/");
+      const outRel = relative(realRoot, absOut).replaceAll("\\", "/");
+      if (
+        isHiddenRelPath(source) ||
+        isHiddenRelPath(out) ||
+        isHiddenRelPath(sourceRel) ||
+        isHiddenRelPath(outRel)
+      ) {
+        return "failed: hidden";
+      }
+      const format = formatFromOutRelPath(outRel);
+      if (format === undefined) {
+        return "failed: bad out";
+      }
+      let sourceStat;
+      try {
+        sourceStat = await stat(absSource);
+      } catch (err) {
+        if (isNotFound(err)) {
+          return "failed: not found";
+        }
+        return failFromError(err);
+      }
+      if (!sourceStat.isFile()) {
+        return "failed: not a file";
+      }
+      if (sourceStat.size > GENERATE_MAX_BYTES) {
+        return "failed: too large";
+      }
+      try {
+        const parent = await stat(dirname(absOut));
+        if (!parent.isDirectory()) {
+          return "failed: missing parent";
+        }
+      } catch (err) {
+        if (isNotFound(err)) {
+          return "failed: missing parent";
+        }
+        return failFromError(err);
+      }
+      try {
+        const outStat = await stat(absOut);
+        if (!outStat.isFile()) {
+          return "failed: not a file";
+        }
+      } catch (err) {
+        if (!isNotFound(err)) {
+          return failFromError(err);
+        }
+      }
+      try {
+        const result = await convertDocument(absSource, absOut);
+        return JSON.stringify({
+          status: "ok",
+          source: sourceRel,
+          out: outRel,
+          from: result.from,
+          format: result.format,
+          loss: result.loss,
         });
       } catch (err) {
         return failFromError(err);

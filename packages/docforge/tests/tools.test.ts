@@ -1,13 +1,16 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { WorkspaceEscapeError } from "@flintloom/tools";
 import {
+  createDocConvertTool,
   createDocGenerateTool,
   createDocParseTool,
   createDocProbeTool,
 } from "../src/tools.ts";
+import { EMPTY_PDF } from "./helpers/pdf.ts";
+import { writeHelloDocx } from "./helpers/office.ts";
 
 function createExec(workspaceRoot: string, signal = new AbortController().signal) {
   return { workspaceRoot, signal, channel: "cli" };
@@ -88,6 +91,75 @@ describe("doc tools", () => {
     const ac = new AbortController();
     ac.abort();
     const tool = createDocGenerateTool();
+    expect(
+      await tool.execute({ source: "a.md", out: "a.pdf" }, createExec(workspace, ac.signal)),
+    ).toBe("aborted");
+  });
+
+  it("converts docx to md with ordered json", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "flintloom-ctool-ok-"));
+    await writeHelloDocx(join(workspace, "sample.docx"));
+    const tool = createDocConvertTool();
+    const exec = createExec(workspace);
+    const raw = await tool.execute({ source: "sample.docx", out: "out.md" }, exec);
+    expect(Object.keys(JSON.parse(raw))).toEqual([
+      "status",
+      "source",
+      "out",
+      "from",
+      "format",
+      "loss",
+    ]);
+    expect(JSON.parse(raw)).toEqual({
+      status: "ok",
+      source: "sample.docx",
+      out: "out.md",
+      from: "docx",
+      format: "md",
+      loss: "images and complex formatting discarded",
+    });
+  });
+
+  it("maps convert failures without writing out", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "flintloom-ctool-"));
+    writeFileSync(join(workspace, "hello.md"), "# Hello\n");
+    writeFileSync(join(workspace, "empty.pdf"), EMPTY_PDF);
+    const tool = createDocConvertTool();
+    const exec = createExec(workspace);
+
+    expect(await tool.execute({ out: "a.pdf" }, exec)).toBe("failed: missing source");
+    expect(await tool.execute({ source: "hello.md" }, exec)).toBe("failed: missing out");
+    expect(await tool.execute({ source: "hello.md", out: "a.xlsx" }, exec)).toBe(
+      "failed: bad out",
+    );
+    expect(await tool.execute({ source: "nope.md", out: "a.pdf" }, exec)).toBe(
+      "failed: not found",
+    );
+    expect(await tool.execute({ source: "hello.md", out: "missing/a.pdf" }, exec)).toBe(
+      "failed: missing parent",
+    );
+    expect(existsSync(join(workspace, "missing"))).toBe(false);
+    expect(await tool.execute({ source: ".env", out: "a.md" }, exec)).toBe("failed: hidden");
+    await expect(tool.execute({ source: "../x.md", out: "a.md" }, exec)).rejects.toThrow(
+      WorkspaceEscapeError,
+    );
+    expect(await tool.execute({ source: "empty.pdf", out: "from-empty.md" }, exec)).toBe(
+      "failed: empty text",
+    );
+    expect(existsSync(join(workspace, "from-empty.md"))).toBe(false);
+
+    writeFileSync(join(workspace, "old.md"), "OLD\n");
+    expect(JSON.parse(await tool.execute({ source: "hello.md", out: "old.md" }, exec)).status).toBe(
+      "ok",
+    );
+    expect(readFileSync(join(workspace, "old.md"), "utf8")).toContain("Hello");
+  });
+
+  it("returns aborted when the convert signal is aborted", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "flintloom-ctool-ab-"));
+    const ac = new AbortController();
+    ac.abort();
+    const tool = createDocConvertTool();
     expect(
       await tool.execute({ source: "a.md", out: "a.pdf" }, createExec(workspace, ac.signal)),
     ).toBe("aborted");

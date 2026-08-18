@@ -2,6 +2,7 @@ import type { Context, FlintPlugin } from "@flintloom/kernel";
 import type { KnowledgeService } from "@flintloom/knowledge";
 import type { ToolRegistry } from "@flintloom/tools";
 import {
+  createDocConvertTool,
   createDocGenerateTool,
   createDocIngestTool,
   createDocParseTool,
@@ -30,6 +31,7 @@ export { convertDocument, lossForConvert } from "./convert.ts";
 export {
   createDocProbeTool,
   createDocParseTool,
+  createDocConvertTool,
   createDocGenerateTool,
   createDocIngestTool,
 };
@@ -41,6 +43,7 @@ const plugin: FlintPlugin = {
     const kb = ctx.require<KnowledgeService>("knowledge");
     ctx.effect(tools.register(createDocProbeTool()));
     ctx.effect(tools.register(createDocParseTool()));
+    ctx.effect(tools.register(createDocConvertTool()));
     ctx.effect(tools.register(createDocGenerateTool()));
     ctx.effect(tools.register(createDocIngestTool(kb)));
   },

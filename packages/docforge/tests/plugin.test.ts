@@ -21,6 +21,7 @@ describe("docforge plugin", () => {
     expect(names).toContain("doc_parse");
     expect(names).toContain("doc_ingest");
     expect(names).toContain("doc_generate");
+    expect(names).toContain("doc_convert");
   });
 
   it("registers doc_generate and drops it on stop", () => {
@@ -35,6 +36,21 @@ describe("docforge plugin", () => {
     stop();
     expect(ctx.require<ToolRegistry>("tools").schemas().map((s) => s.name)).not.toContain(
       "doc_generate",
+    );
+  });
+
+  it("registers doc_convert and drops it on stop", () => {
+    const dbPath = join(mkdtempSync(join(tmpdir(), "flintloom-docforge-kb-")), "k.sqlite");
+    const ctx = new Context();
+    ctx.plugin(modelsPlugin);
+    ctx.plugin(toolsPlugin);
+    ctx.plugin(knowledgePlugin, { dbPath });
+    const stop = ctx.plugin(plugin);
+    const names = ctx.require<ToolRegistry>("tools").schemas().map((s) => s.name);
+    expect(names).toContain("doc_convert");
+    stop();
+    expect(ctx.require<ToolRegistry>("tools").schemas().map((s) => s.name)).not.toContain(
+      "doc_convert",
     );
   });
 
