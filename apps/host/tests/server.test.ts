@@ -100,6 +100,7 @@ describe("startHost", () => {
     const names = ctx.require<ToolRegistry>("tools").schemas().map((s) => s.name);
     expect(names).not.toContain("doc_generate");
     expect(names).not.toContain("doc_parse");
+    expect(names).not.toContain("doc_convert");
   });
 
   it("omitting fs from yml omits the fs tool", async () => {
@@ -138,6 +139,7 @@ describe("startHost", () => {
     expect(src).not.toMatch(/createDocParseTool/);
     expect(src).not.toMatch(/createDocIngestTool/);
     expect(src).not.toMatch(/createDocGenerateTool/);
+    expect(src).not.toMatch(/createDocConvertTool/);
     expect(src).not.toMatch(/@flintloom\/a2ui/);
     expect(src).not.toMatch(/createA2uiEmitTool/);
     expect(src).not.toMatch(/createInfographicGetTool/);
