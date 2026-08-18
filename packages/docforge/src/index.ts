@@ -28,6 +28,7 @@ export {
 } from "./generate.ts";
 export type { ConvertFrom } from "./convert.ts";
 export { convertDocument, lossForConvert } from "./convert.ts";
+export { countNonOverlap, editMarkdown, normalizeMarkdown } from "./edit.ts";
 export {
   createDocProbeTool,
   createDocParseTool,
