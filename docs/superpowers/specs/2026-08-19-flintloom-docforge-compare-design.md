@@ -1,7 +1,7 @@
 # FlintLoom DocForge 对比切片设计
 
 日期：2026-08-19  
-状态：已审阅草稿  
+状态：已复核  
 产品：FlintLoom — A real agent. / 真正的 Agent。  
 范围：总 spec 第三刀的 **`doc_compare` 块**。两份工作区文档先 parse 成 markdown，再做行级 unified diff。挂在现有 `@flintloom/docforge` 的 `apply` 上，yml 不新加插件。禁止再往 `createRuntime` 里 `register`。本片不做 summarize，不写盘，不改 A2UI catalog，不改 Files preview `kind`。
 
@@ -61,7 +61,7 @@ Agent
 
 yml 仍是现在的 `docforge` 行。`apply` 在 `createDocEditTool` 之后、`createDocIngestTool` 之前登记 `createDocCompareTool`。去掉 `docforge` 行 → schema 无 probe/parse/convert/generate/edit/**compare**/ingest。
 
-新增 npm 依赖：`diff`（jsdiff）。只用 `createTwoFilesPatch`。禁止 `RegExp` 拿用户路径当模式。
+新增 npm 依赖：`diff` ^8（jsdiff，自带类型，不要 `@types/diff`）。只用 `createTwoFilesPatch`。禁止 `RegExp` 拿用户路径当模式。
 
 ## 5. 组件
 
@@ -211,7 +211,7 @@ ctx.effect(tools.register(createDocIngestTool(kb)));
 
 ## 9. 测试
 
-使用已提交的 `packages/docforge/tests/fixtures/hello.md` 与 `binary.bin`。docx 用现有 test helper 现场写，不提交新二进制夹具。
+使用已提交的 `packages/docforge/tests/fixtures/hello.md` 与 `binary.bin`。不提交新二进制夹具。
 
 1. `hello.md` vs 把 `# Hello` 换成 `# Hi` 的副本：键顺序 `status`、`a`、`b`、`identical`、`diff`；`identical === false`；`diff` 含 `-# Hello` 与 `+# Hi`；`发展` 仍可作为上下文出现。
 2. `hello.md` vs 自己：`identical === true`，`diff === ""`。
