@@ -1,7 +1,7 @@
 # FlintLoom DocForge 转换切片设计
 
 日期：2026-08-18  
-状态：已审阅草稿  
+状态：已复核  
 产品：FlintLoom — A real agent. / 真正的 Agent。  
 范围：总 spec 第三刀的 **`doc_convert` 块**。工作区已有文档 → md / html / docx / pdf。挂在现有 `@flintloom/docforge` 的 `apply` 上，yml 不新加插件。禁止再往 `createRuntime` 里 `register`。本片不做 edit / compare / summarize，不写 xlsx/pptx，不改 A2UI catalog，不改 Files preview `kind`。
 
@@ -94,13 +94,14 @@ export async function convertDocument(
 `convertDocument` **不做** hidden / 工作区闸门 / 父目录检查；那些在工具层。步骤：
 
 1. `formatFromOutRelPath(absOut)` 为空 → 抛 `Error("bad out")`。
-2. `stat.size > GENERATE_MAX_BYTES` → 抛 `Error("too large")`（不读正文）。
-3. `readFile` 得 bytes，再 `detectType(absSource, bytes)`（必须两参数）。结果不是 `ConvertFrom` → 抛 `Error("unsupported type")`。`from` 取该返回值，不按扩展名猜。
-4. `parse(absSource)`：若以 `failed: ` 开头，抛 `Error` 且 `message` 为去掉前缀后的短英文（`empty text` / `encrypted` / `unsupported type` / `not found` / `unreadable`）。允许 parse 再读一次文件。
-5. markdown `.length > GENERATE_MAX_CHARS` → 抛 `Error("too large")`（含 parse 截断标记导致超长）。
-6. `buildDocument(format, markdown)`；失败 → `Error("unreadable")`。
-7. 完整 Buffer 成功后再 `writeFile(absOut)`（覆盖）。I/O 失败 → `Error("unreadable")`。`readFile` 打到目录（EISDIR）也是 `unreadable`。
-8. 返回 `{ from, format, loss: lossForConvert(from, format) }`。
+2. `stat(absSource)`：ENOENT → `Error("not found")`；其它 stat 错 → `Error("unreadable")`。不是文件（目录）→ `Error("unreadable")`（对齐 `generateDocument`，用于「已有 out 不变」）。
+3. `stat.size > GENERATE_MAX_BYTES` → 抛 `Error("too large")`（不读正文）。
+4. `readFile` 得 bytes，再 `detectType(absSource, bytes)`（必须两参数）。结果不是 `ConvertFrom` → 抛 `Error("unsupported type")`。`from` 取该返回值，不按扩展名猜。
+5. `parse(absSource)`（允许再读一次文件）。**仅当返回值整串等于** `failed: empty text` / `failed: encrypted` / `failed: unsupported type` / `failed: not found` / `failed: unreadable` 时，抛 `Error` 且 `message` 为去掉前缀后的短英文。不要用 `startsWith("failed: ")`：正文以该前缀开头、后面还有内容的 md 仍应转换。
+6. markdown `.length > GENERATE_MAX_CHARS` → 抛 `Error("too large")`（含 parse 截断标记导致超长）。
+7. `buildDocument(format, markdown)`；失败 → `Error("unreadable")`。
+8. 完整 Buffer 成功后再 `writeFile(absOut)`（覆盖）。I/O 失败 → `Error("unreadable")`。
+9. 返回 `{ from, format, loss: lossForConvert(from, format) }`。
 
 ### 5.2 工具 `doc_convert`
 
@@ -224,10 +225,11 @@ ctx.effect(tools.register(createDocIngestTool(kb)));
 7. 父目录不存在 → `failed: missing parent`，该路径仍不存在。
 8. hidden、`../outside`、缺 source 先于缺 out。
 9. `stat.size > GENERATE_MAX_BYTES` 的文件不把正文交给 `parse`。parse 截断超长 markdown → `failed: too large`，不写 `out`。
-10. writer 失败：已有 `out` 字节不变。工具层把未知错误映射为 `failed: unreadable`。
-11. `apply` 后 schemas 含 `doc_convert`；yml 去掉 docforge 则不含。`stop()` 后不含。
-12. host `src` 无 `createDocConvertTool`。
-13. 现有 generate/parse/ingest/预览/信息图/A2UI 测试保持绿。不打真实 DashScope。
+10. writer / 目录当 source：`convertDocument(目录, 已有 out)` 抛 `unreadable`，已有 `out` 字节不变。工具层把未知错误映射为 `failed: unreadable`。
+11. 源 md 内容为 `failed: empty text\n# Hello` → 成功写出且含 `Hello`（禁止 `startsWith("failed: ")` 误杀）。
+12. `apply` 后 schemas 含 `doc_convert`；yml 去掉 docforge 则不含。`stop()` 后不含。
+13. host `src` 无 `createDocConvertTool`。
+14. 现有 generate/parse/ingest/预览/信息图/A2UI 测试保持绿。不打真实 DashScope。
 
 ## 10. 与总 spec / 前切片的关系
 
