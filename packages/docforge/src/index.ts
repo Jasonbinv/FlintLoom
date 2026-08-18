@@ -25,6 +25,8 @@ export {
   generateDocument,
   parseBlocks,
 } from "./generate.ts";
+export type { ConvertFrom } from "./convert.ts";
+export { convertDocument, lossForConvert } from "./convert.ts";
 export {
   createDocProbeTool,
   createDocParseTool,
