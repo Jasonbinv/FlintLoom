@@ -237,7 +237,7 @@ ctx.effect(tools.register(createDocIngestTool(kb)));
 
 预览仍是 [文件预览设计](2026-08-17-flintloom-files-preview-design.md) 的 DocForge 分支。生成 writer 见 [生成设计](2026-08-17-flintloom-docforge-generate-design.md)。信息图 / A2UI 本片不改。
 
-`doc_edit` 见 [编辑设计](2026-08-18-flintloom-docforge-edit-design.md)。compare / summarize、通道、`flint plugin add` 不在本片。
+`doc_edit` 见 [编辑设计](2026-08-18-flintloom-docforge-edit-design.md)。`doc_compare` 见 [对比设计](2026-08-19-flintloom-docforge-compare-design.md)。summarize、通道、`flint plugin add` 不在本片。
 
 ## 11. 实现顺序（本刀内）
 
