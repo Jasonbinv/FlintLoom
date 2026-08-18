@@ -1,7 +1,7 @@
 # FlintLoom DocForge 编辑切片设计
 
 日期：2026-08-18  
-状态：已审阅草稿  
+状态：已复核  
 产品：FlintLoom — A real agent. / 真正的 Agent。  
 范围：总 spec 第三刀的 **`doc_edit` 块**。对工作区 markdown 做一次精确子串替换并原地覆盖。挂在现有 `@flintloom/docforge` 的 `apply` 上，yml 不新加插件。禁止再往 `createRuntime` 里 `register`。本片不做 compare / summarize，不改 pdf/docx，不改 A2UI catalog，不改 Files preview `kind`。
 
@@ -22,7 +22,7 @@ Agent 调用 `doc_edit({ path, old, new })`，在工作区 markdown 里把恰好
 | 写回 | 一律 LF、无 BOM；若不以 `\n` 结尾则补一个 `\n`（与 generate 的 md 拷贝相同）。一次 `writeFile(path)`。 |
 | 空串 | `old` 空 → `missing old`。`new` 空 = 删除那一处。没有 `missing new`。 |
 | 写盘 | 不 `mkdir`。原地覆盖已有文件。 |
-| 上限 | 复用 `GENERATE_MAX_BYTES`（800_000）与 `GENERATE_MAX_CHARS`（200_000）。先 `stat.size` 再读盘。规范化后或替换后 `.length > GENERATE_MAX_CHARS` → `too large`，不写。 |
+| 上限 | 复用 `GENERATE_MAX_BYTES`（800_000）与 `GENERATE_MAX_CHARS`（200_000）。先 `stat.size` 再读盘。规范化后、以及 `copyMarkdown` 之后 `.length > GENERATE_MAX_CHARS` → `too large`，不写。 |
 | 预览 | 不改 `FilePreview.kind`。 |
 | 工具工厂 | `apps/host/src` 不得出现 `createDocEditTool`。host / desktop / loop / session 不得 import `editMarkdown`。 |
 | 并发 | 两次 edit 不排队，后写覆盖先写。 |
@@ -86,11 +86,9 @@ export async function editMarkdown(
 4. `readFile`；`detectType(absPath, bytes)` 两参数不是 `md` → `bad source`。
 5. `normalizeMarkdown(bytes.toString("utf8"))`；`.length > GENERATE_MAX_CHARS` → `too large`。
 6. `countNonOverlap`：0 → `not found`；≥2 → `not unique`。
-7. `body.split(old).join(replacement)` 仅在次数为 1 时使用（或等价的一次 `slice` 拼接）。结果 `.length > GENERATE_MAX_CHARS` → `too large`。
-8. 补末尾 `\n`；`writeFile`。I/O 失败 → `unreadable`。已有文件在失败时字节不变。
+7. 次数为 1 时用一次非重叠替换（`indexOf` + `slice`，或 `split`/`join`；禁止 `RegExp`）。然后 `copyMarkdown` 补末尾 `\n`。**此时** `.length > GENERATE_MAX_CHARS` → `too large`（含补换行后刚好超限）。
+8. `writeFile`。I/O 失败 → `unreadable`。已有文件在失败时字节不变。
 9. 返回 `{ replaced: 1 }`。
-
-`split`/`join` 与非重叠计数一致；禁止全局正则。
 
 ### 5.2 工具 `doc_edit`
 
