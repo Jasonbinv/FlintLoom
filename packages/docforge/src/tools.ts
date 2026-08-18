@@ -4,6 +4,7 @@ import { stat } from "node:fs/promises";
 import type { KnowledgeService } from "@flintloom/knowledge";
 import { isHiddenRelPath, resolveInside, type ToolDefinition } from "@flintloom/tools";
 import { convertDocument } from "./convert.ts";
+import { editMarkdown } from "./edit.ts";
 import {
   GENERATE_MAX_BYTES,
   formatFromOutRelPath,
@@ -17,6 +18,10 @@ import type { ProbeResult } from "./types.ts";
 const FAIL_REASONS = new Set([
   "missing source",
   "missing out",
+  "missing path",
+  "missing old",
+  "bad new",
+  "not unique",
   "hidden",
   "not found",
   "not a file",
@@ -33,6 +38,13 @@ const FAIL_REASONS = new Set([
 function strArg(args: Record<string, unknown>, key: string): string | undefined {
   const value = args[key];
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function newArg(args: Record<string, unknown>): string | undefined {
+  if (!Object.hasOwn(args, "new") || args.new === undefined) {
+    return "";
+  }
+  return typeof args.new === "string" ? args.new : undefined;
 }
 
 function isNotFound(err: unknown): boolean {
@@ -248,6 +260,71 @@ export function createDocGenerateTool(): ToolDefinition {
           source: sourceRel,
           out: outRel,
           format,
+        });
+      } catch (err) {
+        return failFromError(err);
+      }
+    },
+  };
+}
+
+export function createDocEditTool(): ToolDefinition {
+  return {
+    name: "doc_edit",
+    description:
+      "Replace one exact substring in a workspace markdown file. Pass path, old, and new; new may be empty to delete. old must occur exactly once after newline normalization. Do not use this to rewrite a whole file (use fs) or to edit pdf/docx (convert to md first).",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        old: { type: "string" },
+        new: { type: "string" },
+      },
+      required: ["path", "old"],
+    },
+    async execute(args, exec) {
+      if (exec.signal.aborted) {
+        return "aborted";
+      }
+      const inputPath = strArg(args, "path");
+      if (inputPath === undefined) {
+        return "failed: missing path";
+      }
+      const old = strArg(args, "old");
+      if (old === undefined) {
+        return "failed: missing old";
+      }
+      const replacement = newArg(args);
+      if (replacement === undefined) {
+        return "failed: bad new";
+      }
+      const absPath = resolveInside(exec.workspaceRoot, inputPath);
+      const realRoot = realpathSync.native(exec.workspaceRoot);
+      const pathRel = relative(realRoot, absPath).replaceAll("\\", "/");
+      if (isHiddenRelPath(inputPath) || isHiddenRelPath(pathRel)) {
+        return "failed: hidden";
+      }
+      let st;
+      try {
+        st = await stat(absPath);
+      } catch (err) {
+        if (isNotFound(err)) {
+          return "failed: not found";
+        }
+        return failFromError(err);
+      }
+      if (!st.isFile()) {
+        return "failed: not a file";
+      }
+      if (st.size > GENERATE_MAX_BYTES) {
+        return "failed: too large";
+      }
+      try {
+        const result = await editMarkdown(absPath, old, replacement);
+        return JSON.stringify({
+          status: "ok",
+          path: pathRel,
+          replaced: result.replaced,
         });
       } catch (err) {
         return failFromError(err);

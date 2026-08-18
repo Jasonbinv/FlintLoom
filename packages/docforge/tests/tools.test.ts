@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { WorkspaceEscapeError } from "@flintloom/tools";
 import {
   createDocConvertTool,
+  createDocEditTool,
   createDocGenerateTool,
   createDocParseTool,
   createDocProbeTool,
@@ -162,6 +163,78 @@ describe("doc tools", () => {
     const tool = createDocConvertTool();
     expect(
       await tool.execute({ source: "a.md", out: "a.pdf" }, createExec(workspace, ac.signal)),
+    ).toBe("aborted");
+  });
+
+  it("edits markdown with ordered json", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "flintloom-etool-ok-"));
+    writeFileSync(join(workspace, "hello.md"), "# Hello\n\n发展\n");
+    const tool = createDocEditTool();
+    const exec = createExec(workspace);
+    const raw = await tool.execute(
+      { path: "hello.md", old: "# Hello", new: "# Hi" },
+      exec,
+    );
+    expect(Object.keys(JSON.parse(raw))).toEqual(["status", "path", "replaced"]);
+    expect(JSON.parse(raw)).toEqual({
+      status: "ok",
+      path: "hello.md",
+      replaced: 1,
+    });
+    expect(readFileSync(join(workspace, "hello.md"), "utf8")).toContain("# Hi");
+  });
+
+  it("maps edit failures without writing", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "flintloom-etool-"));
+    writeFileSync(join(workspace, "hello.md"), "# Hello\n");
+    writeFileSync(join(workspace, "dup.md"), "foo\nfoo\n");
+    writeFileSync(join(workspace, "x.docx"), "x");
+    const tool = createDocEditTool();
+    const exec = createExec(workspace);
+
+    expect(await tool.execute({ old: "a", new: "b" }, exec)).toBe("failed: missing path");
+    expect(await tool.execute({ path: "hello.md" }, exec)).toBe("failed: missing old");
+    expect(await tool.execute({ path: "hello.md", old: "# Hello", new: 1 }, exec)).toBe(
+      "failed: bad new",
+    );
+    expect(await tool.execute({ path: "dup.md", old: "foo", new: "bar" }, exec)).toBe(
+      "failed: not unique",
+    );
+    expect(readFileSync(join(workspace, "dup.md"), "utf8")).toBe("foo\nfoo\n");
+    expect(await tool.execute({ path: "hello.md", old: "# Missing", new: "x" }, exec)).toBe(
+      "failed: not found",
+    );
+    expect(await tool.execute({ path: "nope.md", old: "a", new: "b" }, exec)).toBe(
+      "failed: not found",
+    );
+    expect(await tool.execute({ path: "x.docx", old: "x", new: "y" }, exec)).toBe(
+      "failed: bad source",
+    );
+    expect(await tool.execute({ path: ".env", old: "a", new: "b" }, exec)).toBe(
+      "failed: hidden",
+    );
+    await expect(tool.execute({ path: "../x.md", old: "a", new: "b" }, exec)).rejects.toThrow(
+      WorkspaceEscapeError,
+    );
+
+    expect(
+      JSON.parse(
+        await tool.execute({ path: "hello.md", old: "# Hello", new: "" }, exec),
+      ).status,
+    ).toBe("ok");
+    expect(readFileSync(join(workspace, "hello.md"), "utf8")).not.toContain("# Hello");
+  });
+
+  it("returns aborted when the edit signal is aborted", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "flintloom-etool-ab-"));
+    const ac = new AbortController();
+    ac.abort();
+    const tool = createDocEditTool();
+    expect(
+      await tool.execute(
+        { path: "a.md", old: "a", new: "b" },
+        createExec(workspace, ac.signal),
+      ),
     ).toBe("aborted");
   });
 });

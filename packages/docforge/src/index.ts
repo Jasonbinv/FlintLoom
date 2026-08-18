@@ -3,6 +3,7 @@ import type { KnowledgeService } from "@flintloom/knowledge";
 import type { ToolRegistry } from "@flintloom/tools";
 import {
   createDocConvertTool,
+  createDocEditTool,
   createDocGenerateTool,
   createDocIngestTool,
   createDocParseTool,
@@ -34,6 +35,7 @@ export {
   createDocParseTool,
   createDocConvertTool,
   createDocGenerateTool,
+  createDocEditTool,
   createDocIngestTool,
 };
 
@@ -46,6 +48,7 @@ const plugin: FlintPlugin = {
     ctx.effect(tools.register(createDocParseTool()));
     ctx.effect(tools.register(createDocConvertTool()));
     ctx.effect(tools.register(createDocGenerateTool()));
+    ctx.effect(tools.register(createDocEditTool()));
     ctx.effect(tools.register(createDocIngestTool(kb)));
   },
 };
