@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { WorkspaceEscapeError } from "@flintloom/tools";
 import {
+  createDocCompareTool,
   createDocConvertTool,
   createDocEditTool,
   createDocGenerateTool,
@@ -233,6 +234,82 @@ describe("doc tools", () => {
     expect(
       await tool.execute(
         { path: "a.md", old: "a", new: "b" },
+        createExec(workspace, ac.signal),
+      ),
+    ).toBe("aborted");
+  });
+
+  it("compares markdown with ordered json", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "flintloom-ctool-ok-"));
+    writeFileSync(join(workspace, "hello.md"), "# Hello\n\n发展\n");
+    writeFileSync(join(workspace, "hi.md"), "# Hi\n\n发展\n");
+    const tool = createDocCompareTool();
+    const exec = createExec(workspace);
+    const raw = await tool.execute({ a: "hello.md", b: "hi.md" }, exec);
+    expect(Object.keys(JSON.parse(raw))).toEqual([
+      "status",
+      "a",
+      "b",
+      "identical",
+      "diff",
+    ]);
+    const body = JSON.parse(raw);
+    expect(body.status).toBe("ok");
+    expect(body.a).toBe("hello.md");
+    expect(body.b).toBe("hi.md");
+    expect(body.identical).toBe(false);
+    expect(typeof body.identical).toBe("boolean");
+    expect(body.diff).toContain("-# Hello");
+    expect(body.diff).toContain("+# Hi");
+    expect(readFileSync(join(workspace, "hello.md"), "utf8")).toContain("# Hello");
+    expect(readFileSync(join(workspace, "hi.md"), "utf8")).toContain("# Hi");
+  });
+
+  it("maps compare failures without writing", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "flintloom-ctool-"));
+    writeFileSync(join(workspace, "hello.md"), "# Hello\n");
+    writeFileSync(join(workspace, "x.bin"), Buffer.from([0, 1, 2, 3]));
+    const tool = createDocCompareTool();
+    const exec = createExec(workspace);
+
+    expect(await tool.execute({ b: "hello.md" }, exec)).toBe("failed: missing a");
+    expect(await tool.execute({ a: "hello.md" }, exec)).toBe("failed: missing b");
+    expect(await tool.execute({ a: "nope.md", b: "hello.md" }, exec)).toBe(
+      "failed: not found",
+    );
+    expect(await tool.execute({ a: "hello.md", b: "missing.md" }, exec)).toBe(
+      "failed: not found",
+    );
+    expect(await tool.execute({ a: "hello.md", b: "x.bin" }, exec)).toBe(
+      "failed: unsupported type",
+    );
+    expect(await tool.execute({ a: ".env", b: "hello.md" }, exec)).toBe(
+      "failed: hidden",
+    );
+    await expect(tool.execute({ a: "../x.md", b: "hello.md" }, exec)).rejects.toThrow(
+      WorkspaceEscapeError,
+    );
+
+    const same = JSON.parse(
+      await tool.execute({ a: "hello.md", b: "hello.md" }, exec),
+    );
+    expect(same).toEqual({
+      status: "ok",
+      a: "hello.md",
+      b: "hello.md",
+      identical: true,
+      diff: "",
+    });
+  });
+
+  it("returns aborted when the compare signal is aborted", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "flintloom-ctool-ab-"));
+    const ac = new AbortController();
+    ac.abort();
+    const tool = createDocCompareTool();
+    expect(
+      await tool.execute(
+        { a: "a.md", b: "b.md" },
         createExec(workspace, ac.signal),
       ),
     ).toBe("aborted");

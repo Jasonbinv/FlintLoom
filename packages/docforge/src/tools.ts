@@ -4,6 +4,7 @@ import { stat } from "node:fs/promises";
 import type { KnowledgeService } from "@flintloom/knowledge";
 import { isHiddenRelPath, resolveInside, type ToolDefinition } from "@flintloom/tools";
 import { convertDocument } from "./convert.ts";
+import { compareDocuments } from "./compare.ts";
 import { editMarkdown } from "./edit.ts";
 import {
   GENERATE_MAX_BYTES,
@@ -20,6 +21,8 @@ const FAIL_REASONS = new Set([
   "missing out",
   "missing path",
   "missing old",
+  "missing a",
+  "missing b",
   "bad new",
   "not unique",
   "hidden",
@@ -325,6 +328,77 @@ export function createDocEditTool(): ToolDefinition {
           status: "ok",
           path: pathRel,
           replaced: result.replaced,
+        });
+      } catch (err) {
+        return failFromError(err);
+      }
+    },
+  };
+}
+
+export function createDocCompareTool(): ToolDefinition {
+  return {
+    name: "doc_compare",
+    description:
+      "Compare two workspace documents by parsing each to markdown and returning a unified diff. Pass a and b. Identical files return identical true and an empty diff. Do not use this to rewrite files (use doc_edit or fs) or to summarize (use doc_summarize later).",
+    parameters: {
+      type: "object",
+      properties: {
+        a: { type: "string" },
+        b: { type: "string" },
+      },
+      required: ["a", "b"],
+    },
+    async execute(args, exec) {
+      if (exec.signal.aborted) {
+        return "aborted";
+      }
+      const a = strArg(args, "a");
+      if (a === undefined) {
+        return "failed: missing a";
+      }
+      const b = strArg(args, "b");
+      if (b === undefined) {
+        return "failed: missing b";
+      }
+      const absA = resolveInside(exec.workspaceRoot, a);
+      const absB = resolveInside(exec.workspaceRoot, b);
+      const realRoot = realpathSync.native(exec.workspaceRoot);
+      const aRel = relative(realRoot, absA).replaceAll("\\", "/");
+      const bRel = relative(realRoot, absB).replaceAll("\\", "/");
+      if (
+        isHiddenRelPath(a) ||
+        isHiddenRelPath(b) ||
+        isHiddenRelPath(aRel) ||
+        isHiddenRelPath(bRel)
+      ) {
+        return "failed: hidden";
+      }
+      for (const absPath of [absA, absB]) {
+        let st;
+        try {
+          st = await stat(absPath);
+        } catch (err) {
+          if (isNotFound(err)) {
+            return "failed: not found";
+          }
+          return failFromError(err);
+        }
+        if (!st.isFile()) {
+          return "failed: not a file";
+        }
+        if (st.size > GENERATE_MAX_BYTES) {
+          return "failed: too large";
+        }
+      }
+      try {
+        const result = await compareDocuments(absA, absB, aRel, bRel);
+        return JSON.stringify({
+          status: "ok",
+          a: aRel,
+          b: bRel,
+          identical: result.identical,
+          diff: result.diff,
         });
       } catch (err) {
         return failFromError(err);
