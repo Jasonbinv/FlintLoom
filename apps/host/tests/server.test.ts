@@ -102,6 +102,7 @@ describe("startHost", () => {
     expect(names).not.toContain("doc_parse");
     expect(names).not.toContain("doc_convert");
     expect(names).not.toContain("doc_edit");
+    expect(names).not.toContain("doc_compare");
   });
 
   it("omitting fs from yml omits the fs tool", async () => {
@@ -142,6 +143,7 @@ describe("startHost", () => {
     expect(src).not.toMatch(/createDocGenerateTool/);
     expect(src).not.toMatch(/createDocConvertTool/);
     expect(src).not.toMatch(/createDocEditTool/);
+    expect(src).not.toMatch(/createDocCompareTool/);
     expect(src).not.toMatch(/@flintloom\/a2ui/);
     expect(src).not.toMatch(/createA2uiEmitTool/);
     expect(src).not.toMatch(/createInfographicGetTool/);
