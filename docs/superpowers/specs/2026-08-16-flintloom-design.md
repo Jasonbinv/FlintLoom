@@ -215,7 +215,7 @@ v1 内置通道：desktop、cli、webhook、telegram。ACP 作为同一接口上
 | `doc_generate` | 工作区 markdown → md / html / docx / pdf（见 [生成设计](2026-08-17-flintloom-docforge-generate-design.md)）。从结构化数据生成仍留后续 |
 | `doc_edit` | 工作区 markdown 一次精确唯一替换并原地覆盖（见 [编辑设计](2026-08-18-flintloom-docforge-edit-design.md)）。pdf/docx 仍先 convert |
 | `doc_compare` | 两份文档 parse 成 markdown 后行级 unified diff，成功 JSON 不写盘（见 [对比设计](2026-08-19-flintloom-docforge-compare-design.md)） |
-| `doc_summarize` | 基于 parse 结果 + 模型；摘要写入 log，全文不塞进下一次 prompt |
+| `doc_summarize` | 基于 parse 结果 + 内层 chat；摘要 JSON 写入 log，全文不塞进下一次 prompt（见 [摘要设计](2026-08-19-flintloom-docforge-summarize-design.md)） |
 
 聊天附件、知识库导入、预览都调用这个包。
 
