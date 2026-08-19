@@ -1,5 +1,6 @@
 import type { Context, FlintPlugin } from "@flintloom/kernel";
 import type { KnowledgeService } from "@flintloom/knowledge";
+import type { ModelRegistry } from "@flintloom/models";
 import type { ToolRegistry } from "@flintloom/tools";
 import {
   createDocCompareTool,
@@ -9,6 +10,7 @@ import {
   createDocIngestTool,
   createDocParseTool,
   createDocProbeTool,
+  createDocSummarizeTool,
 } from "./tools.ts";
 
 export type { DocType, ProbeResult } from "./types.ts";
@@ -46,6 +48,7 @@ export {
   createDocGenerateTool,
   createDocEditTool,
   createDocCompareTool,
+  createDocSummarizeTool,
   createDocIngestTool,
 };
 
@@ -53,6 +56,7 @@ const plugin: FlintPlugin = {
   name: "@flintloom/docforge",
   apply(ctx: Context) {
     const tools = ctx.require<ToolRegistry>("tools");
+    const models = ctx.require<ModelRegistry>("models");
     const kb = ctx.require<KnowledgeService>("knowledge");
     ctx.effect(tools.register(createDocProbeTool()));
     ctx.effect(tools.register(createDocParseTool()));
@@ -60,6 +64,7 @@ const plugin: FlintPlugin = {
     ctx.effect(tools.register(createDocGenerateTool()));
     ctx.effect(tools.register(createDocEditTool()));
     ctx.effect(tools.register(createDocCompareTool()));
+    ctx.effect(tools.register(createDocSummarizeTool(models)));
     ctx.effect(tools.register(createDocIngestTool(kb)));
   },
 };

@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { ModelRegistry } from "@flintloom/models";
 import { WorkspaceEscapeError } from "@flintloom/tools";
 import { GENERATE_MAX_BYTES } from "../src/generate.ts";
 import {
@@ -11,6 +12,7 @@ import {
   createDocGenerateTool,
   createDocParseTool,
   createDocProbeTool,
+  createDocSummarizeTool,
 } from "../src/tools.ts";
 import { EMPTY_PDF } from "./helpers/pdf.ts";
 import { writeHelloDocx } from "./helpers/office.ts";
@@ -322,6 +324,85 @@ describe("doc tools", () => {
         { a: "a.md", b: "b.md" },
         createExec(workspace, ac.signal),
       ),
+    ).toBe("aborted");
+  });
+
+  it("summarizes markdown with ordered json", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "flintloom-stool-ok-"));
+    writeFileSync(join(workspace, "hello.md"), "# Hello\n\n发展\n");
+    const models = new ModelRegistry();
+    let capturedTools: unknown;
+    let capturedSignal: AbortSignal | undefined;
+    models.registerChat("default", {
+      async *stream(req, signal) {
+        capturedTools = req.tools;
+        capturedSignal = signal;
+        yield { type: "text", text: "Short summary." };
+      },
+    });
+    models.setDefault("chat", "default");
+    const tool = createDocSummarizeTool(models);
+    const exec = createExec(workspace);
+    const raw = await tool.execute({ path: "hello.md" }, exec);
+    expect(Object.keys(JSON.parse(raw))).toEqual(["status", "path", "summary"]);
+    expect(JSON.parse(raw)).toEqual({
+      status: "ok",
+      path: "hello.md",
+      summary: "Short summary.",
+    });
+    expect(JSON.parse(raw).summary).not.toContain("发展");
+    expect(capturedTools).toEqual([]);
+    expect(capturedSignal).toBe(exec.signal);
+  });
+
+  it("maps summarize failures without writing", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "flintloom-stool-"));
+    writeFileSync(join(workspace, "hello.md"), "# Hello\n");
+    writeFileSync(join(workspace, "x.bin"), Buffer.from([0, 1, 2, 3]));
+    writeFileSync(join(workspace, "empty.md"), "");
+    const models = new ModelRegistry();
+    let calls = 0;
+    models.registerChat("default", {
+      async *stream() {
+        calls += 1;
+        yield { type: "text", text: "nope" };
+      },
+    });
+    models.setDefault("chat", "default");
+    const tool = createDocSummarizeTool(models);
+    const exec = createExec(workspace);
+
+    expect(await tool.execute({}, exec)).toBe("failed: missing path");
+    expect(await tool.execute({ path: "nope.md" }, exec)).toBe("failed: not found");
+    expect(await tool.execute({ path: "x.bin" }, exec)).toBe(
+      "failed: unsupported type",
+    );
+    expect(await tool.execute({ path: "empty.md" }, exec)).toBe(
+      "failed: empty text",
+    );
+    expect(await tool.execute({ path: ".env" }, exec)).toBe("failed: hidden");
+    await expect(tool.execute({ path: "../x.md" }, exec)).rejects.toThrow(
+      WorkspaceEscapeError,
+    );
+    mkdirSync(join(workspace, "adir"));
+    expect(await tool.execute({ path: "adir" }, exec)).toBe("failed: not a file");
+    writeFileSync(join(workspace, "huge.md"), Buffer.alloc(GENERATE_MAX_BYTES + 1, 0x61));
+    expect(await tool.execute({ path: "huge.md" }, exec)).toBe("failed: too large");
+    expect(calls).toBe(0);
+
+    const noChat = createDocSummarizeTool(new ModelRegistry());
+    const unread = await noChat.execute({ path: "hello.md" }, exec);
+    expect(unread).toBe("failed: unreadable");
+    expect(unread).not.toContain("未配置 chat");
+  });
+
+  it("returns aborted when the summarize signal is aborted", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "flintloom-stool-ab-"));
+    const ac = new AbortController();
+    ac.abort();
+    const tool = createDocSummarizeTool(new ModelRegistry());
+    expect(
+      await tool.execute({ path: "a.md" }, createExec(workspace, ac.signal)),
     ).toBe("aborted");
   });
 });

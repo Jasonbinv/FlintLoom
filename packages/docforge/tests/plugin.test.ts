@@ -24,6 +24,7 @@ describe("docforge plugin", () => {
     expect(names).toContain("doc_convert");
     expect(names).toContain("doc_edit");
     expect(names).toContain("doc_compare");
+    expect(names).toContain("doc_summarize");
   });
 
   it("registers doc_generate and drops it on stop", () => {
@@ -91,5 +92,28 @@ describe("docforge plugin", () => {
     ctx.plugin(modelsPlugin);
     ctx.plugin(toolsPlugin);
     expect(() => ctx.plugin(plugin)).toThrow(/knowledge/);
+  });
+
+  it("registers doc_summarize and drops it on stop", () => {
+    const dbPath = join(mkdtempSync(join(tmpdir(), "flintloom-docforge-kb-")), "k.sqlite");
+    const ctx = new Context();
+    ctx.plugin(modelsPlugin);
+    ctx.plugin(toolsPlugin);
+    ctx.plugin(knowledgePlugin, { dbPath });
+    const stop = ctx.plugin(plugin);
+    const names = ctx.require<ToolRegistry>("tools").schemas().map((s) => s.name);
+    expect(names).toContain("doc_summarize");
+    stop();
+    expect(ctx.require<ToolRegistry>("tools").schemas().map((s) => s.name)).not.toContain(
+      "doc_summarize",
+    );
+  });
+
+  it("apply without models throws models", () => {
+    const dbPath = join(mkdtempSync(join(tmpdir(), "flintloom-docforge-kb-")), "k.sqlite");
+    const ctx = new Context();
+    ctx.plugin(toolsPlugin);
+    ctx.plugin(knowledgePlugin, { dbPath });
+    expect(() => ctx.plugin(plugin)).toThrow(/models/);
   });
 });

@@ -2,6 +2,7 @@ import { realpathSync } from "node:fs";
 import { dirname, relative } from "node:path";
 import { stat } from "node:fs/promises";
 import type { KnowledgeService } from "@flintloom/knowledge";
+import type { ModelRegistry } from "@flintloom/models";
 import { isHiddenRelPath, resolveInside, type ToolDefinition } from "@flintloom/tools";
 import { compareDocuments } from "./compare.ts";
 import { convertDocument } from "./convert.ts";
@@ -14,6 +15,7 @@ import {
 import { ingestWorkspaceFile } from "./ingest.ts";
 import { parse } from "./parse.ts";
 import { probe } from "./probe.ts";
+import { summarizeDocument } from "./summarize.ts";
 import type { ProbeResult } from "./types.ts";
 
 const FAIL_REASONS = new Set([
@@ -340,7 +342,7 @@ export function createDocCompareTool(): ToolDefinition {
   return {
     name: "doc_compare",
     description:
-      "Compare two workspace documents by parsing each to markdown and returning a unified diff. Pass a and b. Identical files return identical true and an empty diff. Do not use this to rewrite files (use doc_edit or fs) or to summarize (use doc_summarize later).",
+      "Compare two workspace documents by parsing each to markdown and returning a unified diff. Pass a and b. Identical files return identical true and an empty diff. Do not use this to rewrite files (use doc_edit or fs) or to summarize (use doc_summarize).",
     parameters: {
       type: "object",
       properties: {
@@ -401,6 +403,68 @@ export function createDocCompareTool(): ToolDefinition {
           diff: result.diff,
         });
       } catch (err) {
+        return failFromError(err);
+      }
+    },
+  };
+}
+
+export function createDocSummarizeTool(models: ModelRegistry): ToolDefinition {
+  return {
+    name: "doc_summarize",
+    description:
+      "Summarize a workspace document by parsing it to markdown and asking the chat model. Returns JSON with a short summary. Pass path. Do not use this to rewrite files (use doc_edit or fs) or to compare (use doc_compare).",
+    parameters: {
+      type: "object",
+      properties: { path: { type: "string" } },
+      required: ["path"],
+    },
+    async execute(args, exec) {
+      if (exec.signal.aborted) {
+        return "aborted";
+      }
+      const inputPath = pathArg(args);
+      if (inputPath === undefined) {
+        return "failed: missing path";
+      }
+      const absPath = resolveInside(exec.workspaceRoot, inputPath);
+      const realRoot = realpathSync.native(exec.workspaceRoot);
+      const pathRel = relative(realRoot, absPath).replaceAll("\\", "/");
+      if (isHiddenRelPath(inputPath) || isHiddenRelPath(pathRel)) {
+        return "failed: hidden";
+      }
+      let st;
+      try {
+        st = await stat(absPath);
+      } catch (err) {
+        if (isNotFound(err)) {
+          return "failed: not found";
+        }
+        return failFromError(err);
+      }
+      if (!st.isFile()) {
+        return "failed: not a file";
+      }
+      if (st.size > GENERATE_MAX_BYTES) {
+        return "failed: too large";
+      }
+      try {
+        const result = await summarizeDocument(absPath, models, exec.signal);
+        if (!result.ok) {
+          if (result.reason === "aborted") {
+            return "aborted";
+          }
+          return `failed: ${result.reason}`;
+        }
+        return JSON.stringify({
+          status: "ok",
+          path: pathRel,
+          summary: result.summary,
+        });
+      } catch (err) {
+        if (exec.signal.aborted) {
+          return "aborted";
+        }
         return failFromError(err);
       }
     },
