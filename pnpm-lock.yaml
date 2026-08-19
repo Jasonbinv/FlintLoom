@@ -151,6 +151,9 @@ importers:
       '@flintloom/tools':
         specifier: workspace:*
         version: link:../tools
+      diff:
+        specifier: ^8.0.4
+        version: 8.0.4
       docx:
         specifier: ^9.7.1
         version: 9.7.1
@@ -1158,6 +1161,10 @@ packages:
 
   dfa@1.2.0:
     resolution: {integrity: sha512-ED3jP8saaweFTjeGX8HQPjeC1YYyZs98jGNZx6IiBvxW7JG5v492kamAQB3m2wop07CvU/RQmzcKr6bgcC5D/Q==}
+
+  diff@8.0.4:
+    resolution: {integrity: sha512-DPi0FmjiSU5EvQV0++GFDOJ9ASQUVFh5kD+OzOnYdi7n3Wpm9hWWGfB/O2blfHcMVTL5WkQXSnRiK9makhrcnw==}
+    engines: {node: '>=0.3.1'}
 
   dingbat-to-unicode@1.0.1:
     resolution: {integrity: sha512-98l0sW87ZT58pU4i61wa2OHwxbiYSbuxsCBozaVnYX2iCnr3bLM3fIes1/ej7h1YdOKuKt/MLs706TVnALA65w==}
@@ -2591,6 +2598,8 @@ snapshots:
   deep-eql@5.0.2: {}
 
   dfa@1.2.0: {}
+
+  diff@8.0.4: {}
 
   dingbat-to-unicode@1.0.1: {}
 
