@@ -266,7 +266,7 @@ v1 内置通道：desktop、cli、webhook、telegram。ACP 作为同一接口上
 - 不变量：请求里每一段模型可见字符串都能从 session log 重建。
 - DocForge：md/docx/pdf 的解析与转换夹具（外加一份失败的二进制）。
 - A2UI：拒绝非法 envelope；接受带按钮的 surface，并在 action 后续跑。
-- Channel：webhook POST 产生与桌面 turn 相同的 session 事件。
+- Channel：webhook POST 经同一套 `runTurn` 写入 session 事件。同一 `text`、无 A2UI wait 时与 `channel: "host"` 事件同构；hooks 对 `text` 的 trim 与 `/v1/turns` 不同。见 [webhook 通道设计](2026-08-20-flintloom-channel-webhook-design.md)。
 - 桌面：用固定 SSE 夹具渲染气泡，不依赖真实 API key。
 
 ## 15. v1 不做
