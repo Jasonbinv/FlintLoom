@@ -17,6 +17,12 @@ export { probe } from "./probe.ts";
 export type { ParseMarkdownResult } from "./parse.ts";
 export { parse, parseToMarkdown } from "./parse.ts";
 export { compareDocuments } from "./compare.ts";
+export type { SummarizeResult } from "./summarize.ts";
+export {
+  SUMMARIZE_MAX_CHARS,
+  SUMMARIZE_SYSTEM,
+  summarizeDocument,
+} from "./summarize.ts";
 export { truncateOutput } from "./truncate.ts";
 export { ingestWorkspaceFile } from "./ingest.ts";
 export type { IngestOutcome } from "./ingest.ts";

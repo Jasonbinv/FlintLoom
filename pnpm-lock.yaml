@@ -148,6 +148,9 @@ importers:
       '@flintloom/knowledge':
         specifier: workspace:*
         version: link:../knowledge
+      '@flintloom/models':
+        specifier: workspace:*
+        version: link:../models
       '@flintloom/tools':
         specifier: workspace:*
         version: link:../tools
@@ -179,9 +182,6 @@ importers:
         specifier: ^1.8.1
         version: 1.8.1
     devDependencies:
-      '@flintloom/models':
-        specifier: workspace:*
-        version: link:../models
       '@types/pdfkit':
         specifier: ^0.17.6
         version: 0.17.6
