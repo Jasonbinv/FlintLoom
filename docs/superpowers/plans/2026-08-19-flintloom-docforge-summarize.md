@@ -463,7 +463,7 @@ export async function summarizeDocument(
 }
 ```
 
-把 `catch (err) { if (err instanceof ModelKindMissingError || true)` 写成只返回 `unreadable`（`resolveChat` 失败一律 `unreadable`）。不要把 `err.message` 放进返回值。不要 `trim` 摘要、不要剥 fence、不要调用 `truncateOutput`。
+`resolveChat` 失败一律 `{ ok: false, reason: "unreadable" }`。不要把 `err.message` 放进返回值。不要 `trim` 摘要、不要剥 fence、不要调用 `truncateOutput`。
 
 `packages/docforge/src/index.ts` 在现有 `export { compareDocuments }` 旁增加（本任务不要改 `apply`）：
 
