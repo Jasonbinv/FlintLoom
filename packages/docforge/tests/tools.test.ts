@@ -1,8 +1,9 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { WorkspaceEscapeError } from "@flintloom/tools";
+import { GENERATE_MAX_BYTES } from "../src/generate.ts";
 import {
   createDocCompareTool,
   createDocConvertTool,
@@ -288,6 +289,15 @@ describe("doc tools", () => {
     );
     await expect(tool.execute({ a: "../x.md", b: "hello.md" }, exec)).rejects.toThrow(
       WorkspaceEscapeError,
+    );
+
+    mkdirSync(join(workspace, "adir"));
+    expect(await tool.execute({ a: "adir", b: "hello.md" }, exec)).toBe(
+      "failed: not a file",
+    );
+    writeFileSync(join(workspace, "huge.md"), Buffer.alloc(GENERATE_MAX_BYTES + 1, 0x61));
+    expect(await tool.execute({ a: "huge.md", b: "hello.md" }, exec)).toBe(
+      "failed: too large",
     );
 
     const same = JSON.parse(

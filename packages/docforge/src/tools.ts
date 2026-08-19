@@ -3,8 +3,8 @@ import { dirname, relative } from "node:path";
 import { stat } from "node:fs/promises";
 import type { KnowledgeService } from "@flintloom/knowledge";
 import { isHiddenRelPath, resolveInside, type ToolDefinition } from "@flintloom/tools";
-import { convertDocument } from "./convert.ts";
 import { compareDocuments } from "./compare.ts";
+import { convertDocument } from "./convert.ts";
 import { editMarkdown } from "./edit.ts";
 import {
   GENERATE_MAX_BYTES,
