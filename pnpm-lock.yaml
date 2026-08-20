@@ -11,6 +11,9 @@ importers:
       '@flintloom/a2ui':
         specifier: workspace:*
         version: link:packages/a2ui
+      '@flintloom/channel':
+        specifier: workspace:*
+        version: link:packages/channel
       '@flintloom/docforge':
         specifier: workspace:*
         version: link:packages/docforge
@@ -139,6 +142,12 @@ importers:
       '@flintloom/models':
         specifier: workspace:*
         version: link:../models
+
+  packages/channel:
+    dependencies:
+      '@flintloom/kernel':
+        specifier: workspace:*
+        version: link:../kernel
 
   packages/docforge:
     dependencies:
