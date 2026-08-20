@@ -111,6 +111,9 @@ importers:
 
   apps/host:
     dependencies:
+      '@flintloom/channel':
+        specifier: workspace:*
+        version: link:../../packages/channel
       '@flintloom/docforge':
         specifier: workspace:*
         version: link:../../packages/docforge

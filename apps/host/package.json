@@ -6,6 +6,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@flintloom/channel": "workspace:*",
     "@flintloom/docforge": "workspace:*",
     "@flintloom/infographic": "workspace:*",
     "@flintloom/kernel": "workspace:*",

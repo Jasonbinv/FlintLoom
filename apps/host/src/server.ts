@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { join } from "node:path";
+import type { ChannelRegistry } from "@flintloom/channel";
 import { applyConfig, Context, loadConfig } from "@flintloom/kernel";
 import type { LoopService, RunTurnResult } from "@flintloom/loop";
 import type { ModelRegistry } from "@flintloom/models";
@@ -271,6 +272,34 @@ function parseTurnBody(raw: string): { sessionId: string; text: string } | undef
   return undefined;
 }
 
+function parseHookBody(raw: string): { text: string; sessionId: string } | undefined {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed === null || typeof parsed !== "object") {
+      return undefined;
+    }
+    const obj = parsed as { text?: unknown; sessionId?: unknown };
+    if (typeof obj.text !== "string") {
+      return undefined;
+    }
+    if (obj.sessionId !== undefined && typeof obj.sessionId !== "string") {
+      return undefined;
+    }
+    const text = obj.text.trim();
+    if (text.length === 0) {
+      return undefined;
+    }
+    const sessionRaw = typeof obj.sessionId === "string" ? obj.sessionId.trim() : "";
+    return {
+      text,
+      sessionId: sessionRaw.length > 0 ? sessionRaw : "webhook",
+    };
+  } catch {
+    // invalid JSON
+  }
+  return undefined;
+}
+
 function isAuthorized(req: IncomingMessage, token: string): boolean {
   return req.headers.authorization === `Bearer ${token}`;
 }
@@ -442,6 +471,56 @@ async function handleRequest(
         }),
       );
     } finally {
+      opts.busy.delete(session.id);
+    }
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/v1/hooks") {
+    const raw = await readBody(req);
+    const channels = opts.runtime.ctx.get<ChannelRegistry>("channels");
+    if (channels === undefined || !channels.has("webhook")) {
+      send(res, 404);
+      return;
+    }
+    const body = parseHookBody(raw);
+    if (body === undefined) {
+      send(res, 400);
+      return;
+    }
+
+    const session = opts.runtime.ctx
+      .require<SessionStore>("sessions")
+      .getOrCreate(body.sessionId);
+
+    if (sessionHasWaitingTurn(session) || opts.busy.has(session.id)) {
+      send(res, 409);
+      return;
+    }
+    opts.busy.add(session.id);
+    const controller = new AbortController();
+    const onClose = () => {
+      controller.abort();
+    };
+    req.on("close", onClose);
+    res.on("close", onClose);
+    try {
+      const result = await channels.inbound("webhook", {
+        text: body.text,
+        sessionId: body.sessionId,
+        workspaceRoot: opts.workspaceRoot,
+        signal: controller.signal,
+      });
+      req.off("close", onClose);
+      res.off("close", onClose);
+      sendJson(res, 200, {
+        turnId: result.turnId,
+        status: result.status,
+        text: result.text,
+      });
+    } finally {
+      req.off("close", onClose);
+      res.off("close", onClose);
       opts.busy.delete(session.id);
     }
     return;

@@ -150,6 +150,9 @@ describe("startHost", () => {
     expect(src).not.toMatch(/createA2uiEmitTool/);
     expect(src).not.toMatch(/createInfographicGetTool/);
     expect(src).not.toMatch(/createInfographicPatchTool/);
+    expect(src).not.toMatch(/@flintloom\/channel-webhook/);
+    expect(src).not.toMatch(/createWebhookAdapter/);
+    expect(src).not.toMatch(/lastAssistantText/);
   });
 
   it("returns 500 text/plain with the error message and redacts the api key", async () => {

@@ -26,6 +26,10 @@ export const ASSEMBLY = `plugins:
     name: "@flintloom/a2ui"
   - id: loop
     name: "@flintloom/loop"
+  - id: channel
+    name: "@flintloom/channel"
+  - id: channel-webhook
+    name: "@flintloom/channel-webhook"
 `;
 
 export function writeAssembly(workspaceRoot: string): void {

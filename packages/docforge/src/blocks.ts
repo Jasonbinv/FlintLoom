@@ -99,8 +99,9 @@ function walk(tokens: Token[]): Block[] {
         blocks.push({ type: "code", text: token.text.replace(/\n$/, "") });
         break;
       case "table": {
-        const headers = token.header.map((cell) => flattenInline(cell.tokens));
-        const rows = token.rows.map((row) => {
+        const table = token as Tokens.Table;
+        const headers = table.header.map((cell) => flattenInline(cell.tokens));
+        const rows = table.rows.map((row) => {
           const cells = row.map((cell) => flattenInline(cell.tokens));
           while (cells.length < headers.length) {
             cells.push("");
