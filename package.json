@@ -15,6 +15,7 @@
   "devDependencies": {
     "@flintloom/a2ui": "workspace:*",
     "@flintloom/channel": "workspace:*",
+    "@flintloom/channel-webhook": "workspace:*",
     "@flintloom/docforge": "workspace:*",
     "@flintloom/fs": "workspace:*",
     "@flintloom/grep": "workspace:*",

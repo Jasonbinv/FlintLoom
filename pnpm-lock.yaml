@@ -14,6 +14,9 @@ importers:
       '@flintloom/channel':
         specifier: workspace:*
         version: link:packages/channel
+      '@flintloom/channel-webhook':
+        specifier: workspace:*
+        version: link:packages/channel-webhook
       '@flintloom/docforge':
         specifier: workspace:*
         version: link:packages/docforge
@@ -148,6 +151,21 @@ importers:
       '@flintloom/kernel':
         specifier: workspace:*
         version: link:../kernel
+
+  packages/channel-webhook:
+    dependencies:
+      '@flintloom/channel':
+        specifier: workspace:*
+        version: link:../channel
+      '@flintloom/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      '@flintloom/loop':
+        specifier: workspace:*
+        version: link:../loop
+      '@flintloom/session':
+        specifier: workspace:*
+        version: link:../session
 
   packages/docforge:
     dependencies:
