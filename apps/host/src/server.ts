@@ -284,6 +284,7 @@ async function handleRequest(
     runtime: Runtime;
     controllers: Map<string, AbortController>;
     turns: Map<string, Session>;
+    busy: Set<string>;
   },
 ): Promise<void> {
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -311,6 +312,7 @@ async function handleRequest(
       ctx: opts.runtime.ctx,
       workspaceRoot: opts.workspaceRoot,
       turns: opts.turns,
+      busy: opts.busy,
       streamLoopResult: (sseReq, sseRes, session, work, turnId) =>
         streamLoopResult(
           sseReq,
@@ -422,22 +424,26 @@ async function handleRequest(
       .require<SessionStore>("sessions")
       .getOrCreate(body.sessionId);
 
-    if (sessionHasWaitingTurn(session)) {
+    if (sessionHasWaitingTurn(session) || opts.busy.has(session.id)) {
       send(res, 409);
       return;
     }
-
-    await streamLoopResult(req, res, session, opts.controllers, opts.turns, ({ signal, onEvent }) =>
-      opts.runtime.ctx.require<LoopService>("loop").runTurn({
-        ctx: opts.runtime.ctx,
-        session,
-        text: body.text,
-        workspaceRoot: opts.workspaceRoot,
-        channel: "host",
-        signal,
-        onEvent,
-      }),
-    );
+    opts.busy.add(session.id);
+    try {
+      await streamLoopResult(req, res, session, opts.controllers, opts.turns, ({ signal, onEvent }) =>
+        opts.runtime.ctx.require<LoopService>("loop").runTurn({
+          ctx: opts.runtime.ctx,
+          session,
+          text: body.text,
+          workspaceRoot: opts.workspaceRoot,
+          channel: "host",
+          signal,
+          onEvent,
+        }),
+      );
+    } finally {
+      opts.busy.delete(session.id);
+    }
     return;
   }
 
@@ -448,11 +454,12 @@ export async function startHost(opts: {
   workspaceRoot: string;
   homeDir: string;
   port?: number;
-}): Promise<{ url: string; close: () => Promise<void> }> {
+}): Promise<{ url: string; close: () => Promise<void>; runtime: Runtime }> {
   const token = loadOrCreateToken(opts.homeDir);
   const runtime = await createRuntime(opts.workspaceRoot, opts.homeDir);
   const controllers = new Map<string, AbortController>();
   const turns = new Map<string, Session>();
+  const busy = new Set<string>();
 
   const server = createServer((req, res) => {
     void handleRequest(req, res, {
@@ -461,6 +468,7 @@ export async function startHost(opts: {
       runtime,
       controllers,
       turns,
+      busy,
     }).catch((err: unknown) => {
       if (!res.headersSent) {
         res.writeHead(500, { "Content-Type": "text/plain" });
@@ -494,11 +502,12 @@ export async function startHost(opts: {
     url: `http://127.0.0.1:${address.port}`,
     close: () =>
       new Promise<void>((resolve, reject) => {
-        server.closeIdleConnections();
+        server.closeAllConnections();
         server.close((err) => {
           if (err) reject(err);
           else resolve();
         });
       }),
+    runtime,
   };
 }

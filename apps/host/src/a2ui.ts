@@ -139,6 +139,7 @@ export async function handleTurnActions(
     workspaceRoot: string;
     turns: Map<string, Session>;
     controllers: Map<string, AbortController>;
+    busy: Set<string>;
     streamLoopResult: StreamLoopResultFn;
   },
 ): Promise<boolean> {
@@ -192,22 +193,31 @@ export async function handleTurnActions(
     return true;
   }
 
-  await opts.streamLoopResult(
-    req,
-    res,
-    session,
-    ({ signal, onEvent }) =>
-      opts.ctx.require<LoopService>("loop").continueTurn({
-        ctx: opts.ctx,
-        session,
-        turnId,
-        action,
-        workspaceRoot: opts.workspaceRoot,
-        channel: "host",
-        signal,
-        onEvent,
-      }),
-    turnId,
-  );
+  if (opts.busy.has(session.id)) {
+    send(res, 409);
+    return true;
+  }
+  opts.busy.add(session.id);
+  try {
+    await opts.streamLoopResult(
+      req,
+      res,
+      session,
+      ({ signal, onEvent }) =>
+        opts.ctx.require<LoopService>("loop").continueTurn({
+          ctx: opts.ctx,
+          session,
+          turnId,
+          action,
+          workspaceRoot: opts.workspaceRoot,
+          channel: "host",
+          signal,
+          onEvent,
+        }),
+      turnId,
+    );
+  } finally {
+    opts.busy.delete(session.id);
+  }
   return true;
 }

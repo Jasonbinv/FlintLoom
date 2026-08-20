@@ -350,4 +350,63 @@ describe("startHost", () => {
       }
     }
   });
+
+  it("returns runtime and rejects a second in-flight turn on the same session", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-busy-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-busy-home-"));
+    writeAssembly(workspaceRoot);
+    const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+    close = host.close;
+    expect(host.runtime.ctx.require).toBeTypeOf("function");
+    const token = loadOrCreateToken(homeDir);
+    const models = host.runtime.ctx.require<ModelRegistry>("models");
+    models.registerChat("fake", {
+      async *stream(_req, signal) {
+        await new Promise<void>((resolve, reject) => {
+          const onAbort = () => reject(new Error("aborted"));
+          if (signal.aborted) {
+            onAbort();
+            return;
+          }
+          signal.addEventListener("abort", onAbort, { once: true });
+        });
+      },
+    });
+    models.setDefault("chat", "fake");
+
+    const headers = {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    };
+    const first = fetch(`${host.url}/v1/turns`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ sessionId: "s-busy", text: "hi" }),
+    });
+    const started = Date.now();
+    let turnReady = false;
+    while (Date.now() - started < 5000) {
+      const peek = await fetch(`${host.url}/v1/sessions/s-busy`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (peek.status === 200) {
+        const body = (await peek.json()) as { events: { type: string }[] };
+        if (body.events.some((e) => e.type === "turn/start")) {
+          turnReady = true;
+          break;
+        }
+      }
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    expect(turnReady).toBe(true);
+    const second = await fetch(`${host.url}/v1/turns`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ sessionId: "s-busy", text: "again" }),
+    });
+    expect(second.status).toBe(409);
+    await host.close();
+    close = undefined;
+    await first.catch(() => undefined);
+  });
 });
