@@ -243,6 +243,40 @@ describe("runTurn", () => {
     expect(session.events().some((e) => e.type === "turn/end")).toBe(true);
   });
 
+  it("does not pause a2ui wait on webhook channel", async () => {
+    let n = 0;
+    const fakeChat: ChatProvider = {
+      async *stream() {
+        n += 1;
+        if (n === 1) {
+          yield {
+            type: "tool_call",
+            id: "c1",
+            name: "a2ui_emit",
+            args: { messages: confirmMessages() },
+          };
+        } else {
+          yield { type: "text", text: "webhook-skip-wait" };
+        }
+      },
+    };
+    const ctx = boot();
+    ctx.plugin(a2uiPlugin);
+    ctx.require<ModelRegistry>("models").registerChat("fake", fakeChat);
+    ctx.require<ModelRegistry>("models").setDefault("chat", "fake");
+    const session = new Session("s-webhook");
+    const result = await runTurn({
+      ctx,
+      session,
+      text: "emit",
+      workspaceRoot: process.cwd(),
+      channel: "webhook",
+      signal: new AbortController().signal,
+    });
+    expect(result.status).toBe("ok");
+    expect(session.events().some((e) => e.type === "turn/end")).toBe(true);
+  });
+
   it("continueTurn throws when not waiting", async () => {
     const ctx = boot();
     ctx.plugin(a2uiPlugin);
