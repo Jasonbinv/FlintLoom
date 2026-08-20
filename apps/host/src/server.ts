@@ -513,11 +513,13 @@ async function handleRequest(
       });
       req.off("close", onClose);
       res.off("close", onClose);
-      sendJson(res, 200, {
-        turnId: result.turnId,
-        status: result.status,
-        text: result.text,
-      });
+      if (!res.destroyed && !res.writableEnded && !res.headersSent) {
+        sendJson(res, 200, {
+          turnId: result.turnId,
+          status: result.status,
+          text: result.text,
+        });
+      }
     } finally {
       req.off("close", onClose);
       res.off("close", onClose);
@@ -549,12 +551,12 @@ export async function startHost(opts: {
       turns,
       busy,
     }).catch((err: unknown) => {
-      if (!res.headersSent) {
+      if (!res.destroyed && !res.writableEnded && !res.headersSent) {
         res.writeHead(500, { "Content-Type": "text/plain" });
         res.end(formatHostError(err, opts.homeDir, opts.workspaceRoot));
         return;
       }
-      if (!res.writableEnded) {
+      if (!res.destroyed && !res.writableEnded) {
         writeSse(res, { type: "end", status: "failed" });
         res.end();
       }
