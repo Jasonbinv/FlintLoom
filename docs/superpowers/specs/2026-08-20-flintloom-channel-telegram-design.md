@@ -1,7 +1,7 @@
 # FlintLoom Telegram 通道切片设计
 
 日期：2026-08-20  
-状态：待审阅  
+状态：待审阅（复核修订）  
 产品：FlintLoom — A real agent. / 真正的 Agent。  
 范围：总 spec 第四刀的 **Telegram 第二片**。yml 挂上 `@flintloom/channel-telegram` 后，仅 `startHost` 对 Bot API 做 `getUpdates` 长轮询；白名单内的纯文本经 `ctx.channels.inbound("telegram")` 调同一套 `runTurn`，再用 `sendMessage` 把本 turn 文本发回同一 chat。禁止再往 `createRuntime` 里 `register`。Host **不** 新增 HTTP 路由，**不** `import` 本包。`packages/channel` **不** 增加 `send` / `deliver`。
 
@@ -19,6 +19,7 @@
 |---|---|
 | 入站传输 | 插件 `getUpdates` 长轮询。不对 Telegram 开公网 webhook。Host 仍只绑 `127.0.0.1`。不新增 `/v1/*` 路由。 |
 | 谁启动 poll | **仅** `startHost` → `createRuntime(workspaceRoot, homeDir, { pollChannels: true })` overlay `{ workspaceRoot, poll: true }`。CLI `createRuntime(workspaceRoot, homeDir)` **不** overlay，不轮询。`apply` 本身不无条件 poll。 |
+| 停轮询 | `createRuntime` **必须**保留 `applyConfig` 的 disposer，作为 `Runtime.stop`。现网丢掉它；本片不改则 `host.close` 关不掉 getUpdates，测试与进程会挂住。`startHost().close` 顺序：`closeAllConnections` → `runtime.stop()` → `server.close`。CLI 在 `process.exit` 前调用 `stop()`。 |
 | 密钥 | `token` 只在该插件 yml `config`。永不进 session 事件、工具参数、`Error.message`、轮询日志。不读 `TELEGRAM_BOT_TOKEN`，不放 `~/.flintloom/credentials`。 |
 | 白名单 | `allowedChatIds` **必填且非空**。不在名单内的 update **ack 并忽略**，不 inbound、不 `sendMessage`。没有「未配置则全放行」。 |
 | 配置失败 | `token` 空/非 string，或 `allowedChatIds` 空/非法 → `apply` **抛错**，host / `createRuntime` 起不来。`Error.message` 分别含 `token` 或 `allowedChatIds`。 |
@@ -31,6 +32,7 @@
 | 同 chat 连发 | 已有 in-flight（busy）则 ack 丢弃，**不排队**。 |
 | 取消 | telegram turn **不** 写入 `controllers` / `turns`。`POST /v1/turns/:id/cancel` → **404**。host `close` / 插件 dispose  abort poll 与该次 inbound 的 `signal`。 |
 | 超时 | **不加** turn deadline。`getUpdates` 的 Bot `timeout` 为 **30**。 |
+| 启动清队列 | poll 循环开始前先 `deleteWebhook` 且 `drop_pending_updates: true`（成功一次即可）。然后才 `getUpdates`。作用：丢掉停机积压，避免 offset=0 把旧消息全部跑成 turn；并清掉曾 `setWebhook` 的 bot，否则 getUpdates 会一直失败。崩溃后重启 **丢积压**（可能丢正在处理的那条），不重放。 |
 | 默认 yml | 仓库根 `flintloom.yml` 与 host `ASSEMBLY` **不** 加 telegram 行。没有 token 的行会让开机失败。 |
 | Host 边界 | Host **禁止** import `@flintloom/channel-telegram` / `createTelegramAdapter`。允许从 `@flintloom/channel` **只导入类型**。Host **禁止** 为 telegram 调用 `runTurn`。 |
 | SDK | 不引入 grammy / telegraf / 其它 Telegram 库。`fetch` 调 Bot HTTP。 |
@@ -42,7 +44,7 @@
 - `ctx.channels.send` / `deliver`
 - 把 telegram turn 接到 `POST /v1/turns/:id/cancel`
 - `/start` `/stop` 专用命令、inline keyboard、callback_query
-- 持久化 `getUpdates` offset（崩溃后 Telegram 可能重投，本片接受）
+- 持久化 `getUpdates` offset（每次启动 `deleteWebhook` 丢积压，不靠落盘）
 - 默认装配里预置 bot token
 - ACP、Slack / Discord / 邮件 / 飞书
 - `flint plugin add`
@@ -64,21 +66,24 @@ flintloom.yml
 
 createRuntime(workspaceRoot, homeDir)
   ctx.provide("turnBusy", new Set())
-  applyConfig
+  applyConfig → 保留 disposer 为 Runtime.stop
   无 poll overlay → 只登记适配器，不 getUpdates
 
 startHost
   createRuntime(..., { pollChannels: true })
   overlay id "channel-telegram": { workspaceRoot, poll: true }
+  close: closeAllConnections → runtime.stop() → server.close
 
 apply @flintloom/channel-telegram
   校验 token / allowedChatIds
   register("telegram", adapter)
-  poll === true → effect 启动 getUpdates 循环
+  poll === true → effect 启动 poller
                  dispose → abort
 
-getUpdates (timeout=30, allowed_updates=["message"])
-  每个 update 先把内存 offset = update_id+1（ack）
+poller
+  先 deleteWebhook { drop_pending_updates: true }（失败 1s 重试）
+  再循环 getUpdates (timeout=30, allowed_updates=["message"])
+  每个有效 update_id：offset = update_id+1（ack）
   过滤白名单 + message.text trim
   sessionId = "telegram:" + chat.id
   busy 或 awaiting_action → 停止（已 ack）
@@ -206,25 +211,31 @@ export function lastAssistantText(events: readonly SessionEvent[], turnId: strin
 
 `startTelegramPoller` 返回 disposer：abort 一个 `AbortController`，循环退出。in-flight 的 `inbound` 使用**同一个** abort signal（或由它派生、dispose 时一并 abort 的 signal）。
 
-循环（`signal.aborted` 则停）：
+启动后 **先** 清 webhook / 积压，再长轮询。循环（`signal.aborted` 则停）：
 
-1. `POST` `https://api.telegram.org/bot<token>/getUpdates`  
+1. 若尚未成功 `deleteWebhook`：`POST` `https://api.telegram.org/bot<token>/deleteWebhook`  
+   JSON body：`{ "drop_pending_updates": true }`。  
+   `fetch` 传入 `{ method: "POST", headers: { "Content-Type": "application/json" }, body, signal }`。  
+   - `signal.aborted`：退出。  
+   - HTTP 非 2xx、JSON 无法解析、或 `ok !== true`：等待 **1000ms**（可 abort）后回到 1。固定短语 `deleteWebhook`，**不得**包含 token 或完整 URL。  
+   - 成功：记下已清队列，进入步骤 2。此调用在本次 poller 生命周期内只成功一次。
+2. `POST` `https://api.telegram.org/bot<token>/getUpdates`  
    JSON body：`{ "offset": <number>, "timeout": 30, "allowed_updates": ["message"] }`  
-   `offset` 初始为 `0`。仅内存。  
-   `fetch` 传入 `{ method: "POST", headers: { "Content-Type": "application/json" }, body, signal }`。
-2. 若 `signal.aborted`：退出，不重试。
-3. 若 HTTP 非 2xx、JSON 无法解析、或 `ok !== true`：等待 **1000ms**（同样可被 abort）后回到 1。`Error.message` / 日志字符串必须是固定短语 `getUpdates`，**不得**包含 token 或完整 URL。
-4. `result` 必须是 array，否则按步骤 3 重试。
-5. 对每个 update **按数组顺序同步**做完「ack + 是否启动 inbound」的判定（其间不得 `await`，以便同一 batch 里同 chat 第二条看到 busy）：
-   - 若 `update_id` 为有限整数：`offset = update_id + 1`（即使后面忽略）。
-   - 若无 `message` 或 `message.chat.id` 非法：停止该 update。
-   - 将 `chat.id` 规范成十进制字符串。不在 `allowedChatIds` 规范集内：停止。
+   `offset` 初始为 `0`（积压已在步骤 1 丢弃）。仅内存。  
+   `fetch` 选项同步骤 1（含 `signal`）。
+3. 若 `signal.aborted`：退出，不重试。
+4. 若 HTTP 非 2xx、JSON 无法解析、或 `ok !== true`：等待 **1000ms**（可 abort）后回到 2。固定短语 `getUpdates`，**不得**包含 token 或完整 URL。catch 到的 `fetch` 异常 **不得** 原样再抛（URL 里有 token）。
+5. `result` 必须是 array，否则按步骤 4 重试。若 **任一** 元素的 `update_id` 不是有限整数：按步骤 4 重试，本 batch **不** `busy.add`、**不** inbound（避免缺 id 时 offset 卡死又把已启动的 turn 重放）。
+6. 对每个 update **按数组顺序同步**做完「ack + 是否启动 inbound」的判定（其间不得 `await`，以便同一 batch 里同 chat 第二条看到 busy）：
+   - `offset = update_id + 1`（即使后面忽略该条）。
+   - 若无 `message` 或 `message.chat.id` 不是 `Number.isSafeInteger` 的 number：停止该 update。
+   - 将 `chat.id` 规范成 `String(chat.id)`。不在 `allowedChatIds` 规范集内：停止。
    - `message.text` 非 string 或 trim 后长度为 0：停止。
    - `sessionId = "telegram:" + chatId`。
    - `sessions.getOrCreate(sessionId)`。若 `turnBusy.has(sessionId)` 或本地 `sessionHasWaitingTurn(session)`：停止。
    - `turnBusy.add(sessionId)`。
    - **不要 await**：`void runInboundThenReply(...)`。
-6. 全部 update 判定完后回到 1。
+7. 全部 update 判定完后回到 2。
 
 `runInboundThenReply`：
 
@@ -236,9 +247,9 @@ export function lastAssistantText(events: readonly SessionEvent[], turnId: strin
 
 `sessionHasWaitingTurn`：语义与 `apps/host/src/a2ui.ts` 现有函数相同（所有出现过的 `turn/start` id，任一 `session.isWaiting(turnId)` 为真）。实现放在 telegram 包内，**禁止** import `apps/host`。本片不把该函数搬到 `@flintloom/session`。
 
-`sendMessage`：`POST` `https://api.telegram.org/bot<token>/sendMessage`，JSON `{ "chat_id": <原始 chat.id 数字或规范字符串>, "text": <string> }`。不设 `parse_mode`。失败（非 2xx / `ok !== true`）不重试、不回滚 session。固定短语 `sendMessage`。
+`sendMessage`：`POST` `https://api.telegram.org/bot<token>/sendMessage`，JSON `{ "chat_id": <message.chat.id 原样 number>, "text": <string> }`。不设 `parse_mode`。失败（非 2xx / `ok !== true`）不重试、不回滚 session。固定短语 `sendMessage`。catch 同样不得把带 token 的 URL 再抛出去。
 
-`chat_id`：使用 Telegram 原样 `message.chat.id`（number），不要改成 sessionId。
+`chat_id`：只使用 Telegram JSON 里的 number，不要改成 sessionId，不要改成字符串。
 
 ### 5.6 Loop
 
@@ -253,6 +264,8 @@ if (channel === "host" && stepWait) {
 ### 5.7 Host `createRuntime`
 
 ```ts
+export type Runtime = { ctx: Context; stop: () => void };
+
 export async function createRuntime(
   workspaceRoot: string,
   homeDir: string,
@@ -260,7 +273,7 @@ export async function createRuntime(
 ): Promise<Runtime>
 ```
 
-两参调用（CLI、现有测试）行为除新增空的 `turnBusy` 外与现在相同。
+`stop` 就是 `applyConfig` 的返回值。现网丢掉它；本片必须挂上。两参调用（CLI、现有测试）除新增空的 `turnBusy` 与 `stop` 外与现在相同。现有 `const { ctx } = await createRuntime(...)` 仍然合法。
 
 当 `opts?.pollChannels === true` 时，在现有 `runtimeConfigById` 上增加：
 
@@ -275,7 +288,13 @@ runtimeConfigById["channel-telegram"] = {
 
 `startHost` **必须** `await createRuntime(opts.workspaceRoot, opts.homeDir, { pollChannels: true })`。
 
-`apps/cli/src/bin.ts` 保持两参。
+`close`：
+
+1. `server.closeAllConnections()`（现有：掐掉 in-flight HTTP，含 hooks）
+2. `runtime.stop()`（掐掉 telegram poll 与该次 inbound signal，并 dispose 全部插件 effect）
+3. `server.close(...)`
+
+`apps/cli/src/bin.ts` 保持两参 `createRuntime`，在 `process.exit` 前调用 `stop()`。
 
 ### 5.8 默认装配
 
@@ -286,7 +305,7 @@ runtimeConfigById["channel-telegram"] = {
 ## 6. 数据流
 
 1. Boot：yml 按行 `apply`。`channel` provide 登记表；`channel-telegram` 校验配置并登记 `"telegram"`。仅 startHost overlay 后启动 poll。
-2. `getUpdates` → 过滤 → `inbound` → `runTurn({ channel: "telegram" })` → session 追加事件（写入 log 的 `user/message` 是 trim 后的文本）→ `sendMessage`。
+2. 先 `deleteWebhook(drop_pending_updates)`，再 `getUpdates` → 过滤 → `inbound` → `runTurn({ channel: "telegram" })` → session 追加事件（写入 log 的 `user/message` 是 trim 后的文本）→ `sendMessage`。
 3. 工作台可 `GET /v1/sessions/telegram:<chatId>` 重放完整 log。
 4. 工作台 SSE 路径不变。CLI 仍 `channel: "cli"`，且不 poll。
 5. Webhook `POST /v1/hooks` 不变。
@@ -307,6 +326,8 @@ runtimeConfigById["channel-telegram"] = {
 | dispose / host close 时 inbound 进行中 | abort；不 sendMessage；busy finally 删除 |
 | 进行中 telegram 打 `POST /v1/turns/:id/cancel` | **404** |
 | `getUpdates` 失败 | 等 1s 再拉；不退出循环（除非 aborted） |
+| `deleteWebhook` 失败 | 等 1s 再试；成功前不 getUpdates |
+| `host.close` / `Runtime.stop` | abort poll 与 in-flight inbound；之后不得再发 Bot 请求 |
 | `sendMessage` 失败 | 不重试；session 已有完整 turn |
 | yml 无 telegram | 不登记、不轮询；host 其余功能不变 |
 
@@ -328,12 +349,13 @@ runtimeConfigById["channel-telegram"] = {
 2. **适配器 / `lastAssistantText`：** 假 `loop.runTurn` 断言 `channel === "telegram"`、传入的 `sessionId` / `text`、**没有** `onEvent`；返回的 `text` 为本 turn 最后一条 `assistant/message`。上一 turn 不得漏进。函数定义在 `packages/channel-telegram`，不在 `packages/channel`，不从 webhook 包 import。
 3. **总 spec 验收（事件同构）：** 同一假 chat、**同一 `text` 字符串**、纯文本、无 A2UI wait。一次 `inbound("telegram")`，一次 `runTurn({ channel: "host" })`，两个 session。去掉每条事件里的 `turnId` 字段后，事件类型与其余 payload 序列相同。另测：入站 `"  hi  "` 写入的 `user/message` 为 `"hi"`。
 4. **loop：** `channel: "telegram"` + wait 的 `a2ui_emit` → **`status === "ok"`** 且有 `turn/end`。现有 `host` 暂停与 `cli` / `webhook` 不暂停保持绿。
-5. **poller（注入 fetch）：** 白名单外的 message → 有 getUpdates ack（后续 offset 含该 `update_id+1`），无 inbound、无 sendMessage。无 `text` 的 message 同上。`turnBusy` 已有该 sessionId → 无 inbound。手工 `append` 成 `awaiting_action` 后同上。合法文本 → inbound 一次，随后 sendMessage 的 body `chat_id` 为该 chat.id、`text` 为适配器返回文本。返回 `text: ""` → 无 sendMessage。返回超长文本 → sendMessage 的 text 长度为 4096。
+5. **poller（注入 fetch）：** 第一次 Bot 调用必须是 `deleteWebhook` 且 body 含 `drop_pending_updates: true`。在它成功返回之前不得出现 `getUpdates`。白名单外的 message → 有 getUpdates ack（后续 offset 含该 `update_id+1`），无 inbound、无 sendMessage。无 `text` 的 message 同上。`turnBusy` 已有该 sessionId → 无 inbound。手工 `append` 成 `awaiting_action` 后同上。合法文本 → inbound 一次，随后 sendMessage 的 body `chat_id` 为该 chat.id（number）、`text` 为适配器返回文本。返回 `text: ""` → 无 sendMessage。返回超长文本 → sendMessage 的 text 长度为 4096。`deleteWebhook` 一直失败 → 只有 deleteWebhook 重试，无 inbound。
 6. **busy 共用：** 先把 `turnBusy.add("telegram:123")`，poller 收到该 chat 文本 → 不 inbound。host HTTP 测：`startHost` 后 `ctx.require("turnBusy")` 与 `/v1/hooks` 进行中（假 chat 挂起）是同一 Set（hooks 409 现有用例保持绿即可，另加：yml 含 telegram 时 startHost 仍提供该 Set）。
-7. **CLI 不 poll：** yml 含合法 telegram；`createRuntime(ws, home)` 两参；mock fetch 在短等待内 **零次** 调用（或零次 URL 含 `getUpdates`）。`startHost` 同夹具：至少一次 getUpdates（mock fetch 立即返回 `{ ok: true, result: [] }`）。
-8. **host src：** 不含 `@flintloom/channel-telegram`、不含 `createTelegramAdapter`。允许 `@flintloom/channel` 类型 import。允许字符串 `"channel-telegram"` 作为 overlay 的 id。
-9. **默认 yml：** 根 `flintloom.yml` 与 `ASSEMBLY` **不含** `channel-telegram`。根 `package.json` `devDependencies` 含包名（实现后）。
-10. 现有 host / loop / CLI / DocForge / A2UI / 知识库 / webhook 测试保持绿。
+7. **CLI 不 poll：** yml 含合法 telegram；`createRuntime(ws, home)` 两参；mock fetch 在短等待内 **零次** 调用（或零次 URL 含 `getUpdates` / `deleteWebhook`）。`startHost` 同夹具：至少一次 `deleteWebhook`，随后允许 getUpdates（mock 立即返回 `{ ok: true, result: [] }`）。
+8. **close 停 poll：** `startHost` + telegram yml + mock fetch；`await close()` 之后再等一拍，fetch 调用次数不再增加。
+9. **host src：** 不含 `@flintloom/channel-telegram`、不含 `createTelegramAdapter`。允许 `@flintloom/channel` 类型 import。允许字符串 `"channel-telegram"` 作为 overlay 的 id。
+10. **默认 yml：** 根 `flintloom.yml` 与 `ASSEMBLY` **不含** `channel-telegram`。根 `package.json` `devDependencies` 含包名（实现后）。
+11. 现有 host / loop / CLI / DocForge / A2UI / 知识库 / webhook 测试保持绿。`const { ctx } = await createRuntime(...)` 现有写法保持能编译。
 
 ## 10. 与总 spec / 前切片的关系
 
@@ -341,12 +363,12 @@ runtimeConfigById["channel-telegram"] = {
 
 工作台仍是 [A2UI 设计](2026-08-17-flintloom-a2ui-design.md) 的 `channel: "host"` 暂停。Webhook 仍是 [webhook 通道设计](2026-08-20-flintloom-channel-webhook-design.md)。CLI 仍是 `channel: "cli"`。
 
-`send` 登记表 API、附件、offset 落盘、`flint plugin add` 不在本片。
+`send` 登记表 API、附件、offset 落盘、`flint plugin add` 不在本片。每次 host 启动用 `deleteWebhook(drop_pending_updates)` 丢积压，不重放停机消息。
 
 ## 11. 实现顺序（本刀内）
 
-1. `createRuntime` provide `turnBusy`；host HTTP 改用它；现有 webhook / turns 409 测试保持绿。
+1. `createRuntime` provide `turnBusy`，并把 `applyConfig` disposer 挂成 `Runtime.stop`；host HTTP 改用 `turnBusy`；`startHost.close` 调用 `stop`；现有 webhook / turns 409 测试保持绿。
 2. `@flintloom/channel-telegram`：`parseTelegramConfig`、`lastAssistantText`、适配器、事件同构单测。
 3. loop：`channel: "telegram"` 不暂停，断言 `status === "ok"`。
-4. poller + 注入 fetch：白名单、busy、sendMessage、空文本、截断。
-5. `createRuntime` overlay `pollChannels`；`startHost` 三参；CLI 两参不 poll；host src 禁 import；根依赖。默认 yml **不加** 行。
+4. poller + 注入 fetch：`deleteWebhook` 先于 getUpdates、白名单、busy、sendMessage、空文本、截断。
+5. `createRuntime` overlay `pollChannels`；`startHost` 三参；CLI 两参不 poll 但 `stop()`；close 后不再 fetch；host src 禁 import；根依赖。默认 yml **不加** 行。
