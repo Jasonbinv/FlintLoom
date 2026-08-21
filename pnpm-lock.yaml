@@ -14,6 +14,9 @@ importers:
       '@flintloom/channel':
         specifier: workspace:*
         version: link:packages/channel
+      '@flintloom/channel-telegram':
+        specifier: workspace:*
+        version: link:packages/channel-telegram
       '@flintloom/channel-webhook':
         specifier: workspace:*
         version: link:packages/channel-webhook
@@ -154,6 +157,21 @@ importers:
       '@flintloom/kernel':
         specifier: workspace:*
         version: link:../kernel
+
+  packages/channel-telegram:
+    dependencies:
+      '@flintloom/channel':
+        specifier: workspace:*
+        version: link:../channel
+      '@flintloom/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      '@flintloom/loop':
+        specifier: workspace:*
+        version: link:../loop
+      '@flintloom/session':
+        specifier: workspace:*
+        version: link:../session
 
   packages/channel-webhook:
     dependencies:
