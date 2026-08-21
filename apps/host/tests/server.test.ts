@@ -412,4 +412,35 @@ describe("startHost", () => {
     close = undefined;
     await first.catch(() => undefined);
   });
+
+  it("createRuntime provides turnBusy and stop disposes plugins", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-runtime-stop-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-runtime-stop-home-"));
+    writeAssembly(workspaceRoot);
+    const { ctx, stop } = await createRuntime(workspaceRoot, homeDir);
+    expect(ctx.require("turnBusy")).toBeInstanceOf(Set);
+    expect(typeof stop).toBe("function");
+    stop();
+    expect(() => ctx.require("sessions")).toThrow(/sessions/);
+  });
+
+  it("startHost HTTP busy is the ctx turnBusy set", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-turnbusy-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-turnbusy-home-"));
+    writeAssembly(workspaceRoot);
+    const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+    close = host.close;
+    const token = loadOrCreateToken(homeDir);
+    const busy = host.runtime.ctx.require<Set<string>>("turnBusy");
+    busy.add("webhook");
+    const res = await fetch(`${host.url}/v1/hooks`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ text: "hi" }),
+    });
+    expect(res.status).toBe(409);
+  });
 });

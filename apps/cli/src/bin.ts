@@ -23,7 +23,7 @@ function parseArgv(argv: string[]): { workspace: string; text: string } {
 }
 
 const { workspace, text } = parseArgv(process.argv.slice(2));
-const { ctx } = await createRuntime(workspace, homedir());
+const { ctx, stop } = await createRuntime(workspace, homedir());
 const session = ctx.require<SessionStore>("sessions").getOrCreate("cli");
 const { status } = await ctx.require<LoopService>("loop").runTurn({
   ctx,
@@ -35,6 +35,7 @@ const { status } = await ctx.require<LoopService>("loop").runTurn({
 });
 
 const output = formatCliOutput(session.events(), status);
+stop();
 if (output.stdout !== "") {
   process.stdout.write(output.stdout);
 }

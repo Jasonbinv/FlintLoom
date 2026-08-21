@@ -16,7 +16,7 @@ import {
 import { handleKnowledgeRequest } from "./knowledge.ts";
 import { loadOrCreateToken, readCredentials } from "./token.ts";
 
-export type Runtime = { ctx: Context };
+export type Runtime = { ctx: Context; stop: () => void };
 
 function readDotEnv(filePath: string): Record<string, string> {
   if (!existsSync(filePath)) {
@@ -96,8 +96,9 @@ export async function createRuntime(
   };
 
   const ctx = new Context();
-  await applyConfig(ctx, config, { runtimeConfigById });
-  return { ctx };
+  ctx.provide("turnBusy", new Set<string>());
+  const stop = await applyConfig(ctx, config, { runtimeConfigById });
+  return { ctx, stop };
 }
 
 function formatHostError(
@@ -538,9 +539,9 @@ export async function startHost(opts: {
 }): Promise<{ url: string; close: () => Promise<void>; runtime: Runtime }> {
   const token = loadOrCreateToken(opts.homeDir);
   const runtime = await createRuntime(opts.workspaceRoot, opts.homeDir);
+  const busy = runtime.ctx.require<Set<string>>("turnBusy");
   const controllers = new Map<string, AbortController>();
   const turns = new Map<string, Session>();
-  const busy = new Set<string>();
 
   const server = createServer((req, res) => {
     void handleRequest(req, res, {
@@ -584,6 +585,7 @@ export async function startHost(opts: {
     close: () =>
       new Promise<void>((resolve, reject) => {
         server.closeAllConnections();
+        runtime.stop();
         server.close((err) => {
           if (err) reject(err);
           else resolve();
