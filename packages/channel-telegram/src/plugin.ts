@@ -2,6 +2,7 @@ import type { Context, FlintPlugin } from "@flintloom/kernel";
 import type { ChannelRegistry } from "@flintloom/channel";
 import { createTelegramAdapter } from "./adapter.ts";
 import { parseTelegramConfig } from "./config.ts";
+import { startTelegramPoller } from "./poller.ts";
 
 const plugin: FlintPlugin = {
   name: "@flintloom/channel-telegram",
@@ -13,6 +14,7 @@ const plugin: FlintPlugin = {
     ctx.effect(channels.register("telegram", createTelegramAdapter(ctx)));
     if (parsed.poll) {
       ctx.require<Set<string>>("turnBusy");
+      ctx.effect(startTelegramPoller(ctx, parsed));
     }
   },
 };
