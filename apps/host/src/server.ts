@@ -69,6 +69,7 @@ function resolveChatApiKey(
 export async function createRuntime(
   workspaceRoot: string,
   homeDir: string,
+  opts?: { pollChannels?: boolean },
 ): Promise<Runtime> {
   const ymlPath = join(workspaceRoot, "flintloom.yml");
   if (!existsSync(ymlPath)) {
@@ -94,6 +95,13 @@ export async function createRuntime(
   runtimeConfigById.knowledge = {
     dbPath: join(homeDir, ".flintloom", "knowledge.sqlite"),
   };
+
+  if (opts?.pollChannels === true) {
+    runtimeConfigById["channel-telegram"] = {
+      workspaceRoot,
+      poll: true,
+    };
+  }
 
   const ctx = new Context();
   ctx.provide("turnBusy", new Set<string>());
@@ -538,7 +546,9 @@ export async function startHost(opts: {
   port?: number;
 }): Promise<{ url: string; close: () => Promise<void>; runtime: Runtime }> {
   const token = loadOrCreateToken(opts.homeDir);
-  const runtime = await createRuntime(opts.workspaceRoot, opts.homeDir);
+  const runtime = await createRuntime(opts.workspaceRoot, opts.homeDir, {
+    pollChannels: true,
+  });
   const busy = runtime.ctx.require<Set<string>>("turnBusy");
   const controllers = new Map<string, AbortController>();
   const turns = new Map<string, Session>();
