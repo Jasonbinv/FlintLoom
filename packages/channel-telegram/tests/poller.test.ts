@@ -64,6 +64,7 @@ describe("startTelegramPoller", () => {
     const ctx = boot(async (input: RunTurnInput) => {
       inboundTexts.push(input.text);
       input.session.append({ type: "turn/start", turnId: "t1" });
+      input.session.append({ type: "user/message", text: input.text });
       return { turnId: "t1", status: "ok" };
     });
     let updates = 0;
@@ -79,10 +80,14 @@ describe("startTelegramPoller", () => {
           return jsonOk([
             {
               update_id: 10,
-              message: { chat: { id: 99 }, text: "nope" },
+              message: { chat: { id: 123 }, photo: [{}] },
             },
             {
               update_id: 11,
+              message: { chat: { id: 99 }, text: "nope" },
+            },
+            {
+              update_id: 12,
               message: { chat: { id: 123 }, text: "  hi  " },
             },
           ]);
@@ -111,8 +116,63 @@ describe("startTelegramPoller", () => {
     const getIdx = calls.findIndex((c) => c.url.endsWith("/getUpdates"));
     expect(getIdx).toBeGreaterThan(0);
     expect(inboundTexts).toEqual(["hi"]);
+    const userMessages = ctx
+      .require<SessionStore>("sessions")
+      .get("telegram:123")!
+      .events()
+      .filter((event) => event.type === "user/message");
+    expect(userMessages).toEqual([{ type: "user/message", text: "hi" }]);
     const sent = calls.find((c) => c.url.endsWith("/sendMessage"));
     expect(sent?.body).toEqual({ chat_id: 123, text: "reply-text" });
+    await vi.waitFor(() => {
+      expect(calls.filter((c) => c.url.endsWith("/getUpdates")).length).toBeGreaterThan(1);
+    });
+    const secondGet = calls.filter((c) => c.url.endsWith("/getUpdates"))[1];
+    expect(secondGet?.body).toMatchObject({ offset: 13 });
+  });
+
+  it("acks a later same-chat text in one batch without a second inbound", async () => {
+    const inboundTexts: string[] = [];
+    const ctx = boot(async (input: RunTurnInput) => {
+      inboundTexts.push(input.text);
+      return { turnId: "t1", status: "ok" };
+    });
+    let updates = 0;
+    const apiFetch: typeof fetch = async (url, init) => {
+      if (String(url).includes("deleteWebhook")) {
+        return jsonOk(true);
+      }
+      if (String(url).includes("getUpdates")) {
+        updates += 1;
+        if (updates === 1) {
+          return jsonOk([
+            { update_id: 1, message: { chat: { id: 123 }, text: "one" } },
+            { update_id: 2, message: { chat: { id: 123 }, text: "two" } },
+          ]);
+        }
+        await hangUntilAbort(init);
+      }
+      if (String(url).includes("sendMessage")) {
+        return jsonOk({ message_id: 1 });
+      }
+      return jsonOk([]);
+    };
+    stops.push(
+      startTelegramPoller(
+        ctx,
+        parseTelegramConfig({
+          token: "tok",
+          allowedChatIds: [123],
+          poll: true,
+          workspaceRoot: "/ws",
+          apiFetch,
+        }),
+      ),
+    );
+    await vi.waitFor(() => {
+      expect(updates).toBeGreaterThan(1);
+    });
+    expect(inboundTexts).toEqual(["one"]);
   });
 
   it("skips when turnBusy already has the session", async () => {
