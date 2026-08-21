@@ -1,7 +1,7 @@
 # FlintLoom `flint plugin add` 切片设计
 
 日期：2026-08-21  
-状态：待审阅  
+状态：待审阅（复核修订）  
 产品：FlintLoom — A real agent. / 真正的 Agent。  
 范围：总 spec 第四刀的 **安装器**：`flint plugin add [--id <id>] <path>` 把本地目录拷进 profile，验证入口有 `apply`，再在工作区 `flintloom.yml` 末尾加一行。组装机制已在 1.5 刀存在。本片只做 **本地 path**；`name` 写成 profile 内**绝对路径**；`applyConfig` 对绝对路径走 file URL `import`。
 
@@ -9,7 +9,9 @@
 
 用户有一个带 `apply` 的 Loom 插件目录。在工作区里执行 `flint plugin add <path>` 后，该目录的拷贝出现在 `~/.flintloom/plugins/<id>`，工作区 `flintloom.yml` 多一行，下次 `createRuntime` / host 会按绝对路径加载它。不经过聊天、不经过 HTTP、不 `runTurn`。
 
-验收：临时目录里一个只有 `index.js`（default export `{ name, apply }`）的插件，`installPluginFromPath` 之后 yml 含该 `id`，`name` 为 profile 绝对路径；`applyConfig` 用默认 `importFn` 能挂上该插件。yml 已有该 `id`、或 profile 目标目录已存在、或入口没有 `apply` → 拒绝，yml 与 profile 目标目录都不留下成功安装的痕迹。`flint plugin add` **不**调用 `createRuntime`。自动化测试不依赖真实 API key、不访问网络。
+验收：临时目录里一个只有 `index.mjs`（default export `{ name, apply }`）的插件，`installPluginFromPath` 之后 yml 含该 `id`，`name` 为 profile 绝对路径；`applyConfig` 用默认 `importFn` 能挂上该插件。yml 已有该 `id`、或 profile 目标目录已存在、或入口没有 `apply` → 拒绝，yml 与 profile 目标目录都不留下成功安装的痕迹。`flint plugin add` **不**调用 `createRuntime`。自动化测试不依赖真实 API key、不访问网络。
+
+无 `"type": "module"` 的 `package.json` 时，原生 Node 把 `.js` 当 CJS，`export default` 会语法失败。本片不改写 bundle、不插入 package.json。验收与测试用 **`index.mjs`**（始终 ESM）。`index.js` 仅在该目录（或 Node 向上找到的）`package.json` 声明 `"type": "module"` 时可用。`.ts` 入口依赖当前 `tsx` / vitest 加载器。
 
 ## 2. 收紧的决策
 
@@ -26,7 +28,8 @@
 | yml `name` | 目标目录的绝对路径（`realpath` 在 rename 之后）。不写 `plugin:` 前缀，不靠改 Node 模块搜索路径。 |
 | 相对路径 `name` | 本片 **不**写相对路径。`applyConfig` 只对 `path.isAbsolute(name)` 走文件 import；包名仍 `import(name)`。 |
 | 拷贝过滤 | 递归拷贝；名为 `node_modules` 或 `.git` 的目录 **不拷**。本片不在目标里跑 `pnpm install`。带第三方依赖且解析不到的插件，验证阶段失败。 |
-| yml 写入 | 用 `yaml` `parseDocument`，在 `plugins` 序列 **末尾**追加 `{ id, name }`，不写 `config`。写回前用 `loadConfig` 校验 dump 结果。 |
+| 缺 yml | 与 `createRuntime` 相同：文件不存在 → `throw new Error("plugins")`。不把绝对路径写进「缺文件」这条消息。 |
+| yml 写入 | 用 `yaml` `parseDocument`，在 `plugins` 序列 **末尾**追加 `{ id, name }`，不写 `config`。写回前用 `loadConfig` 校验 dump 结果。Windows 上 `rename` 不能覆盖已存在的 yml：先把原文件改名为 bak，再把 tmp 改名为 yml，成功后删 bak；失败则把 bak 改回。 |
 | 成功输出 | stdout 一行 `added <id>\n`，exit 0。 |
 | 第二工作区 | 同一 `homeDir` 下同一 `id` 的 profile 目录已存在时，`add` 拒绝。另一工作区若要挂同一拷贝，**手写**同一绝对路径到那份 yml；本片不提供「复用已有 profile」。 |
 | 破坏性 | 现网 `flint plugin add …` 会把整段当聊天文本。本片之后这是子命令，不再开 turn。 |
@@ -82,7 +85,7 @@ CLI 直接依赖 `@flintloom/kernel`（现为 host 的传递依赖；本片改�
 
 `dir` 必须是目录。按以下顺序取**第一个存在的文件**（均为相对 `dir` 的路径，存在则 `realpath`）：
 
-1. 若 `package.json` 存在且为对象：`main` 为非空字符串则尝试该相对路径；否则 `module` 为非空字符串则尝试。不解析 `exports` 条件图。相对路径含 `..` 逃出 `dir` → 当作无此入口，继续往下。
+1. 若 `package.json` 存在：`JSON.parse` 失败则忽略 main/module，继续下面的 `index.*`。解析结果为对象时，先看 `main`、再看 `module`（均为非空字符串才尝试）。不解析 `exports` 条件图。候选文件必须存在且为文件，且 `realpath` 后仍落在 `realpath(dir)` 内（用目录前缀 + `path.sep` 判断，**不要**用字符串是否包含 `..`：`./src/../index.mjs` 仍算内部）。逃出或不是文件 → 当作无此字段，看下一个字段 / `index.*`。
 2. `index.js`
 3. `index.mjs`
 4. `index.ts`
@@ -109,9 +112,9 @@ Windows 与 POSIX 都用 `path.isAbsolute` + `pathToFileURL`。yml 里的 `name`
 
 ### 4.4 安装流程（必须按此顺序）
 
-1. `sourcePath` 经 `realpath`：不存在或不是目录 → 抛错，消息含 `path`。
+1. `sourcePath` 经 `realpath`：不存在、`realpath` 失败、或不是目录 → `throw new Error("path")`（不要依赖 ENOENT 原文）。
 2. `id`：`--id` 或 `basename(source)`。非法 → 抛错，消息含 `id`。
-3. 读 `{workspaceRoot}/flintloom.yml`。缺失或 `loadConfig` 失败 → 与开机相同，消息含 `plugins` 或路径。
+3. 读 `{workspaceRoot}/flintloom.yml`。文件不存在 → `throw new Error("plugins")`（与 `createRuntime` 相同）。`loadConfig` 失败则原样抛出。
 4. `config.plugins` 已有该 `id` → 抛错，消息含 `id`。不改任何文件。
 5. `dest = join(homeDir, ".flintloom", "plugins", id)`。`dest` 已存在（文件或目录）→ 抛错，消息含 `id`。不改 yml。
 6. `mkdir` `join(homeDir, ".flintloom", "plugins")`。
@@ -120,7 +123,7 @@ Windows 与 POSIX 都用 `path.isAbsolute` + `pathToFileURL`。yml 里的 `name`
 9. `rename(tmp, dest)`。若 `rename` 失败 → `rm(tmp)`（若仍在），抛错。
 10. 用 `parseDocument` 打开**原** yml 文本，向 `plugins` 追加 YAML map：`id`、`name`（`realpath(dest)`）。`plugins` 不是序列 → 抛错 `plugins`，并 `rm(dest)`。
 11. `doc.toString()` 后 `loadConfig`；失败则 `rm(dest)`，不覆盖 yml。
-12. 将 dump **原子写回** yml（写临时文件再 rename 到 `flintloom.yml`）。写回失败 → `rm(dest)`，尽量恢复原 yml（rename 失败则原文件应仍在）。
+12. 将 dump 写到 `flintloom.yml.<hex>.tmp`。然后：`rename(ymlPath, ymlPath + ".bak-" + hex)` → `rename(tmp, ymlPath)` → `rm(bak)`。任一步失败：若 bak 仍在则 `rename(bak, ymlPath)`，`rm(yml tmp)`，`rm(dest)`，再抛错。Windows 禁止 `rename` 覆盖已存在的 yml，必须走 bak，不要 `unlink(yml)` 后再 rename（中间崩溃会丢原文件）。
 
 临时目录在任何失败路径上都要删掉。崩溃留下的 `.*.tmp-*` 不算已安装；不阻挡下次 `add`（目标 `dest` 仍不存在即可）。
 
@@ -134,7 +137,7 @@ Windows 与 POSIX 都用 `path.isAbsolute` + `pathToFileURL`。yml 里的 `name`
 
 | 剩余 argv | 行为 |
 |---|---|
-| `plugin` `add` … | 安装器。再解析可选 `--id <id>` 与恰好一个 path。多余位置参数 → 抛错，消息含 `path`。缺 path → 抛错，消息含 `path`。`--id` 出现在 `plugin add` 段内。 |
+| `plugin` `add` … | 安装器。在 `plugin add` 之后解析：可选 `--id <id>`（可在 path 前或后）与恰好一个 path。`--id` 缺下一参数或出现两次 → 抛错，消息含 `id`。多余位置参数 → 抛错，消息含 `path`。缺 path → 抛错，消息含 `path`。 |
 | `plugin`（无 `add`） | 抛错，消息含 `plugin add`。不实现 `list`/`remove`。 |
 | 其它（含空） | 现网 turn：空 text 仍走 `runTurn`（与现网一致，不在本片改语义）。 |
 
@@ -148,7 +151,8 @@ Windows 与 POSIX 都用 `path.isAbsolute` + `pathToFileURL`。yml 里的 `name`
 |---|---|---|
 | 源不存在 / 不是目录 | `path` | 无 |
 | `id` 非法 | `id` | 无 |
-| 无 / 坏 `flintloom.yml` | `plugins` 或 yml 路径 | 无 |
+| 无 `flintloom.yml` | `plugins` | 无 |
+| 坏 `flintloom.yml`（`loadConfig`） | 与现网 `loadConfig` 相同（`plugins` / `id` / `name` / `config`） | 无 |
 | yml 已有该 `id` | `id` | 无 |
 | `dest` 已存在 | `id` | 无 |
 | 无入口文件 | `entry` | 无 dest、无 yml 改动（tmp 已删） |
@@ -163,12 +167,12 @@ Windows 与 POSIX 都用 `path.isAbsolute` + `pathToFileURL`。yml 里的 `name`
 
 全部不依赖真实 API key、不访问网络。
 
-1. **kernel `applyConfig`：** yml `name` 为绝对路径目录（含 `index.js` default `apply`），不传自定义 `importFn`，boot 后能 `require` 该插件 `provide` 的键（测试插件 `provide("plugin-add-test", 1)`）。
+1. **kernel `applyConfig`：** yml `name` 为绝对路径目录（含 `index.mjs` default `apply`），不传自定义 `importFn`，boot 后能 `require` 该插件 `provide` 的键（测试插件 `provide("plugin-add-test", 1)`）。
 2. **kernel `applyConfig`：** `name: "@flintloom/models"` 这类包名行为不变（现有用例仍绿）。
 3. **`installPluginFromPath`：** 成功 → dest 存在、yml 末行 `id`/`name` 正确、`name` 为绝对路径、stdout 契约由 CLI 测。
 4. **重复 `id`：** 第二次失败；dest 内容与 yml 与第一次之后相同。
 5. **dest 已存在而 yml 无该 id：** 失败；yml 不变。
-6. **无 `apply` 的 `index.js`：** 失败；yml 不变；`plugins/<id>` 不存在；无残留 tmp。
+6. **无 `apply` 的 `index.mjs`：** 失败；yml 不变；`plugins/<id>` 不存在；无残留 tmp。
 7. **无入口：** 失败，消息含 `entry`。
 8. **CLI：** `plugin add` 路径不调用 `createRuntime`（测纯函数 `parseCliArgv` / 安装分支，或对 `installPluginFromPath` mock）。聊天路径仍解析 `--workspace` + text。
 9. **`id` 含 `..` 或 `/`：** 失败，消息含 `id`。
