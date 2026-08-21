@@ -234,16 +234,19 @@ export function App() {
       <header className="topbar">
         <h1>FlintLoom</h1>
         {hostDown ? (
-          <span>host 未连接</span>
+          <span className="status-pill down">host 未连接</span>
         ) : chatConfigured === false ? (
-          <span>chat 未配置</span>
+          <span className="status-pill warn">chat 未配置</span>
         ) : chatConfigured ? (
-          <span>chat 已配置</span>
+          <span className="status-pill ok">chat 已配置</span>
         ) : null}
       </header>
       <div className="workbench-body">
         <div className="chat-column">
           <main className="log">
+            {bubbles.length === 0 && !draft ? (
+              <p className="log-empty">向工作区说一句话</p>
+            ) : null}
             {bubbles.map((bubble) => (
               <div key={bubble.id} className={`bubble ${bubble.kind}`}>
                 {bubble.kind === "user" && bubble.text}
@@ -278,13 +281,14 @@ export function App() {
             />
             <button
               type="button"
+              className="btn-primary"
               disabled={sending || waitingAction || !input.trim()}
               onClick={() => void send()}
             >
               发送
             </button>
             {waitingAction || sending ? (
-              <button type="button" onClick={() => void onCancel()}>
+              <button type="button" className="btn-ghost" onClick={() => void onCancel()}>
                 取消
               </button>
             ) : null}

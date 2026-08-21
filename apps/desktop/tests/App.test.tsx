@@ -1010,4 +1010,118 @@ describe("App", () => {
     });
     expect(sendButton?.disabled).toBe(true);
   });
+
+  it("shows empty log copy as a paragraph", async () => {
+    installFetch();
+    await mountApp();
+    await waitForText("向工作区说一句话");
+    const empty = document.querySelector(".log-empty");
+    expect(empty).toBeTruthy();
+    expect(empty?.tagName).toBe("P");
+  });
+
+  it("hides empty log copy after session hydrate", async () => {
+    installFetch({
+      session: new Response(
+        JSON.stringify({
+          events: [
+            { type: "user/message", text: "past user" },
+            { type: "assistant/message", text: "past assistant" },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    await waitForText("past user");
+    expect(document.body.textContent).not.toContain("向工作区说一句话");
+    expect(document.querySelector(".log-empty")).toBeNull();
+  });
+
+  it("renders warn pill when chat is not configured", async () => {
+    installFetch();
+    await mountApp();
+    await waitForText("chat 未配置");
+    expect(document.querySelector(".status-pill.warn")?.textContent).toBe(
+      "chat 未配置",
+    );
+  });
+
+  it("renders ok pill when chat is configured", async () => {
+    installFetch({
+      models: new Response(JSON.stringify([{ kind: "chat", configured: true }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    });
+    await mountApp();
+    await waitForText("chat 已配置");
+    expect(document.querySelector(".status-pill.ok")?.textContent).toBe(
+      "chat 已配置",
+    );
+  });
+
+  it("renders down pill when models fetch fails", async () => {
+    installFetch({ models: new Error("network") });
+    await mountApp();
+    await waitForText("host 未连接");
+    expect(document.querySelector(".status-pill.down")?.textContent).toBe(
+      "host 未连接",
+    );
+  });
+
+  it("marks clicked file selected and never selects directories", async () => {
+    installFetch({
+      files: new Response(
+        JSON.stringify({
+          path: ".",
+          entries: [
+            { name: "docs", type: "dir" },
+            { name: "README.md", type: "file" },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    await waitForText("README.md");
+    await waitForText("docs");
+    const readme = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "README.md",
+    );
+    const docs = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "docs",
+    );
+    if (!readme || !docs) throw new Error("missing tree buttons");
+    expect(readme.classList.contains("selected")).toBe(false);
+    await act(async () => {
+      docs.click();
+    });
+    expect(docs.classList.contains("selected")).toBe(false);
+    await act(async () => {
+      readme.click();
+    });
+    expect(readme.classList.contains("selected")).toBe(true);
+    expect(docs.classList.contains("selected")).toBe(false);
+  });
+
+  it("tags send as primary and cancel as ghost", async () => {
+    installFetch({
+      turn: new Response(SURFACE_SSE, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    });
+    await mountApp();
+    const send = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "发送",
+    );
+    expect(send?.classList.contains("btn-primary")).toBe(true);
+    await typeAndSend("hi");
+    await waitForText("OK");
+    const cancel = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "取消",
+    );
+    expect(cancel?.classList.contains("btn-ghost")).toBe(true);
+  });
 });

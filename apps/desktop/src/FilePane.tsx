@@ -120,7 +120,11 @@ export function FilePane({ onInsertPath }: Props) {
       }
       return (
         <div key={path} className="file-node" style={{ paddingLeft: depth * 12 }}>
-          <button type="button" onClick={() => void openFile(path)}>
+          <button
+            type="button"
+            className={selectedFile === path ? "selected" : undefined}
+            onClick={() => void openFile(path)}
+          >
             {entry.name}
           </button>
         </div>
