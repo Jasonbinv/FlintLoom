@@ -14,3 +14,8 @@ export {
   unwrapPlugin,
   type ImportFn,
 } from "./apply-config.ts";
+export {
+  defaultImport,
+  isPluginId,
+  resolvePluginEntry,
+} from "./plugin-entry.ts";

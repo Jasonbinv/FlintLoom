@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { applyConfig, Context, type FlintPlugin } from "../src/index.ts";
 
@@ -87,5 +90,25 @@ describe("applyConfig", () => {
       ),
     ).rejects.toThrow(/boom/);
     expect(() => ctx.require("a")).toThrow(/a/);
+  });
+
+  it("默认 importFn 从绝对路径目录加载 apply", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "flintloom-abs-plugin-"));
+    writeFileSync(
+      join(dir, "index.mjs"),
+      `export default {
+  name: "plugin-add-test",
+  apply(ctx) {
+    ctx.provide("plugin-add-test", 1);
+  },
+};
+`,
+    );
+    const ctx = new Context();
+    const stop = await applyConfig(ctx, {
+      plugins: [{ id: "plugin-add-test", name: dir }],
+    });
+    expect(ctx.require("plugin-add-test")).toBe(1);
+    stop();
   });
 });

@@ -1,5 +1,6 @@
 import type { FlintloomConfig } from "./config.ts";
 import type { Context, Disposer, FlintPlugin } from "./context.ts";
+import { defaultImport } from "./plugin-entry.ts";
 
 export type ImportFn = (name: string) => Promise<unknown>;
 
@@ -36,7 +37,7 @@ export async function applyConfig(
     runtimeConfigById?: Record<string, Record<string, unknown>>;
   },
 ): Promise<Disposer> {
-  const importFn = opts?.importFn ?? ((n: string) => import(n));
+  const importFn = opts?.importFn ?? defaultImport;
   const runtime = opts?.runtimeConfigById ?? {};
   const seen = new Set<string>();
   const stops: Disposer[] = [];
