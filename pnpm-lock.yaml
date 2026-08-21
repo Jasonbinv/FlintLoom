@@ -77,6 +77,9 @@ importers:
       '@flintloom/host':
         specifier: workspace:*
         version: link:../host
+      '@flintloom/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
       '@flintloom/loop':
         specifier: workspace:*
         version: link:../../packages/loop

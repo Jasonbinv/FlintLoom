@@ -1,9 +1,11 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { loadOrCreateToken } from "@flintloom/host";
+import { parseCliArgv } from "../src/argv.ts";
 import { formatCliOutput } from "../src/output.ts";
+import { runCli } from "../src/run.ts";
 
 describe("loadOrCreateToken", () => {
   it("returns the same token on a second call for the same homeDir", () => {
@@ -45,5 +47,101 @@ describe("formatCliOutput", () => {
       stdout: "",
       stderr: "failed\n",
     });
+  });
+});
+
+describe("parseCliArgv", () => {
+  it("keeps turn text and --workspace", () => {
+    expect(
+      parseCliArgv(["--workspace", "W", "hello", "world"], "/cwd"),
+    ).toEqual({ kind: "turn", workspace: "W", text: "hello world" });
+    expect(parseCliArgv(["hello"], "/cwd")).toEqual({
+      kind: "turn",
+      workspace: "/cwd",
+      text: "hello",
+    });
+  });
+
+  it("parses plugin add with optional --id before or after the path", () => {
+    expect(parseCliArgv(["plugin", "add", "./p"], "/cwd")).toEqual({
+      kind: "plugin-add",
+      workspace: "/cwd",
+      sourcePath: "./p",
+    });
+    expect(
+      parseCliArgv(["plugin", "add", "--id", "x", "./p"], "/cwd"),
+    ).toEqual({
+      kind: "plugin-add",
+      workspace: "/cwd",
+      sourcePath: "./p",
+      id: "x",
+    });
+    expect(
+      parseCliArgv(["--workspace", "W", "plugin", "add", "./p", "--id", "x"], "/cwd"),
+    ).toEqual({
+      kind: "plugin-add",
+      workspace: "W",
+      sourcePath: "./p",
+      id: "x",
+    });
+  });
+
+  it("throws plugin add when the plugin subcommand is not add", () => {
+    expect(() => parseCliArgv(["plugin"], "/cwd")).toThrow(/plugin add/);
+    expect(() => parseCliArgv(["plugin", "list"], "/cwd")).toThrow(/plugin add/);
+  });
+
+  it("throws id or path for bad plugin add argv", () => {
+    expect(() => parseCliArgv(["plugin", "add"], "/cwd")).toThrow(/path/);
+    expect(() => parseCliArgv(["plugin", "add", "--id"], "/cwd")).toThrow(/id/);
+    expect(() =>
+      parseCliArgv(["plugin", "add", "a", "b"], "/cwd"),
+    ).toThrow(/path/);
+    expect(() =>
+      parseCliArgv(["plugin", "add", "--id", "x", "--id", "y", "./p"], "/cwd"),
+    ).toThrow(/id/);
+  });
+});
+
+describe("runCli", () => {
+  it("plugin add does not call createRuntime", async () => {
+    const createRuntime = vi.fn();
+    const installPluginFromPath = vi.fn(async () => ({
+      id: "sample",
+      dest: "/dest",
+    }));
+    const stdout: string[] = [];
+    const code = await runCli(["plugin", "add", "./p"], {
+      cwd: () => "/cwd",
+      homedir: () => "/home",
+      createRuntime,
+      installPluginFromPath,
+      stdout: { write: (c) => stdout.push(c) },
+      stderr: { write: () => {} },
+    });
+    expect(code).toBe(0);
+    expect(stdout.join("")).toBe("added sample\n");
+    expect(createRuntime).not.toHaveBeenCalled();
+    expect(installPluginFromPath).toHaveBeenCalledWith({
+      workspaceRoot: "/cwd",
+      homeDir: "/home",
+      sourcePath: "./p",
+    });
+  });
+
+  it("writes err.message to stderr when plugin add fails", async () => {
+    const stderr: string[] = [];
+    const code = await runCli(["plugin", "add", "./p"], {
+      cwd: () => "/cwd",
+      homedir: () => "/home",
+      createRuntime: vi.fn(),
+      installPluginFromPath: vi.fn(async () => {
+        throw new Error("path");
+      }),
+      stdout: { write: () => {} },
+      stderr: { write: (c) => stderr.push(c) },
+    });
+    expect(code).toBe(1);
+    expect(stderr.join("")).toBe("path\n");
   });
 });
