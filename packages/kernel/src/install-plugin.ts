@@ -56,10 +56,14 @@ function replaceYmlAtomic(ymlPath: string, dumped: string): void {
       }
       throw err;
     }
-    rmIfExists(bak);
   } catch (err) {
     rmIfExists(tmp);
     throw err;
+  }
+  try {
+    rmIfExists(bak);
+  } catch {
+    // best-effort after yml replace succeeded
   }
 }
 
