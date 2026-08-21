@@ -19,3 +19,7 @@ export {
   isPluginId,
   resolvePluginEntry,
 } from "./plugin-entry.ts";
+export {
+  installPluginFromPath,
+  type InstallPluginFromPathInput,
+} from "./install-plugin.ts";
