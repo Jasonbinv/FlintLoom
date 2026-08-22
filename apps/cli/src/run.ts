@@ -7,6 +7,7 @@ import type { LoopService } from "@flintloom/loop";
 import type { SessionStore } from "@flintloom/session";
 import { parseCliArgv } from "./argv.ts";
 import { formatCliOutput } from "./output.ts";
+import { runAcpStdio } from "@flintloom/channel-acp";
 
 export type CliDeps = {
   cwd: () => string;
@@ -46,6 +47,16 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
       const message = err instanceof Error ? err.message : String(err);
       deps.stderr.write(message + "\n");
       return 1;
+    }
+  }
+
+  if (command.kind === "acp") {
+    const { ctx, stop } = await deps.createRuntime(command.workspace, deps.homedir());
+    try {
+      await runAcpStdio(ctx, command.workspace);
+      return 0;
+    } finally {
+      stop();
     }
   }
 

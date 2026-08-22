@@ -1,0 +1,13 @@
+{
+  "name": "@flintloom/media-tools",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@flintloom/kernel": "workspace:*",
+    "@flintloom/models": "workspace:*",
+    "@flintloom/tools": "workspace:*"
+  }
+}

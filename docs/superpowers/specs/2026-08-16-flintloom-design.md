@@ -300,5 +300,8 @@ v1 内置通道：desktop、cli、webhook、telegram。ACP 作为同一接口上
 13. DocForge JSON 结构化生成（见 [JSON 生成设计](2026-08-22-flintloom-docforge-generate-json-design.md)）— `doc_generate` 接受 `.json` `blocks` 源。
 14. 薄 Electron 桌面壳（见 [Electron 设计](2026-08-22-flintloom-desktop-electron-design.md)）— `pnpm desktop:app` 原生窗口；`pnpm desktop` 仍为浏览器。
 15. `channels.deliver`（见 [deliver 设计](2026-08-22-flintloom-channels-deliver-design.md)）— loop turn 结束自动出站；Telegram `deliver` + 去掉 poller 手动 `send`。
+16. 媒体 Provider（见 [媒体与 ACP 设计](2026-08-22-flintloom-media-acp-design.md) §16）— `asr` / `tts` / `t2i` / `t2v` / `omni` 登记与 DashScope 原生实现。
+17. 媒体工具（同上 §17）— `image_generate` / `video_generate`。
+18. ACP stdio 通道（同上 §18）— `flint acp` + `@flintloom/channel-acp`。
 
 第 2–7 刀在同一份总 spec 上继续拆计划。新 Loom 包必须带 `apply`，禁止再往 `createRuntime` 里堆 `register`。

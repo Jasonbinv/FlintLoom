@@ -94,16 +94,21 @@ export async function createRuntime(
   const apiKey = resolveChatApiKey(homeDir, fileEnv);
   const runtimeConfigById: Record<string, Record<string, unknown>> = {};
   if (apiKey !== undefined) {
+    const baseUrl =
+      firstNonEmpty(process.env.FLINTLOOM_BASE_URL, fileEnv.FLINTLOOM_BASE_URL) ??
+      "https://api.deepseek.com/v1";
     runtimeConfigById["models-chat"] = {
       apiKey,
-      baseUrl:
-        firstNonEmpty(process.env.FLINTLOOM_BASE_URL, fileEnv.FLINTLOOM_BASE_URL) ??
-        "https://api.deepseek.com/v1",
+      baseUrl,
       model:
         firstNonEmpty(
           process.env.FLINTLOOM_CHAT_MODEL,
           fileEnv.FLINTLOOM_CHAT_MODEL,
         ) ?? "deepseek-chat",
+    };
+    runtimeConfigById["models-media"] = {
+      apiKey,
+      baseUrl,
     };
   }
   runtimeConfigById.knowledge = {

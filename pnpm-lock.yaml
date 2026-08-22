@@ -14,6 +14,9 @@ importers:
       '@flintloom/channel':
         specifier: workspace:*
         version: link:packages/channel
+      '@flintloom/channel-acp':
+        specifier: workspace:*
+        version: link:packages/channel-acp
       '@flintloom/channel-telegram':
         specifier: workspace:*
         version: link:packages/channel-telegram
@@ -44,12 +47,18 @@ importers:
       '@flintloom/mcp':
         specifier: workspace:*
         version: link:packages/mcp
+      '@flintloom/media-tools':
+        specifier: workspace:*
+        version: link:packages/media-tools
       '@flintloom/models':
         specifier: workspace:*
         version: link:packages/models
       '@flintloom/models-chat':
         specifier: workspace:*
         version: link:packages/models-chat
+      '@flintloom/models-media':
+        specifier: workspace:*
+        version: link:packages/models-media
       '@flintloom/session':
         specifier: workspace:*
         version: link:packages/session
@@ -80,6 +89,9 @@ importers:
 
   apps/cli:
     dependencies:
+      '@flintloom/channel-acp':
+        specifier: workspace:*
+        version: link:../../packages/channel-acp
       '@flintloom/host':
         specifier: workspace:*
         version: link:../host
@@ -178,6 +190,18 @@ importers:
       '@flintloom/kernel':
         specifier: workspace:*
         version: link:../kernel
+
+  packages/channel-acp:
+    dependencies:
+      '@flintloom/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      '@flintloom/loop':
+        specifier: workspace:*
+        version: link:../loop
+      '@flintloom/session':
+        specifier: workspace:*
+        version: link:../session
 
   packages/channel-telegram:
     dependencies:
@@ -347,6 +371,18 @@ importers:
         specifier: workspace:*
         version: link:../tools
 
+  packages/media-tools:
+    dependencies:
+      '@flintloom/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      '@flintloom/models':
+        specifier: workspace:*
+        version: link:../models
+      '@flintloom/tools':
+        specifier: workspace:*
+        version: link:../tools
+
   packages/models:
     dependencies:
       '@flintloom/kernel':
@@ -364,6 +400,19 @@ importers:
       '@flintloom/models':
         specifier: workspace:*
         version: link:../models
+
+  packages/models-media:
+    dependencies:
+      '@flintloom/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      '@flintloom/models':
+        specifier: workspace:*
+        version: link:../models
+    devDependencies:
+      '@flintloom/session':
+        specifier: workspace:*
+        version: link:../session
 
   packages/session:
     dependencies:

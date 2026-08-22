@@ -43,6 +43,47 @@ export interface GuardProvider {
   gate(input: GuardGateInput, signal: AbortSignal): Promise<GuardDecision>;
 }
 
+export interface AsrInput {
+  audio: Uint8Array;
+  mimeType?: string;
+}
+
+export interface AsrProvider {
+  transcribe(input: AsrInput, signal: AbortSignal): Promise<string>;
+}
+
+export interface TtsInput {
+  text: string;
+}
+
+export interface MediaBytes {
+  bytes: Uint8Array;
+  mimeType: string;
+}
+
+export interface TtsProvider {
+  synthesize(input: TtsInput, signal: AbortSignal): Promise<MediaBytes>;
+}
+
+export interface T2iInput {
+  prompt: string;
+  size?: string;
+}
+
+export interface T2iProvider {
+  generate(input: T2iInput, signal: AbortSignal): Promise<MediaBytes>;
+}
+
+export interface T2vInput {
+  prompt: string;
+}
+
+export interface T2vProvider {
+  generate(input: T2vInput, signal: AbortSignal): Promise<MediaBytes>;
+}
+
+export type OmniProvider = ChatProvider;
+
 export class ModelRegistry {
   readonly #providers = new Map<ModelKind, Map<string, unknown>>();
   readonly #defaults = new Map<ModelKind, string>();
@@ -55,20 +96,32 @@ export class ModelRegistry {
     return this.#register("guard", id, provider);
   }
 
+  registerAsr(id: string, provider: AsrProvider): Disposer {
+    return this.#register("asr", id, provider);
+  }
+
+  registerTts(id: string, provider: TtsProvider): Disposer {
+    return this.#register("tts", id, provider);
+  }
+
+  registerT2i(id: string, provider: T2iProvider): Disposer {
+    return this.#register("t2i", id, provider);
+  }
+
+  registerT2v(id: string, provider: T2vProvider): Disposer {
+    return this.#register("t2v", id, provider);
+  }
+
+  registerOmni(id: string, provider: OmniProvider): Disposer {
+    return this.#register("omni", id, provider);
+  }
+
   setDefault(kind: ModelKind, id: string): void {
     this.#defaults.set(kind, id);
   }
 
   resolveChat(): ChatProvider {
-    const defaultId = this.#defaults.get("chat");
-    if (defaultId === undefined) {
-      throw new ModelKindMissingError("chat");
-    }
-    const provider = this.#providers.get("chat")?.get(defaultId);
-    if (provider === undefined) {
-      throw new ModelKindMissingError("chat");
-    }
-    return provider as ChatProvider;
+    return this.#resolve("chat");
   }
 
   resolveGuard(): GuardProvider | undefined {
@@ -76,9 +129,27 @@ export class ModelRegistry {
     if (defaultId === undefined) {
       return undefined;
     }
-    return this.#providers.get("guard")?.get(defaultId) as
-      | GuardProvider
-      | undefined;
+    return this.#providers.get("guard")?.get(defaultId) as GuardProvider | undefined;
+  }
+
+  resolveAsr(): AsrProvider {
+    return this.#resolve("asr");
+  }
+
+  resolveTts(): TtsProvider {
+    return this.#resolve("tts");
+  }
+
+  resolveT2i(): T2iProvider {
+    return this.#resolve("t2i");
+  }
+
+  resolveT2v(): T2vProvider {
+    return this.#resolve("t2v");
+  }
+
+  resolveOmni(): OmniProvider {
+    return this.#resolve("omni");
   }
 
   snapshot(): {
@@ -94,6 +165,18 @@ export class ModelRegistry {
         configured: defaultId !== null,
       };
     });
+  }
+
+  #resolve<T>(kind: ModelKind): T {
+    const defaultId = this.#defaults.get(kind);
+    if (defaultId === undefined) {
+      throw new ModelKindMissingError(kind);
+    }
+    const provider = this.#providers.get(kind)?.get(defaultId);
+    if (provider === undefined) {
+      throw new ModelKindMissingError(kind);
+    }
+    return provider as T;
   }
 
   #register(kind: ModelKind, id: string, provider: unknown): Disposer {

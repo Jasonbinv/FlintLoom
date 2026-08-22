@@ -11,7 +11,12 @@ export type CliPluginAddCommand = {
   id?: string;
 };
 
-export type CliCommand = CliTurnCommand | CliPluginAddCommand;
+export type CliAcpCommand = {
+  kind: "acp";
+  workspace: string;
+};
+
+export type CliCommand = CliTurnCommand | CliPluginAddCommand | CliAcpCommand;
 
 export function parseCliArgv(argv: string[], cwd: string): CliCommand {
   let workspace = cwd;
@@ -27,6 +32,10 @@ export function parseCliArgv(argv: string[], cwd: string): CliCommand {
       continue;
     }
     rest.push(arg);
+  }
+
+  if (rest[0] === "acp") {
+    return { kind: "acp", workspace };
   }
 
   if (rest[0] === "plugin") {

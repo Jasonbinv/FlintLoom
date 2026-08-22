@@ -8,6 +8,8 @@ plugins:
     name: "@flintloom/session"
   - id: models-chat
     name: "@flintloom/models-chat"
+  - id: models-media
+    name: "@flintloom/models-media"
   - id: fs
     name: "@flintloom/fs"
   - id: grep
@@ -24,9 +26,13 @@ plugins:
     name: "@flintloom/a2ui"
   - id: skill
     name: "@flintloom/skill"
+  - id: media-tools
+    name: "@flintloom/media-tools"
   - id: loop
     name: "@flintloom/loop"
   - id: channel
     name: "@flintloom/channel"
   - id: channel-webhook
     name: "@flintloom/channel-webhook"
+  - id: channel-acp
+    name: "@flintloom/channel-acp"

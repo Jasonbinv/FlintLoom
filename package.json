@@ -16,6 +16,7 @@
   "devDependencies": {
     "@flintloom/a2ui": "workspace:*",
     "@flintloom/channel": "workspace:*",
+    "@flintloom/channel-acp": "workspace:*",
     "@flintloom/channel-webhook": "workspace:*",
     "@flintloom/channel-telegram": "workspace:*",
     "@flintloom/docforge": "workspace:*",
@@ -26,8 +27,10 @@
     "@flintloom/knowledge": "workspace:*",
     "@flintloom/loop": "workspace:*",
     "@flintloom/mcp": "workspace:*",
+    "@flintloom/media-tools": "workspace:*",
     "@flintloom/models": "workspace:*",
     "@flintloom/models-chat": "workspace:*",
+    "@flintloom/models-media": "workspace:*",
     "@flintloom/session": "workspace:*",
     "@flintloom/shell": "workspace:*",
     "@flintloom/skill": "workspace:*",

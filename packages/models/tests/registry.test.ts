@@ -55,4 +55,14 @@ describe("ModelRegistry", () => {
       ModelKindMissingError,
     );
   });
+
+  it("resolveAsr throws ModelKindMissingError when asr not configured", () => {
+    const registry = new ModelRegistry();
+    expect(() => registry.resolveAsr()).toThrow(ModelKindMissingError);
+    try {
+      registry.resolveAsr();
+    } catch (err) {
+      expect((err as ModelKindMissingError).kind).toBe("asr");
+    }
+  });
 });

@@ -1,0 +1,15 @@
+{
+  "name": "@flintloom/models-media",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@flintloom/kernel": "workspace:*",
+    "@flintloom/models": "workspace:*"
+  },
+  "devDependencies": {
+    "@flintloom/session": "workspace:*"
+  }
+}

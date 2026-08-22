@@ -1,13 +1,11 @@
 {
-  "name": "@flintloom/cli",
+  "name": "@flintloom/channel-acp",
   "private": true,
   "type": "module",
-  "bin": {
-    "flint": "./src/bin.ts"
+  "exports": {
+    ".": "./src/index.ts"
   },
   "dependencies": {
-    "@flintloom/channel-acp": "workspace:*",
-    "@flintloom/host": "workspace:*",
     "@flintloom/kernel": "workspace:*",
     "@flintloom/loop": "workspace:*",
     "@flintloom/session": "workspace:*"
