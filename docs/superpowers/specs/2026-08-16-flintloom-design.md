@@ -293,6 +293,7 @@ v1 内置通道：desktop、cli、webhook、telegram。ACP 作为同一接口上
 6. MCP（见 [MCP 设计](2026-08-22-flintloom-mcp-design.md)）— stdio + tools，一行一个 server，工具名 `mcp__<id>__<name>`。`mcp-servers.yml` 自动加载见 [MCP 使用说明](../mcp-servers.md)。
 7. Guard ask（见 [Guard ask 设计](2026-08-22-flintloom-guard-ask-design.md)）— host 上 `gate` 为 `ask` 时暂停，工作台允许/拒绝后续跑。
 8. 桌面插件/模型页（见 [插件与模型页设计](2026-08-22-flintloom-desktop-plugins-models-design.md)）— `GET /v1/plugins`、只读 Plugins/Models 顶栏。
-9. A2UI DataTable / Chart（见 [table/chart 设计](2026-08-22-flintloom-a2ui-table-chart-design.md)）— 展示组件，内联 SVG 图，不 wait。A2UI Infographic 组件与 xlsx/pptx 写出仍留后续。
+9. A2UI DataTable / Chart（见 [table/chart 设计](2026-08-22-flintloom-a2ui-table-chart-design.md)）— 展示组件，内联 SVG 图，不 wait。
+10. A2UI Infographic（见 [Infographic 组件设计](2026-08-22-flintloom-a2ui-infographic-design.md)）— 复用 `renderSvg` 与预览 API。xlsx/pptx 写出仍留后续。
 
 第 2–7 刀在同一份总 spec 上继续拆计划。新 Loom 包必须带 `apply`，禁止再往 `createRuntime` 里堆 `register`。

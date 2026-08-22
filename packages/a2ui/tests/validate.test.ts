@@ -305,4 +305,61 @@ describe("createA2uiService", () => {
       ]),
     ).toThrow(/bad chart/);
   });
+
+  it("accepts Infographic with inline document or file path without wait", () => {
+    const svc = createA2uiService();
+    const docSnap = svc.validateEmit([
+      { version: "v0.9", createSurface: { surfaceId: "s", catalogId: "flintloom:a2ui:core" } },
+      {
+        version: "v0.9",
+        updateComponents: {
+          surfaceId: "s",
+          components: [
+            {
+              id: "root",
+              component: "Infographic",
+              document: {
+                nodes: [{ id: "a", label: "Start", x: 10, y: 20 }],
+                edges: [],
+              },
+            },
+          ],
+        },
+      },
+    ]);
+    expect(docSnap.wait).toBe(false);
+
+    const fileSnap = svc.validateEmit([
+      { version: "v0.9", createSurface: { surfaceId: "f", catalogId: "flintloom:a2ui:core" } },
+      {
+        version: "v0.9",
+        updateComponents: {
+          surfaceId: "f",
+          components: [
+            { id: "root", component: "Infographic", file: "flow.infographic.json" },
+          ],
+        },
+      },
+    ]);
+    expect(fileSnap.wait).toBe(false);
+
+    expect(() =>
+      svc.validateEmit([
+        { version: "v0.9", createSurface: { surfaceId: "s", catalogId: "flintloom:a2ui:core" } },
+        {
+          version: "v0.9",
+          updateComponents: {
+            surfaceId: "s",
+            components: [
+              {
+                id: "root",
+                component: "Infographic",
+                document: { nodes: [], edges: [{ from: "x", to: "y" }] },
+              },
+            ],
+          },
+        },
+      ]),
+    ).toThrow(/unknown node/);
+  });
 });

@@ -1383,4 +1383,49 @@ describe("App", () => {
       Array.from(document.querySelectorAll("button")).some((b) => b.textContent === "取消"),
     ).toBe(false);
   });
+
+  it("renders a2ui Infographic from inline document", async () => {
+    const messages = [
+      {
+        version: "v0.9" as const,
+        createSurface: { surfaceId: "main", catalogId: "flintloom:a2ui:core" },
+      },
+      {
+        version: "v0.9" as const,
+        updateComponents: {
+          surfaceId: "main",
+          components: [
+            {
+              id: "root",
+              component: "Infographic",
+              document: {
+                nodes: [{ id: "n1", label: "HelloNode", x: 40, y: 30 }],
+                edges: [],
+              },
+            },
+          ],
+        },
+      },
+    ];
+    const sse =
+      `data: {"type":"turn/start","turnId":"t-ig"}\n\n` +
+      `data: ${JSON.stringify({
+        type: "a2ui/surface",
+        turnId: "t-ig",
+        surfaceId: "main",
+        wait: false,
+        messages,
+      })}\n\n` +
+      `data: {"type":"end","status":"ok"}\n\n`;
+    installFetch({
+      turn: new Response(sse, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    });
+    await mountApp();
+    await typeAndSend("show ig");
+    await waitForText("HelloNode");
+    expect(document.querySelector(".a2ui-infographic svg")).toBeTruthy();
+  });
 });

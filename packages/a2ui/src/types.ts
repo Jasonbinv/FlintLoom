@@ -16,7 +16,8 @@ export type A2uiComponent = {
     | "Button"
     | "ChoicePicker"
     | "DataTable"
-    | "Chart";
+    | "Chart"
+    | "Infographic";
   [key: string]: unknown;
 };
 

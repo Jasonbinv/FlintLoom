@@ -487,3 +487,15 @@ body,
   display: block;
   max-width: 100%;
 }
+
+.a2ui-infographic svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.a2ui-infographic-failed,
+.a2ui-infographic-loading {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}

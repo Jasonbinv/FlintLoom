@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { chartSvg, type ChartKind } from "./a2ui-chart.tsx";
+import { InfographicView } from "./InfographicView.tsx";
+import type { InfographicDocument } from "@flintloom/infographic";
 
 type A2uiSurfaceProps = {
   messages: unknown[];
@@ -22,6 +24,8 @@ type Comp = {
   labels?: unknown;
   values?: unknown;
   kind?: unknown;
+  document?: unknown;
+  file?: unknown;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -213,6 +217,21 @@ function resolveChart(comp: Comp, model: unknown): { labels: string[]; values: n
   return undefined;
 }
 
+function resolveInfographic(comp: Comp, model: unknown): InfographicDocument | undefined {
+  const path = bindingPath(comp.data);
+  if (path) {
+    const value = getAtPath(model, path);
+    if (!isRecord(value) || !Array.isArray(value.nodes) || !Array.isArray(value.edges)) {
+      return undefined;
+    }
+    return value as InfographicDocument;
+  }
+  if (isRecord(comp.document) && Array.isArray(comp.document.nodes) && Array.isArray(comp.document.edges)) {
+    return comp.document as InfographicDocument;
+  }
+  return undefined;
+}
+
 function walkReachable(map: Map<string, Comp>): Comp[] {
   const out: Comp[] = [];
   const seen = new Set<string>();
@@ -315,6 +334,12 @@ function renderComp(
           }}
         />
       );
+    }
+    case "Infographic": {
+      const doc = resolveInfographic(comp, model);
+      if (doc) return <InfographicView document={doc} />;
+      if (typeof comp.file === "string") return <InfographicView file={comp.file} />;
+      return null;
     }
     case "Button": {
       const name = actionName(comp);

@@ -6,6 +6,7 @@ import {
   type A2uiMessage,
   type A2uiService,
 } from "./types.ts";
+import { isInfographicRelPath, parseDocument } from "@flintloom/infographic";
 
 const ENVELOPE_KEYS = ["createSurface", "updateComponents", "updateDataModel", "deleteSurface"] as const;
 const KNOWN_COMPONENTS = new Set([
@@ -17,6 +18,7 @@ const KNOWN_COMPONENTS = new Set([
   "ChoicePicker",
   "DataTable",
   "Chart",
+  "Infographic",
 ]);
 const MAX_PAYLOAD = 65536;
 const PATH_RE = /^\/(?:[A-Za-z0-9_]+(?:\/[A-Za-z0-9_]+)*)?$/;
@@ -186,6 +188,27 @@ function validateComponentShape(comp: A2uiComponent): void {
     ) {
       fail("bad chart");
     }
+    return;
+  }
+  if (comp.component === "Infographic") {
+    const dataPath = bindingPath(comp.data);
+    const hasDoc = isRecord(comp.document);
+    const hasFile = typeof comp.file === "string";
+    const modes = [dataPath !== undefined, hasDoc, hasFile].filter(Boolean).length;
+    if (modes !== 1) {
+      fail("bad infographic");
+    }
+    if (dataPath !== undefined) {
+      return;
+    }
+    if (hasFile) {
+      const file = comp.file as string;
+      if (file.includes("..") || !isInfographicRelPath(file)) {
+        fail("bad path");
+      }
+      return;
+    }
+    parseDocument(JSON.stringify(comp.document));
   }
 }
 
