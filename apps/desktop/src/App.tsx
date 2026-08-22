@@ -22,7 +22,14 @@ type Bubble =
   | { id: string; kind: "tool-result"; text: string }
   | { id: string; kind: "error"; message: string }
   | { id: string; kind: "a2ui"; surfaceId: string; messages: unknown[]; turnId: string }
-  | { id: string; kind: "guard-ask"; tool: string; callId: string; turnId: string };
+  | { id: string; kind: "guard-ask"; tool: string; callId: string; turnId: string }
+  | {
+      id: string;
+      kind: "guard-steward";
+      tool: string;
+      verdict: "ok" | "suspicious";
+      summary: string;
+    };
 
 function sessionId(): string {
   let id = sessionStorage.getItem(SESSION_KEY);
@@ -73,6 +80,17 @@ function bubbleFromHistory(event: WorkbenchEvent, id: string): Bubble | undefine
         tool: event.tool,
         callId: event.callId,
         turnId: event.turnId,
+      };
+    case "guard/steward":
+      if (event.verdict === "ok" && event.summary.length === 0) {
+        return undefined;
+      }
+      return {
+        id,
+        kind: "guard-steward",
+        tool: event.tool,
+        verdict: event.verdict,
+        summary: event.summary,
       };
     default:
       return undefined;
@@ -406,6 +424,17 @@ export function App() {
                         拒绝
                       </button>
                     </div>
+                  </div>
+                )}
+                {bubble.kind === "guard-steward" && (
+                  <div
+                    className={`guard-steward ${bubble.verdict === "suspicious" ? "warn" : ""}`}
+                  >
+                    <p className="guard-steward-label">
+                      Guard {bubble.verdict === "suspicious" ? "可疑" : "复查"}：
+                      <strong>{bubble.tool}</strong>
+                    </p>
+                    {bubble.summary ? <p>{bubble.summary}</p> : null}
                   </div>
                 )}
               </div>

@@ -372,6 +372,27 @@ body,
   margin-top: 0.6rem;
 }
 
+.bubble.guard-steward {
+  align-self: flex-start;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  padding: 0.65rem 0.85rem;
+  font-size: 0.9rem;
+}
+
+.bubble.guard-steward.warn {
+  border-color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 12%, var(--bg-panel));
+}
+
+.guard-steward-label {
+  margin: 0;
+}
+
+.bubble.guard-steward p {
+  margin: 0.35rem 0 0;
+}
+
 .a2ui-column {
   display: flex;
   flex-direction: column;

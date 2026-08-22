@@ -980,6 +980,28 @@ describe("App", () => {
     expect(sendButton?.disabled).toBe(true);
   });
 
+  it("hydrates guard/steward events from session", async () => {
+    installFetch({
+      session: new Response(
+        JSON.stringify({
+          events: [
+            {
+              type: "guard/steward",
+              callId: "c1",
+              tool: "fs",
+              verdict: "suspicious",
+              summary: "api key in output",
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    await waitForText("api key in output");
+    expect(document.body.textContent).toContain("可疑");
+  });
+
   it("button click posts the current picker value in data", async () => {
     const messages = [
       {

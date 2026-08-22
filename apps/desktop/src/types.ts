@@ -18,6 +18,13 @@ export type WorkbenchEvent =
   | { type: "model/error"; kind: string; message: string }
   | { type: "guard/decision"; tool: string; decision: "allow" | "deny" | "ask" }
   | {
+      type: "guard/steward";
+      callId: string;
+      tool: string;
+      verdict: "ok" | "suspicious";
+      summary: string;
+    }
+  | {
       type: "guard/ask";
       turnId: string;
       callId: string;

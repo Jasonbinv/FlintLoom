@@ -232,7 +232,7 @@ FlintLoom 作为 ACP Agent 通过 stdin/stdout 提供 JSON-RPC；`assistant/chun
 
 ### 9.4 Guard 与 ACP 多模态
 
-配置 API key 后 host 会自动 overlay `@flintloom/models-guard`（可用 `FLINTLOOM_GUARD_MODEL` 覆盖模型名）。工具执行成功后会写 `guard/steward` 事件（可疑结果带 summary），不自动禁用插件。`flint acp` 在 omni/asr 已配置时 `initialize` 会声明 image/audio/embeddedContext 能力；`session/prompt` 可带 image 块或 audio 块（音频经 ASR 转写）。
+配置 API key 后 host 会自动 overlay `@flintloom/models-guard`（可用 `FLINTLOOM_GUARD_MODEL` 覆盖模型名）。工具执行成功后会写 `guard/steward` 事件（可疑结果带 summary），不自动禁用插件。工作台对可疑 steward 显示提示气泡。`flint acp` 在 omni/asr 已配置时 `initialize` 会声明 image/audio/embeddedContext 能力；`session/prompt` 可带 image 块或 audio 块（音频经 ASR 转写）。
 
 ---
 

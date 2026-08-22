@@ -86,6 +86,12 @@
 - `session/prompt` 块：`text`、`image`（mime + base64）、`audio`（ASR 转写并入 text）、`embedded_context`（text）
 - `runTurn` 带 `images` 与 slice 26 一致
 
+## 29. 工作台 guard/steward 展示
+
+- `guard/steward` SSE 事件：`verdict === suspicious` 或 `summary` 非空时渲染气泡
+- 根 `flintloom.yml` 增加 `models-guard` 行（host overlay 配 API key 后真正登记 guard）
+- 非目标：ACP 转发 steward、自动禁用工具
+
 ## 非目标
 
 - ACP v2、Streamable HTTP、fs/terminal 客户端能力
