@@ -31,6 +31,7 @@ export function createTelegramAdapter(ctx: Context, parsed: TelegramConfig): Cha
         ctx,
         session,
         text: input.text,
+        images: input.images,
         workspaceRoot: input.workspaceRoot,
         channel: "telegram",
         signal: input.signal,

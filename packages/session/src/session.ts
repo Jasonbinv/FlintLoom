@@ -1,4 +1,18 @@
-import type { ChatMessage, SessionEvent } from "./events.ts";
+import type { ChatContentPart, ChatMessage, SessionEvent, UserImage } from "./events.ts";
+
+export function userMessageContent(text: string, images?: UserImage[]): string | ChatContentPart[] {
+  if (images === undefined || images.length === 0) {
+    return text;
+  }
+  const parts: ChatContentPart[] = [];
+  if (text.length > 0) {
+    parts.push({ type: "text", text });
+  }
+  for (const image of images) {
+    parts.push({ type: "image", mime: image.mime, data: image.data });
+  }
+  return parts;
+}
 
 export class Session {
   readonly #events: SessionEvent[] = [];
@@ -104,7 +118,10 @@ export class Session {
       switch (event.type) {
         case "user/message":
           flushCalls();
-          messages.push({ role: "user", content: event.text });
+          messages.push({
+            role: "user",
+            content: userMessageContent(event.text, event.images),
+          });
           break;
         case "assistant/message":
           flushCalls();

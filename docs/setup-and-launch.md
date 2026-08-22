@@ -226,6 +226,10 @@ FlintLoom 作为 ACP Agent 通过 stdin/stdout 提供 JSON-RPC；`assistant/chun
 
 配置 TTS 后，助手回复气泡会出现「朗读」按钮；Telegram 出站优先发送语音消息。
 
+### 9.3 图片与 omni 多模态
+
+在 `.env` 中配置 omni（`models-chat` 默认与 chat 共用模型，或单独 `omniModel`）后，工作台 composer 会出现「图片」按钮，可将 JPEG/PNG/GIF/WebP 随 `POST /v1/turns` 发送。session log 的 `user/message` 会带上 `images`，loop 用 `resolveOmni()` 投影为多模态 content。Telegram 图片消息在 omni 已配置时会下载最大尺寸并入站；未配置则忽略（与无 ASR 时忽略语音一致）。
+
 ---
 
 ## 10. 端口与探测逻辑

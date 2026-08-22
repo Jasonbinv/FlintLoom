@@ -399,10 +399,34 @@ body,
 
 .composer {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.6rem;
   padding: 0.75rem 1rem;
   border-top: 1px solid var(--line);
   background: var(--bg-raised);
+}
+
+.composer-images {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+}
+
+.composer-image-thumb,
+.user-image-thumb {
+  max-width: 120px;
+  max-height: 80px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  object-fit: cover;
+}
+
+.user-message {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
 }
 
 .composer textarea {

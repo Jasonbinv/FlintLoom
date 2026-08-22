@@ -1,3 +1,8 @@
+export type UserImage = {
+  mime: string;
+  data: string;
+};
+
 export type TurnEnd = {
   type: "end";
   status: "ok" | "failed" | "cancelled" | "awaiting_action";
@@ -5,7 +10,7 @@ export type TurnEnd = {
 export type WorkbenchEvent =
   | { type: "turn/start"; turnId: string }
   | { type: "turn/end"; turnId: string; status: "ok" | "failed" | "cancelled" }
-  | { type: "user/message"; text: string }
+  | { type: "user/message"; text: string; images?: UserImage[] }
   | { type: "assistant/chunk"; text: string }
   | { type: "assistant/message"; text: string }
   | { type: "tool/call"; callId: string; name: string; args: unknown }

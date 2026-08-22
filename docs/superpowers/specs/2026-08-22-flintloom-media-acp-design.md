@@ -65,6 +65,14 @@
 - `models-chat` 同时登记 `omni`（默认同 chat 模型或 `omniModel`）
 - loop `runStepIterations`：omni 已配置时 `resolveOmni()` 替代 `resolveChat()`
 
+## 26. 图片入站 + omni 多模态消息
+
+- session：`user/message` 可选 `images: { mime, data }[]`（base64）；`deriveMessages` 投影为 OpenAI 多模态 content parts
+- `models-chat` OpenAI 兼容层：`image_url` data URL
+- Host：`POST /v1/turns` JSON 可选 `images`；未配 omni 时仍可记 log，由模型层失败
+- 桌面：`omni.configured` 时 composer「图片」按钮；发送时带 `images`
+- Telegram：`message.photo` → 下载最大尺寸 → omni 已配置时 `inbound` 带图；未配则忽略（与 voice 无 asr 一致）
+
 ## 非目标
 
 - ACP v2、Streamable HTTP、fs/terminal 客户端能力

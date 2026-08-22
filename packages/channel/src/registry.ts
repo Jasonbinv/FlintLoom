@@ -1,5 +1,8 @@
+import type { UserImage } from "@flintloom/session";
+
 export type ChannelInbound = {
   text: string;
+  images?: UserImage[];
   sessionId: string;
   workspaceRoot: string;
   signal: AbortSignal;

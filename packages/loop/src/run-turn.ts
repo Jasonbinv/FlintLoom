@@ -4,7 +4,7 @@ import {
   type ChatChunkToolCall,
   type ModelRegistry,
 } from "@flintloom/models";
-import { Session, type SessionEvent } from "@flintloom/session";
+import { Session, type SessionEvent, type UserImage } from "@flintloom/session";
 import { isGuardAskError, type ToolRegistry } from "@flintloom/tools";
 
 const SYSTEM_MESSAGE =
@@ -23,6 +23,7 @@ export interface RunTurnInput {
   ctx: Context;
   session: Session;
   text: string;
+  images?: UserImage[];
   workspaceRoot: string;
   channel: string;
   signal: AbortSignal;
@@ -429,12 +430,17 @@ export async function runTurn(input: RunTurnInput): Promise<RunTurnResult> {
   const {
     session,
     text,
+    images,
     onEvent,
   } = input;
 
   const turnId = crypto.randomUUID();
   appendEvent(session, onEvent, { type: "turn/start", turnId });
-  appendEvent(session, onEvent, { type: "user/message", text });
+  if (images !== undefined && images.length > 0) {
+    appendEvent(session, onEvent, { type: "user/message", text, images });
+  } else {
+    appendEvent(session, onEvent, { type: "user/message", text });
+  }
 
   return runStepIterations({ ...input, turnId });
 }

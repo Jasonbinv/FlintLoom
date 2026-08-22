@@ -1,7 +1,16 @@
+export type UserImage = {
+  mime: string;
+  data: string;
+};
+
+export type ChatContentPart =
+  | { type: "text"; text: string }
+  | { type: "image"; mime: string; data: string };
+
 export type SessionEvent =
   | { type: "turn/start"; turnId: string }
   | { type: "turn/end"; turnId: string; status: "ok" | "failed" | "cancelled" }
-  | { type: "user/message"; text: string }
+  | { type: "user/message"; text: string; images?: UserImage[] }
   | { type: "assistant/chunk"; text: string }
   | { type: "assistant/message"; text: string }
   | { type: "tool/call"; callId: string; name: string; args: unknown }
@@ -26,7 +35,7 @@ export type SessionEvent =
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
-  content: string;
+  content: string | ChatContentPart[];
   toolCallId?: string;
   name?: string;
   toolCalls?: { id: string; name: string; args: unknown }[];

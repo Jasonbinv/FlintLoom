@@ -43,6 +43,7 @@ function boot(
         ctx,
         session,
         text: input.text,
+        images: input.images,
         workspaceRoot: input.workspaceRoot,
         channel: "telegram",
         signal: input.signal,

@@ -1,5 +1,5 @@
 import { parseSseBuffer } from "./sse.ts";
-import type { WorkbenchEvent } from "./types.ts";
+import type { UserImage, WorkbenchEvent } from "./types.ts";
 
 const UNREACHABLE: WorkbenchEvent = {
   type: "model/error",
@@ -89,8 +89,13 @@ export async function postTurn(
   text: string,
   onEvent: (event: WorkbenchEvent) => void,
   signal?: AbortSignal,
+  images?: UserImage[],
 ): Promise<void> {
-  await postSse("/v1/turns", { sessionId, text }, onEvent, signal);
+  const body: Record<string, unknown> = { sessionId, text };
+  if (images !== undefined && images.length > 0) {
+    body.images = images;
+  }
+  await postSse("/v1/turns", body, onEvent, signal);
 }
 
 export async function postTurnAction(

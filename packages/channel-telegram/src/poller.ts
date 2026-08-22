@@ -3,7 +3,7 @@ import type { ChannelRegistry } from "@flintloom/channel";
 import type { SessionStore } from "@flintloom/session";
 import { botPost } from "./bot.ts";
 import type { TelegramConfig } from "./config.ts";
-import { telegramInboundText } from "./inbound-text.ts";
+import { telegramInboundContent } from "./inbound-content.ts";
 import { sessionHasWaitingTurn } from "./waiting.ts";
 
 function isAbort(signal: AbortSignal, err: unknown): boolean {
@@ -81,6 +81,7 @@ async function runTelegramLoop(
             chat?: { id?: unknown };
             text?: unknown;
             voice?: { file_id?: unknown };
+            photo?: Array<{ file_id?: unknown }>;
           };
         };
         offset = update.update_id + 1;
@@ -92,8 +93,8 @@ async function runTelegramLoop(
         if (!parsed.allowedChatIds.has(chatKey)) {
           continue;
         }
-        const text = await telegramInboundText(ctx, parsed, update.message, signal);
-        if (text === undefined) {
+        const content = await telegramInboundContent(ctx, parsed, update.message, signal);
+        if (content === undefined) {
           continue;
         }
         const sessionId = `telegram:${chatKey}`;
@@ -106,7 +107,8 @@ async function runTelegramLoop(
           channels,
           busy,
           sessionId,
-          text,
+          text: content.text,
+          images: content.images,
           workspaceRoot,
           signal,
         });
@@ -129,12 +131,14 @@ async function runInboundThenReply(opts: {
   busy: Set<string>;
   sessionId: string;
   text: string;
+  images?: import("@flintloom/session").UserImage[];
   workspaceRoot: string;
   signal: AbortSignal;
 }): Promise<void> {
   try {
     const result = await opts.channels.inbound("telegram", {
       text: opts.text,
+      images: opts.images,
       sessionId: opts.sessionId,
       workspaceRoot: opts.workspaceRoot,
       signal: opts.signal,

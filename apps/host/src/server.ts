@@ -18,6 +18,7 @@ import {
 import { handleKnowledgeRequest } from "./knowledge.ts";
 import { ASR_MAX_BYTES, readBodyBytes, transcribeAudio } from "./asr.ts";
 import { synthesizeSpeech } from "./tts.ts";
+import { parseTurnBody } from "./turn-body.ts";
 import { loadOrCreateToken, readCredentials } from "./token.ts";
 
 export type PluginSnapshot = {
@@ -290,28 +291,6 @@ async function readBody(req: IncomingMessage): Promise<string> {
     chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
   }
   return Buffer.concat(chunks).toString("utf8");
-}
-
-function parseTurnBody(raw: string): { sessionId: string; text: string } | undefined {
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (
-      parsed !== null &&
-      typeof parsed === "object" &&
-      "sessionId" in parsed &&
-      "text" in parsed &&
-      typeof (parsed as { sessionId: unknown }).sessionId === "string" &&
-      typeof (parsed as { text: unknown }).text === "string"
-    ) {
-      return {
-        sessionId: (parsed as { sessionId: string }).sessionId,
-        text: (parsed as { text: string }).text,
-      };
-    }
-  } catch {
-    // invalid JSON
-  }
-  return undefined;
 }
 
 function parseHookBody(raw: string): { text: string; sessionId: string } | undefined {
@@ -603,6 +582,7 @@ async function handleRequest(
           ctx: opts.runtime.ctx,
           session,
           text: body.text,
+          images: body.images,
           workspaceRoot: opts.workspaceRoot,
           channel: "host",
           signal,

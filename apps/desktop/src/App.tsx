@@ -4,10 +4,11 @@ import { cancelTurn, fetchModels, fetchSession, postTurn, postTurnAction, postTu
 import { FilePane } from "./FilePane.tsx";
 import { ModelsPane } from "./ModelsPane.tsx";
 import { PluginsPane } from "./PluginsPane.tsx";
+import { ImageInput } from "./ImageInput.tsx";
 import { VoiceInput } from "./VoiceInput.tsx";
 import { TtsPlay } from "./TtsPlay.tsx";
 import { insertPath } from "./files.ts";
-import type { WorkbenchEvent } from "./types.ts";
+import type { UserImage, WorkbenchEvent } from "./types.ts";
 import "./app.css";
 
 const SESSION_KEY = "flintloom.sessionId";
@@ -15,7 +16,7 @@ const SESSION_KEY = "flintloom.sessionId";
 type Page = "chat" | "plugins" | "models";
 
 type Bubble =
-  | { id: string; kind: "user"; text: string }
+  | { id: string; kind: "user"; text: string; images?: UserImage[] }
   | { id: string; kind: "assistant"; text: string }
   | { id: string; kind: "tool-call"; name: string; argsText: string }
   | { id: string; kind: "tool-result"; text: string }
@@ -35,7 +36,12 @@ function sessionId(): string {
 function bubbleFromHistory(event: WorkbenchEvent, id: string): Bubble | undefined {
   switch (event.type) {
     case "user/message":
-      return { id, kind: "user", text: event.text };
+      return {
+        id,
+        kind: "user",
+        text: event.text,
+        images: event.images,
+      };
     case "assistant/message":
       return { id, kind: "assistant", text: event.text };
     case "tool/call":
@@ -123,7 +129,9 @@ export function App() {
   const [hostDown, setHostDown] = useState(false);
   const [chatConfigured, setChatConfigured] = useState<boolean | undefined>();
   const [asrConfigured, setAsrConfigured] = useState(false);
+  const [omniConfigured, setOmniConfigured] = useState(false);
   const [ttsConfigured, setTtsConfigured] = useState(false);
+  const [pendingImages, setPendingImages] = useState<UserImage[]>([]);
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
   const [draft, setDraft] = useState("");
   const [input, setInput] = useState("");
@@ -193,6 +201,8 @@ export function App() {
         setChatConfigured(chat?.configured ?? false);
         const asr = models.find((m) => m.kind === "asr");
         setAsrConfigured(asr?.configured ?? false);
+        const omni = models.find((m) => m.kind === "omni");
+        setOmniConfigured(omni?.configured ?? false);
         const tts = models.find((m) => m.kind === "tts");
         setTtsConfigured(tts?.configured ?? false);
         setHostDown(false);
@@ -219,15 +229,20 @@ export function App() {
 
   async function send() {
     const text = input.trim();
-    if (!text || sending || waitingAction) return;
+    const images = pendingImages.length > 0 ? pendingImages : undefined;
+    if ((!text && !images) || sending || waitingAction) return;
     setInput("");
-    setBubbles((prev) => [...prev, { id: allocId(), kind: "user", text }]);
+    setPendingImages([]);
+    setBubbles((prev) => [
+      ...prev,
+      { id: allocId(), kind: "user", text, images },
+    ]);
     setSending(true);
     setDraft("");
     turnIdRef.current = undefined;
     cancelWantedRef.current = false;
     try {
-      await postTurn(sid.current, text, handleEvent);
+      await postTurn(sid.current, text, handleEvent, undefined, images);
     } finally {
       setSending(false);
     }
@@ -324,7 +339,19 @@ export function App() {
             ) : null}
             {bubbles.map((bubble) => (
               <div key={bubble.id} className={`bubble ${bubble.kind}`}>
-                {bubble.kind === "user" && bubble.text}
+                {bubble.kind === "user" && (
+                  <div className="user-message">
+                    {bubble.images?.map((image, index) => (
+                      <img
+                        key={index}
+                        className="user-image-thumb"
+                        alt=""
+                        src={`data:${image.mime};base64,${image.data}`}
+                      />
+                    ))}
+                    {bubble.text ? <span>{bubble.text}</span> : null}
+                  </div>
+                )}
                 {bubble.kind === "assistant" && (
                   <div className="assistant-row">
                     <span>{bubble.text}</span>
@@ -386,6 +413,25 @@ export function App() {
             {draft ? <div className="bubble assistant draft">{draft}</div> : null}
           </main>
           <footer className="composer">
+            {pendingImages.length > 0 ? (
+              <div className="composer-images" aria-label="待发送图片">
+                {pendingImages.map((image, index) => (
+                  <img
+                    key={index}
+                    className="composer-image-thumb"
+                    alt=""
+                    src={`data:${image.mime};base64,${image.data}`}
+                  />
+                ))}
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  onClick={() => setPendingImages([])}
+                >
+                  清除图片
+                </button>
+              </div>
+            ) : null}
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -402,10 +448,20 @@ export function App() {
                 }
               />
             ) : null}
+            {omniConfigured ? (
+              <ImageInput
+                disabled={sending || waitingAction}
+                onImages={(images) =>
+                  setPendingImages((current) => [...current, ...images].slice(0, 4))
+                }
+              />
+            ) : null}
             <button
               type="button"
               className="btn-primary"
-              disabled={sending || waitingAction || !input.trim()}
+              disabled={
+                sending || waitingAction || (!input.trim() && pendingImages.length === 0)
+              }
               onClick={() => void send()}
             >
               发送
