@@ -290,6 +290,7 @@ v1 内置通道：desktop、cli、webhook、telegram。ACP 作为同一接口上
 3. A2UI 交互核心（见 [A2UI 设计](2026-08-17-flintloom-a2ui-design.md)）+ 信息图（见 [信息图设计](2026-08-17-flintloom-infographic-design.md)）+ 其余 DocForge 工具（生成见 [生成设计](2026-08-17-flintloom-docforge-generate-design.md)；转换见 [转换设计](2026-08-18-flintloom-docforge-convert-design.md)；编辑见 [编辑设计](2026-08-18-flintloom-docforge-edit-design.md)；对比见 [对比设计](2026-08-19-flintloom-docforge-compare-design.md)；摘要见 [摘要设计](2026-08-19-flintloom-docforge-summarize-design.md)）— 均为插件，不改 host 组装。A2UI 核心与信息图 / 其余 DocForge 分开写计划。table / chart / Infographic 组件与 xlsx/pptx 写出仍留后续。
 4. Webhook 通道（见 [webhook 通道设计](2026-08-20-flintloom-channel-webhook-design.md)）+ Telegram 通道（见 [Telegram 通道设计](2026-08-20-flintloom-channel-telegram-design.md)）+ `flint plugin add`（见 [安装器设计](2026-08-21-flintloom-plugin-add-design.md)）。
 5. Skill（见 [Skill 设计](2026-08-22-flintloom-skill-design.md)）— 本地目录 + `skill` 工具，不改 `runTurn`。
-6. MCP（见 [MCP 设计](2026-08-22-flintloom-mcp-design.md)）— stdio + tools，一行一个 server，工具名 `mcp__<id>__<name>`。桌面插件/模型页、A2UI table/chart、guard `ask` 仍留后续。
+6. MCP（见 [MCP 设计](2026-08-22-flintloom-mcp-design.md)）— stdio + tools，一行一个 server，工具名 `mcp__<id>__<name>`。`mcp-servers.yml` 自动加载见 [MCP 使用说明](../mcp-servers.md)。
+7. Guard ask（见 [Guard ask 设计](2026-08-22-flintloom-guard-ask-design.md)）— host 上 `gate` 为 `ask` 时暂停，工作台允许/拒绝后续跑。桌面插件/模型页、A2UI table/chart 仍留后续。
 
-第 2–6 刀在同一份总 spec 上继续拆计划。新 Loom 包必须带 `apply`，禁止再往 `createRuntime` 里堆 `register`。
+第 2–7 刀在同一份总 spec 上继续拆计划。新 Loom 包必须带 `apply`，禁止再往 `createRuntime` 里堆 `register`。
