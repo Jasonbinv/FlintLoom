@@ -1,4 +1,18 @@
-import type { ChatMessage, SessionEvent } from "./events.ts";
+import type { ChatContentPart, ChatMessage, SessionEvent, UserImage } from "./events.ts";
+
+export function userMessageContent(text: string, images?: UserImage[]): string | ChatContentPart[] {
+  if (images === undefined || images.length === 0) {
+    return text;
+  }
+  const parts: ChatContentPart[] = [];
+  if (text.length > 0) {
+    parts.push({ type: "text", text });
+  }
+  for (const image of images) {
+    parts.push({ type: "image", mime: image.mime, data: image.data });
+  }
+  return parts;
+}
 
 export class Session {
   readonly #events: SessionEvent[] = [];
@@ -14,6 +28,13 @@ export class Session {
   }
 
   isWaiting(turnId: string): boolean {
+    if (this.#isA2uiWaiting(turnId)) {
+      return true;
+    }
+    return this.#isGuardWaiting(turnId);
+  }
+
+  #isA2uiWaiting(turnId: string): boolean {
     let started = false;
     let ended = false;
     let lastSurfaceWait: boolean | undefined;
@@ -48,6 +69,35 @@ export class Session {
     return true;
   }
 
+  #isGuardWaiting(turnId: string): boolean {
+    let started = false;
+    let ended = false;
+    const pending = new Map<string, string>();
+
+    for (const event of this.#events) {
+      if (event.type === "turn/start" && event.turnId === turnId) {
+        started = true;
+        ended = false;
+        pending.clear();
+      } else if (event.type === "turn/end" && event.turnId === turnId) {
+        if (started) {
+          ended = true;
+        }
+      } else if (started && !ended && "turnId" in event && event.turnId === turnId) {
+        if (event.type === "guard/ask") {
+          pending.set(event.callId, event.tool);
+        } else if (event.type === "guard/response") {
+          pending.delete(event.callId);
+        }
+      }
+    }
+
+    if (!started || ended) {
+      return false;
+    }
+    return pending.size > 0;
+  }
+
   deriveMessages(): ChatMessage[] {
     const messages: ChatMessage[] = [];
     let pendingCalls: { id: string; name: string; args: unknown }[] = [];
@@ -68,7 +118,10 @@ export class Session {
       switch (event.type) {
         case "user/message":
           flushCalls();
-          messages.push({ role: "user", content: event.text });
+          messages.push({
+            role: "user",
+            content: userMessageContent(event.text, event.images),
+          });
           break;
         case "assistant/message":
           flushCalls();

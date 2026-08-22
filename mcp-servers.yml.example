@@ -1,0 +1,10 @@
+# Copy to mcp-servers.yml in your workspace root (or ~/.flintloom/mcp-servers.yml).
+# Set declared env vars in workspace .env — see docs/mcp-servers.md
+
+servers:
+  - id: fake
+    command: node
+    args:
+      - packages/mcp/fixtures/fake-mcp-server.mjs
+    env:
+      - FAKE_TOKEN

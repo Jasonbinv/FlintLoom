@@ -1,5 +1,7 @@
 import type { FlintloomConfig } from "./config.ts";
 import type { Context, Disposer, FlintPlugin } from "./context.ts";
+import { defaultImport } from "./plugin-entry.ts";
+import { needsWorkspaceRootOverlay } from "./plugin-overlay.ts";
 
 export type ImportFn = (name: string) => Promise<unknown>;
 
@@ -34,9 +36,10 @@ export async function applyConfig(
   opts?: {
     importFn?: ImportFn;
     runtimeConfigById?: Record<string, Record<string, unknown>>;
+    workspaceRoot?: string;
   },
 ): Promise<Disposer> {
-  const importFn = opts?.importFn ?? ((n: string) => import(n));
+  const importFn = opts?.importFn ?? defaultImport;
   const runtime = opts?.runtimeConfigById ?? {};
   const seen = new Set<string>();
   const stops: Disposer[] = [];
@@ -53,8 +56,19 @@ export async function applyConfig(
       seen.add(row.id);
       const mod = await importFn(row.name);
       const plugin = unwrapPlugin(mod, row.name);
-      const merged = { ...(row.config ?? {}), ...(runtime[row.id] ?? {}) };
-      stops.push(ctx.plugin(plugin, merged));
+      const overlayRuntime = { ...(runtime[row.id] ?? {}) };
+      if (
+        opts?.workspaceRoot !== undefined &&
+        needsWorkspaceRootOverlay(row.name)
+      ) {
+        overlayRuntime.workspaceRoot = opts.workspaceRoot;
+      }
+      const merged = {
+        ...(row.config ?? {}),
+        ...overlayRuntime,
+        id: row.id,
+      };
+      stops.push(await ctx.plugin(plugin, merged));
     }
   } catch (err) {
     rollback();

@@ -46,7 +46,7 @@ describe("ingestWorkspaceFile", () => {
     expect(failed.kind).toBe("written");
     if (failed.kind === "written") {
       expect(failed.record.status).toBe("failed");
-      expect(kb.search("empty")).toHaveLength(0);
+      expect((await kb.search("empty")).length).toBe(0);
     }
 
     await expect(

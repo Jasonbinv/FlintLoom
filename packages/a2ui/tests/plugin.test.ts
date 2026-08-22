@@ -6,11 +6,11 @@ import plugin from "../src/index.ts";
 import type { A2uiService } from "../src/types.ts";
 
 describe("a2ui plugin", () => {
-  it("registers a2ui_emit and stop() unregisters it", () => {
+  it("registers a2ui_emit and stop() unregisters it", async () => {
     const ctx = new Context();
-    ctx.plugin(modelsPlugin);
-    ctx.plugin(toolsPlugin);
-    const stop = ctx.plugin(plugin);
+    await ctx.plugin(modelsPlugin);
+    await ctx.plugin(toolsPlugin);
+    const stop = await ctx.plugin(plugin);
     const tools = ctx.require<ToolRegistry>("tools");
     expect(tools.schemas().map((s) => s.name)).toContain("a2ui_emit");
     ctx.require<A2uiService>("a2ui");

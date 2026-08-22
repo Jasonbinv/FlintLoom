@@ -8,7 +8,16 @@ export type A2uiMessage =
 
 export type A2uiComponent = {
   id: string;
-  component: "Column" | "Row" | "Text" | "Markdown" | "Button" | "ChoicePicker";
+  component:
+    | "Column"
+    | "Row"
+    | "Text"
+    | "Markdown"
+    | "Button"
+    | "ChoicePicker"
+    | "DataTable"
+    | "Chart"
+    | "Infographic";
   [key: string]: unknown;
 };
 

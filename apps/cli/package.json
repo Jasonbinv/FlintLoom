@@ -6,7 +6,9 @@
     "flint": "./src/bin.ts"
   },
   "dependencies": {
+    "@flintloom/channel-acp": "workspace:*",
     "@flintloom/host": "workspace:*",
+    "@flintloom/kernel": "workspace:*",
     "@flintloom/loop": "workspace:*",
     "@flintloom/session": "workspace:*"
   }

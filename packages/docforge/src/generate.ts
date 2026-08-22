@@ -1,6 +1,8 @@
 import { stat, readFile, writeFile } from "node:fs/promises";
 import { parseBlocks } from "./blocks.ts";
+import { blocksToMarkdown } from "./blocks-to-markdown.ts";
 import { detectType } from "./detect.ts";
+import { parseDocumentJson } from "./document-json.ts";
 import { defaultFontPath } from "./font.ts";
 import {
   GENERATE_MAX_BYTES,
@@ -11,6 +13,8 @@ import {
 import { renderHtml } from "./html.ts";
 import { renderDocx } from "./writers/docx.ts";
 import { renderPdf } from "./writers/pdf.ts";
+import { renderPptx } from "./writers/pptx.ts";
+import { renderXlsx } from "./writers/xlsx.ts";
 
 export {
   GENERATE_MAX_BYTES,
@@ -20,6 +24,9 @@ export {
 };
 export { parseBlocks };
 export { defaultFontPath };
+export { parseDocumentJson } from "./document-json.ts";
+
+export type GenerateSourceKind = "md" | "json";
 
 export function formatFromOutRelPath(relPath: string): GenerateFormat | undefined {
   const lower = relPath.replaceAll("\\", "/").toLowerCase();
@@ -27,6 +34,19 @@ export function formatFromOutRelPath(relPath: string): GenerateFormat | undefine
   if (lower.endsWith(".html")) return "html";
   if (lower.endsWith(".docx")) return "docx";
   if (lower.endsWith(".pdf")) return "pdf";
+  if (lower.endsWith(".xlsx")) return "xlsx";
+  if (lower.endsWith(".pptx")) return "pptx";
+  return undefined;
+}
+
+export function generateSourceKind(relPath: string): GenerateSourceKind | undefined {
+  const lower = relPath.replaceAll("\\", "/").toLowerCase();
+  if (lower.endsWith(".md") || lower.endsWith(".markdown")) {
+    return "md";
+  }
+  if (lower.endsWith(".json")) {
+    return "json";
+  }
   return undefined;
 }
 
@@ -35,21 +55,25 @@ export function copyMarkdown(raw: string): string {
   return body.endsWith("\n") ? body : `${body}\n`;
 }
 
-export async function buildDocument(
+export async function buildDocumentFromBlocks(
   format: GenerateFormat,
-  markdown: string,
+  blocks: Block[],
   opts?: { fontPath?: string },
 ): Promise<Buffer> {
   try {
     switch (format) {
       case "md":
-        return Buffer.from(copyMarkdown(markdown), "utf8");
+        return Buffer.from(blocksToMarkdown(blocks), "utf8");
       case "html":
-        return Buffer.from(renderHtml(parseBlocks(markdown)), "utf8");
+        return Buffer.from(renderHtml(blocks), "utf8");
       case "docx":
-        return await renderDocx(parseBlocks(markdown));
+        return await renderDocx(blocks);
       case "pdf":
-        return await renderPdf(parseBlocks(markdown), opts?.fontPath ?? defaultFontPath());
+        return await renderPdf(blocks, opts?.fontPath ?? defaultFontPath());
+      case "xlsx":
+        return await renderXlsx(blocks);
+      case "pptx":
+        return await renderPptx(blocks);
     }
   } catch (err) {
     if (err instanceof Error && err.message === "unreadable") {
@@ -57,6 +81,17 @@ export async function buildDocument(
     }
     throw new Error("unreadable");
   }
+}
+
+export async function buildDocument(
+  format: GenerateFormat,
+  markdown: string,
+  opts?: { fontPath?: string },
+): Promise<Buffer> {
+  if (format === "md") {
+    return Buffer.from(copyMarkdown(markdown), "utf8");
+  }
+  return buildDocumentFromBlocks(format, parseBlocks(markdown), opts);
 }
 
 export async function generateDocument(
@@ -83,13 +118,14 @@ export async function generateDocument(
   if (!st.isFile()) {
     throw new Error("unreadable");
   }
+  const sourceKind = generateSourceKind(absSource);
+  if (sourceKind === undefined) {
+    throw new Error("bad source");
+  }
   if (st.size > GENERATE_MAX_BYTES) {
     throw new Error("too large");
   }
   const bytes = await readFile(absSource);
-  if (detectType(absSource, bytes) !== "md") {
-    throw new Error("bad source");
-  }
   let raw = bytes.toString("utf8");
   if (raw.startsWith("\uFEFF")) {
     raw = raw.slice(1);
@@ -97,7 +133,16 @@ export async function generateDocument(
   if (raw.length > GENERATE_MAX_CHARS) {
     throw new Error("too large");
   }
-  const payload = await buildDocument(format, raw);
+  let payload: Buffer;
+  if (sourceKind === "md") {
+    if (detectType(absSource, bytes) !== "md") {
+      throw new Error("bad source");
+    }
+    payload = await buildDocument(format, raw);
+  } else {
+    const blocks = parseDocumentJson(raw);
+    payload = await buildDocumentFromBlocks(format, blocks);
+  }
   await writeFile(absOut, payload);
   return { format };
 }

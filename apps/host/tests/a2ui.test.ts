@@ -129,6 +129,7 @@ describe("a2ui HTTP", () => {
         workspaceRoot: "/tmp",
         turns,
         controllers,
+        busy: new Set<string>(),
         streamLoopResult: streamFn,
       }),
     ).toBe(true);
@@ -146,6 +147,7 @@ describe("a2ui HTTP", () => {
         workspaceRoot: "/tmp",
         turns,
         controllers,
+        busy: new Set<string>(),
         streamLoopResult: streamFn,
       }),
     ).toBe(true);

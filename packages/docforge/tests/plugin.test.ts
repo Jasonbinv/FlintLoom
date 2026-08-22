@@ -21,15 +21,19 @@ describe("docforge plugin", () => {
     expect(names).toContain("doc_parse");
     expect(names).toContain("doc_ingest");
     expect(names).toContain("doc_generate");
+    expect(names).toContain("doc_convert");
+    expect(names).toContain("doc_edit");
+    expect(names).toContain("doc_compare");
+    expect(names).toContain("doc_summarize");
   });
 
-  it("registers doc_generate and drops it on stop", () => {
+  it("registers doc_generate and drops it on stop", async () => {
     const dbPath = join(mkdtempSync(join(tmpdir(), "flintloom-docforge-kb-")), "k.sqlite");
     const ctx = new Context();
     ctx.plugin(modelsPlugin);
     ctx.plugin(toolsPlugin);
     ctx.plugin(knowledgePlugin, { dbPath });
-    const stop = ctx.plugin(plugin);
+    const stop = await ctx.plugin(plugin);
     const names = ctx.require<ToolRegistry>("tools").schemas().map((s) => s.name);
     expect(names).toContain("doc_generate");
     stop();
@@ -38,10 +42,89 @@ describe("docforge plugin", () => {
     );
   });
 
+  it("registers doc_convert and drops it on stop", async () => {
+    const dbPath = join(mkdtempSync(join(tmpdir(), "flintloom-docforge-kb-")), "k.sqlite");
+    const ctx = new Context();
+    ctx.plugin(modelsPlugin);
+    ctx.plugin(toolsPlugin);
+    ctx.plugin(knowledgePlugin, { dbPath });
+    const stop = await ctx.plugin(plugin);
+    const names = ctx.require<ToolRegistry>("tools").schemas().map((s) => s.name);
+    expect(names).toContain("doc_convert");
+    stop();
+    expect(ctx.require<ToolRegistry>("tools").schemas().map((s) => s.name)).not.toContain(
+      "doc_convert",
+    );
+  });
+
+  it("registers doc_edit and drops it on stop", async () => {
+    const dbPath = join(mkdtempSync(join(tmpdir(), "flintloom-docforge-kb-")), "k.sqlite");
+    const ctx = new Context();
+    ctx.plugin(modelsPlugin);
+    ctx.plugin(toolsPlugin);
+    ctx.plugin(knowledgePlugin, { dbPath });
+    const stop = await ctx.plugin(plugin);
+    const names = ctx.require<ToolRegistry>("tools").schemas().map((s) => s.name);
+    expect(names).toContain("doc_edit");
+    stop();
+    expect(ctx.require<ToolRegistry>("tools").schemas().map((s) => s.name)).not.toContain(
+      "doc_edit",
+    );
+  });
+
+  it("registers doc_compare and drops it on stop", async () => {
+    const dbPath = join(mkdtempSync(join(tmpdir(), "flintloom-docforge-kb-")), "k.sqlite");
+    const ctx = new Context();
+    ctx.plugin(modelsPlugin);
+    ctx.plugin(toolsPlugin);
+    ctx.plugin(knowledgePlugin, { dbPath });
+    const stop = await ctx.plugin(plugin);
+    const names = ctx.require<ToolRegistry>("tools").schemas().map((s) => s.name);
+    expect(names).toContain("doc_compare");
+    stop();
+    expect(ctx.require<ToolRegistry>("tools").schemas().map((s) => s.name)).not.toContain(
+      "doc_compare",
+    );
+  });
+
   it("apply without knowledge throws knowledge", () => {
     const ctx = new Context();
     ctx.plugin(modelsPlugin);
     ctx.plugin(toolsPlugin);
     expect(() => ctx.plugin(plugin)).toThrow(/knowledge/);
+  });
+
+  it("registers doc_summarize and drops it on stop", async () => {
+    const dbPath = join(mkdtempSync(join(tmpdir(), "flintloom-docforge-kb-")), "k.sqlite");
+    const ctx = new Context();
+    ctx.plugin(modelsPlugin);
+    ctx.plugin(toolsPlugin);
+    ctx.plugin(knowledgePlugin, { dbPath });
+    const stop = await ctx.plugin(plugin);
+    const names = ctx.require<ToolRegistry>("tools").schemas().map((s) => s.name);
+    expect(names).toContain("doc_summarize");
+    stop();
+    expect(ctx.require<ToolRegistry>("tools").schemas().map((s) => s.name)).not.toContain(
+      "doc_summarize",
+    );
+  });
+
+  it("apply without models throws models", () => {
+    const ctx = new Context();
+    ctx.plugin(toolsPlugin);
+    ctx.provide("knowledge", {
+      ingest: async () => ({
+        id: 1,
+        path: "a",
+        title: "a",
+        status: "ok" as const,
+        ingestedAt: 0,
+        workspaceRoot: "/",
+      }),
+      search: async () => [],
+      list: () => [],
+      close: () => {},
+    });
+    expect(() => ctx.plugin(plugin)).toThrow(/models/);
   });
 });

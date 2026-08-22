@@ -15,6 +15,29 @@ function truncateOutput(output: string): string {
   );
 }
 
+/** Decode shell bytes: prefer UTF-8; on Windows fall back to GBK/GB18030. */
+export function decodeShellOutput(bytes: Buffer): string {
+  if (bytes.length === 0) {
+    return "";
+  }
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    if (process.platform === "win32") {
+      try {
+        return new TextDecoder("gbk").decode(bytes);
+      } catch {
+        try {
+          return new TextDecoder("gb18030").decode(bytes);
+        } catch {
+          return bytes.toString("utf8");
+        }
+      }
+    }
+    return bytes.toString("utf8");
+  }
+}
+
 function runCommand(
   command: string,
   cwd: string,
@@ -31,7 +54,7 @@ function runCommand(
       ? spawn("cmd.exe", ["/c", command], { cwd, windowsHide: true })
       : spawn("/bin/sh", ["-c", command], { cwd });
 
-    let output = "";
+    const chunks: Buffer[] = [];
     let timedOut = false;
     let settled = false;
 
@@ -41,7 +64,8 @@ function runCommand(
       }
       settled = true;
       clearTimeout(timer);
-      resolve({ code, output: output + extraOutput, timedOut });
+      const output = decodeShellOutput(Buffer.concat(chunks)) + extraOutput;
+      resolve({ code, output, timedOut });
     };
 
     const timer = setTimeout(() => {
@@ -51,10 +75,10 @@ function runCommand(
     }, TIMEOUT_MS);
 
     child.stdout?.on("data", (chunk: Buffer) => {
-      output += chunk.toString();
+      chunks.push(chunk);
     });
     child.stderr?.on("data", (chunk: Buffer) => {
-      output += chunk.toString();
+      chunks.push(chunk);
     });
 
     child.on("error", (err) => {

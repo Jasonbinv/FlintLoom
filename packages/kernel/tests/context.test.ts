@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { Context } from "../src/index.ts";
 
 describe("Context", () => {
-  it("provide 的值在 plugin dispose 后消失", () => {
+  it("provide 的值在 plugin dispose 后消失", async () => {
     const ctx = new Context();
-    const stop = ctx.plugin({
+    const stop = await ctx.plugin({
       name: "probe",
       apply(c, _config) {
         c.provide("probe.n", 7);
@@ -20,10 +20,10 @@ describe("Context", () => {
     expect(() => ctx.require("models")).toThrow(/models/);
   });
 
-  it("effect 在 plugin dispose 时按反序调用", () => {
+  it("effect 在 plugin dispose 时按反序调用", async () => {
     const ctx = new Context();
     const log: string[] = [];
-    const stop = ctx.plugin({
+    const stop = await ctx.plugin({
       name: "fx",
       apply(c) {
         c.effect(() => {
@@ -74,7 +74,7 @@ describe("Context", () => {
 
   it("plugin dispose 后 hook 不再触发", async () => {
     const ctx = new Context();
-    const stop = ctx.plugin({
+    const stop = await ctx.plugin({
       name: "h",
       apply(c) {
         c.hook("t", async (_payload, next) => "from-plugin");
@@ -83,6 +83,36 @@ describe("Context", () => {
     stop();
     const result = await ctx.waterfall("t", {}, async () => "term");
     expect(result).toBe("term");
+  });
+
+  it("异步 apply 返回 Promise<Disposer>", async () => {
+    const ctx = new Context();
+    const stopPromise = ctx.plugin({
+      name: "async",
+      async apply(c) {
+        c.provide("async.n", 9);
+        await Promise.resolve();
+      },
+    });
+    expect(stopPromise).toBeInstanceOf(Promise);
+    const stop = await stopPromise;
+    expect(ctx.get("async.n")).toBe(9);
+    stop();
+    expect(ctx.get("async.n")).toBeUndefined();
+  });
+
+  it("异步 apply 失败回滚 effect", async () => {
+    const ctx = new Context();
+    await expect(
+      ctx.plugin({
+        name: "async-boom",
+        async apply(c) {
+          c.provide("async-boom.k", 1);
+          throw new Error("async-apply-fail");
+        },
+      }),
+    ).rejects.toThrow(/async-apply-fail/);
+    expect(() => ctx.require("async-boom.k")).toThrow(/async-boom\.k/);
   });
 
   it("plugin apply 抛错后撤销已 provide 的键", () => {

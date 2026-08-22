@@ -1,20 +1,35 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { A2uiSurface } from "./A2uiSurface.tsx";
-import { cancelTurn, fetchModels, fetchSession, postTurn, postTurnAction } from "./api.ts";
+import { cancelTurn, fetchModels, fetchSession, postTurn, postTurnAction, postTurnGuard } from "./api.ts";
 import { FilePane } from "./FilePane.tsx";
+import { ModelsPane } from "./ModelsPane.tsx";
+import { PluginsPane } from "./PluginsPane.tsx";
+import { ImageInput } from "./ImageInput.tsx";
+import { VoiceInput } from "./VoiceInput.tsx";
+import { TtsPlay } from "./TtsPlay.tsx";
 import { insertPath } from "./files.ts";
-import type { WorkbenchEvent } from "./types.ts";
+import type { UserImage, WorkbenchEvent } from "./types.ts";
 import "./app.css";
 
 const SESSION_KEY = "flintloom.sessionId";
 
+type Page = "chat" | "plugins" | "models";
+
 type Bubble =
-  | { id: string; kind: "user"; text: string }
+  | { id: string; kind: "user"; text: string; images?: UserImage[] }
   | { id: string; kind: "assistant"; text: string }
   | { id: string; kind: "tool-call"; name: string; argsText: string }
   | { id: string; kind: "tool-result"; text: string }
   | { id: string; kind: "error"; message: string }
-  | { id: string; kind: "a2ui"; surfaceId: string; messages: unknown[]; turnId: string };
+  | { id: string; kind: "a2ui"; surfaceId: string; messages: unknown[]; turnId: string }
+  | { id: string; kind: "guard-ask"; tool: string; callId: string; turnId: string }
+  | {
+      id: string;
+      kind: "guard-steward";
+      tool: string;
+      verdict: "ok" | "suspicious";
+      summary: string;
+    };
 
 function sessionId(): string {
   let id = sessionStorage.getItem(SESSION_KEY);
@@ -28,7 +43,12 @@ function sessionId(): string {
 function bubbleFromHistory(event: WorkbenchEvent, id: string): Bubble | undefined {
   switch (event.type) {
     case "user/message":
-      return { id, kind: "user", text: event.text };
+      return {
+        id,
+        kind: "user",
+        text: event.text,
+        images: event.images,
+      };
     case "assistant/message":
       return { id, kind: "assistant", text: event.text };
     case "tool/call":
@@ -53,6 +73,25 @@ function bubbleFromHistory(event: WorkbenchEvent, id: string): Bubble | undefine
         messages: event.messages,
         turnId: event.turnId,
       };
+    case "guard/ask":
+      return {
+        id,
+        kind: "guard-ask",
+        tool: event.tool,
+        callId: event.callId,
+        turnId: event.turnId,
+      };
+    case "guard/steward":
+      if (event.verdict === "ok" && event.summary.length === 0) {
+        return undefined;
+      }
+      return {
+        id,
+        kind: "guard-steward",
+        tool: event.tool,
+        verdict: event.verdict,
+        summary: event.summary,
+      };
     default:
       return undefined;
   }
@@ -63,6 +102,7 @@ function waitingTurnId(events: WorkbenchEvent[]): string | undefined {
   let ended = false;
   let lastSurfaceWait = false;
   let actionAfterSurface = false;
+  let pendingGuardAsk: { turnId: string; callId: string } | undefined;
 
   for (const event of events) {
     if (event.type === "turn/start") {
@@ -70,8 +110,10 @@ function waitingTurnId(events: WorkbenchEvent[]): string | undefined {
       ended = false;
       lastSurfaceWait = false;
       actionAfterSurface = false;
+      pendingGuardAsk = undefined;
     } else if (event.type === "turn/end") {
       ended = true;
+      pendingGuardAsk = undefined;
     } else if (event.type === "end") {
       if (event.status !== "awaiting_action") ended = true;
     } else if (event.type === "a2ui/surface") {
@@ -80,9 +122,18 @@ function waitingTurnId(events: WorkbenchEvent[]): string | undefined {
       actionAfterSurface = false;
     } else if (event.type === "a2ui/action") {
       actionAfterSurface = true;
+    } else if (event.type === "guard/ask") {
+      turnId = event.turnId;
+      pendingGuardAsk = { turnId: event.turnId, callId: event.callId };
+    } else if (
+      event.type === "guard/response" &&
+      pendingGuardAsk?.callId === event.callId
+    ) {
+      pendingGuardAsk = undefined;
     }
   }
 
+  if (!ended && pendingGuardAsk) return pendingGuardAsk.turnId;
   if (!ended && lastSurfaceWait && !actionAfterSurface) return turnId;
   return undefined;
 }
@@ -95,11 +146,16 @@ export function App() {
   const submittingActionRef = useRef(false);
   const [hostDown, setHostDown] = useState(false);
   const [chatConfigured, setChatConfigured] = useState<boolean | undefined>();
+  const [asrConfigured, setAsrConfigured] = useState(false);
+  const [omniConfigured, setOmniConfigured] = useState(false);
+  const [ttsConfigured, setTtsConfigured] = useState(false);
+  const [pendingImages, setPendingImages] = useState<UserImage[]>([]);
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
   const [draft, setDraft] = useState("");
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [waitingAction, setWaitingAction] = useState(false);
+  const [page, setPage] = useState<Page>("chat");
 
   const allocId = () => String(++nextId.current);
 
@@ -148,6 +204,9 @@ export function App() {
     if (event.type === "a2ui/surface") {
       turnIdRef.current = event.turnId;
     }
+    if (event.type === "guard/ask") {
+      turnIdRef.current = event.turnId;
+    }
     const bubble = bubbleFromHistory(event, allocId());
     if (bubble) setBubbles((prev) => [...prev, bubble]);
   }
@@ -158,6 +217,12 @@ export function App() {
       .then((models) => {
         const chat = models.find((m) => m.kind === "chat");
         setChatConfigured(chat?.configured ?? false);
+        const asr = models.find((m) => m.kind === "asr");
+        setAsrConfigured(asr?.configured ?? false);
+        const omni = models.find((m) => m.kind === "omni");
+        setOmniConfigured(omni?.configured ?? false);
+        const tts = models.find((m) => m.kind === "tts");
+        setTtsConfigured(tts?.configured ?? false);
         setHostDown(false);
       })
       .catch(() => {
@@ -182,15 +247,20 @@ export function App() {
 
   async function send() {
     const text = input.trim();
-    if (!text || sending || waitingAction) return;
+    const images = pendingImages.length > 0 ? pendingImages : undefined;
+    if ((!text && !images) || sending || waitingAction) return;
     setInput("");
-    setBubbles((prev) => [...prev, { id: allocId(), kind: "user", text }]);
+    setPendingImages([]);
+    setBubbles((prev) => [
+      ...prev,
+      { id: allocId(), kind: "user", text, images },
+    ]);
     setSending(true);
     setDraft("");
     turnIdRef.current = undefined;
     cancelWantedRef.current = false;
     try {
-      await postTurn(sid.current, text, handleEvent);
+      await postTurn(sid.current, text, handleEvent, undefined, images);
     } finally {
       setSending(false);
     }
@@ -204,6 +274,20 @@ export function App() {
     cancelWantedRef.current = false;
     try {
       await postTurnAction(turnId, { surfaceId, name, data }, handleEvent);
+    } finally {
+      submittingActionRef.current = false;
+      setSending(false);
+    }
+  }
+
+  async function submitGuard(callId: string, decision: "allow" | "deny") {
+    const turnId = turnIdRef.current;
+    if (!turnId || submittingActionRef.current) return;
+    submittingActionRef.current = true;
+    setSending(true);
+    cancelWantedRef.current = false;
+    try {
+      await postTurnGuard(turnId, { callId, decision }, handleEvent);
     } finally {
       submittingActionRef.current = false;
       setSending(false);
@@ -233,21 +317,65 @@ export function App() {
     <div className="workbench">
       <header className="topbar">
         <h1>FlintLoom</h1>
+        <nav className="topbar-nav" aria-label="Workbench">
+          <button
+            type="button"
+            className={page === "chat" ? "active" : undefined}
+            onClick={() => setPage("chat")}
+          >
+            Chat
+          </button>
+          <button
+            type="button"
+            className={page === "plugins" ? "active" : undefined}
+            onClick={() => setPage("plugins")}
+          >
+            Plugins
+          </button>
+          <button
+            type="button"
+            className={page === "models" ? "active" : undefined}
+            onClick={() => setPage("models")}
+          >
+            Models
+          </button>
+        </nav>
         {hostDown ? (
-          <span>host 未连接</span>
+          <span className="status-pill down">host 未连接</span>
         ) : chatConfigured === false ? (
-          <span>chat 未配置</span>
+          <span className="status-pill warn">chat 未配置</span>
         ) : chatConfigured ? (
-          <span>chat 已配置</span>
+          <span className="status-pill ok">chat 已配置</span>
         ) : null}
       </header>
+      {page === "chat" ? (
       <div className="workbench-body">
         <div className="chat-column">
           <main className="log">
+            {bubbles.length === 0 && !draft ? (
+              <p className="log-empty">向工作区说一句话</p>
+            ) : null}
             {bubbles.map((bubble) => (
               <div key={bubble.id} className={`bubble ${bubble.kind}`}>
-                {bubble.kind === "user" && bubble.text}
-                {bubble.kind === "assistant" && bubble.text}
+                {bubble.kind === "user" && (
+                  <div className="user-message">
+                    {bubble.images?.map((image, index) => (
+                      <img
+                        key={index}
+                        className="user-image-thumb"
+                        alt=""
+                        src={`data:${image.mime};base64,${image.data}`}
+                      />
+                    ))}
+                    {bubble.text ? <span>{bubble.text}</span> : null}
+                  </div>
+                )}
+                {bubble.kind === "assistant" && (
+                  <div className="assistant-row">
+                    <span>{bubble.text}</span>
+                    {ttsConfigured ? <TtsPlay text={bubble.text} /> : null}
+                  </div>
+                )}
                 {bubble.kind === "error" && bubble.message}
                 {bubble.kind === "tool-call" &&
                   `${bubble.name} ${bubble.argsText}`}
@@ -265,26 +393,110 @@ export function App() {
                     }}
                   />
                 )}
+                {bubble.kind === "guard-ask" && (
+                  <div className="guard-ask">
+                    <p className="guard-ask-prompt">
+                      允许执行工具 <strong>{bubble.tool}</strong>？
+                    </p>
+                    <div className="guard-ask-actions">
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        disabled={
+                          !waitingAction ||
+                          sending ||
+                          bubble.turnId !== turnIdRef.current
+                        }
+                        onClick={() => void submitGuard(bubble.callId, "allow")}
+                      >
+                        允许
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ghost"
+                        disabled={
+                          !waitingAction ||
+                          sending ||
+                          bubble.turnId !== turnIdRef.current
+                        }
+                        onClick={() => void submitGuard(bubble.callId, "deny")}
+                      >
+                        拒绝
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {bubble.kind === "guard-steward" && (
+                  <div
+                    className={`guard-steward ${bubble.verdict === "suspicious" ? "warn" : ""}`}
+                  >
+                    <p className="guard-steward-label">
+                      Guard {bubble.verdict === "suspicious" ? "可疑" : "复查"}：
+                      <strong>{bubble.tool}</strong>
+                    </p>
+                    {bubble.summary ? <p>{bubble.summary}</p> : null}
+                  </div>
+                )}
               </div>
             ))}
             {draft ? <div className="bubble assistant draft">{draft}</div> : null}
           </main>
           <footer className="composer">
+            {pendingImages.length > 0 ? (
+              <div className="composer-images" aria-label="待发送图片">
+                {pendingImages.map((image, index) => (
+                  <img
+                    key={index}
+                    className="composer-image-thumb"
+                    alt=""
+                    src={`data:${image.mime};base64,${image.data}`}
+                  />
+                ))}
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  onClick={() => setPendingImages([])}
+                >
+                  清除图片
+                </button>
+              </div>
+            ) : null}
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKeyDown}
               rows={3}
             />
+            {asrConfigured ? (
+              <VoiceInput
+                disabled={sending || waitingAction}
+                onText={(text) =>
+                  setInput((current) =>
+                    current.trim().length > 0 ? `${current.trim()} ${text}` : text,
+                  )
+                }
+              />
+            ) : null}
+            {omniConfigured ? (
+              <ImageInput
+                disabled={sending || waitingAction}
+                onImages={(images) =>
+                  setPendingImages((current) => [...current, ...images].slice(0, 4))
+                }
+              />
+            ) : null}
             <button
               type="button"
-              disabled={sending || waitingAction || !input.trim()}
+              className="btn-primary"
+              disabled={
+                sending || waitingAction || (!input.trim() && pendingImages.length === 0)
+              }
               onClick={() => void send()}
             >
               发送
             </button>
             {waitingAction || sending ? (
-              <button type="button" onClick={() => void onCancel()}>
+              <button type="button" className="btn-ghost" onClick={() => void onCancel()}>
                 取消
               </button>
             ) : null}
@@ -294,6 +506,14 @@ export function App() {
           onInsertPath={(p) => setInput((cur) => insertPath(cur, p))}
         />
       </div>
+      ) : (
+        <main className="settings-pane">
+          <h2 className="settings-title">
+            {page === "plugins" ? "Plugins" : "Models"}
+          </h2>
+          {page === "plugins" ? <PluginsPane /> : <ModelsPane />}
+        </main>
+      )}
     </div>
   );
 }

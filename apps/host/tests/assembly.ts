@@ -10,6 +10,8 @@ export const ASSEMBLY = `plugins:
     name: "@flintloom/session"
   - id: models-chat
     name: "@flintloom/models-chat"
+  - id: models-guard
+    name: "@flintloom/models-guard"
   - id: fs
     name: "@flintloom/fs"
   - id: grep
@@ -21,11 +23,17 @@ export const ASSEMBLY = `plugins:
   - id: docforge
     name: "@flintloom/docforge"
   - id: infographic
-    name: "@flintloom/infographic"
+    name: "@flintloom/infographic/plugin"
   - id: a2ui
     name: "@flintloom/a2ui"
+  - id: skill
+    name: "@flintloom/skill"
   - id: loop
     name: "@flintloom/loop"
+  - id: channel
+    name: "@flintloom/channel"
+  - id: channel-webhook
+    name: "@flintloom/channel-webhook"
 `;
 
 export function writeAssembly(workspaceRoot: string): void {

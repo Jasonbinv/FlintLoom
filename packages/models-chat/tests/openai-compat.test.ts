@@ -105,6 +105,65 @@ describe("createOpenAiCompatChat", () => {
     expect(message).not.toContain(apiKey);
   });
 
+  it("maps multimodal user content to image_url parts", async () => {
+    let capturedBody = "";
+    const toolServer = http.createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (chunk: Buffer) => {
+        chunks.push(chunk);
+      });
+      req.on("end", () => {
+        capturedBody = Buffer.concat(chunks).toString("utf8");
+        res.writeHead(200, { "Content-Type": "text/event-stream" });
+        res.write(
+          `data: ${JSON.stringify({ choices: [{ delta: { content: "ok" } }] })}\n\n`,
+        );
+        res.write("data: [DONE]\n\n");
+        res.end();
+      });
+    });
+
+    const { baseUrl, close } = await listen(toolServer);
+    try {
+      const provider = createOpenAiCompatChat({
+        baseUrl,
+        apiKey: "test-key",
+        model: "test-model",
+      });
+
+      await collectChunks(
+        provider.stream(
+          {
+            messages: [
+              {
+                role: "user",
+                content: [
+                  { type: "text", text: "see" },
+                  { type: "image", mime: "image/png", data: "abc" },
+                ],
+              },
+            ],
+            tools: [],
+          },
+          new AbortController().signal,
+        ),
+      );
+
+      const parsed = JSON.parse(capturedBody) as {
+        messages: Record<string, unknown>[];
+      };
+      expect(parsed.messages[0]).toEqual({
+        role: "user",
+        content: [
+          { type: "text", text: "see" },
+          { type: "image_url", image_url: { url: "data:image/png;base64,abc" } },
+        ],
+      });
+    } finally {
+      await close();
+    }
+  });
+
   it("second-step POST includes assistant tool_calls before role tool", async () => {
     let capturedBody = "";
     const toolServer = http.createServer((req, res) => {

@@ -115,11 +115,11 @@ Guard **不是** 企业审批流，也 **不是** 用同一个 chat 模型再问
 | `packages/fs`、`grep`、`shell` | 工作区沙箱内的编程工具 |
 | `packages/skill` | 本地 skill 目录 + `skill` 工具 |
 | `packages/mcp` | 配置里一行一个 MCP server；工具以 `mcp__<server>__<name>` 登记到 `ctx.tools` |
-| `packages/channel` | `deliver` / `send` 接口 |
-| `packages/channel-desktop` | 工作台 SSE |
-| `packages/channel-cli` | `flint` 标准输入输出 |
-| `packages/channel-webhook` | 本机 HTTP 收消息 |
-| `packages/channel-telegram` | Telegram 机器人 |
+| `packages/channel` | 通道登记表：本片 `register` + `inbound` + `send` + `deliver` |
+| `packages/channel-desktop` | 工作台 SSE（本片不迁入 `ctx.channels`） |
+| `packages/channel-cli` | `flint` 标准输入输出（本片不迁入 `ctx.channels`） |
+| `packages/channel-webhook` | 本机 HTTP 收消息：适配器经 `inbound("webhook")` 调 `runTurn` |
+| `packages/channel-telegram` | Telegram 长轮询：适配器经 `inbound("telegram")` 调 `runTurn`，再 `sendMessage` 回同一 chat |
 | `packages/docforge` | 本地文档：探测/解析/入库/转换/生成/编辑/对比/摘要 |
 | `packages/a2ui` | A2UI v0.9 envelope、`a2ui_emit`、action 续跑 |
 | `packages/infographic` | 工作区里的 `*.infographic.json`；get/patch 工具；共用渲染器 |
@@ -165,6 +165,10 @@ POST /v1/turns  { sessionId, text }
 - `POST /v1/turns/:id/cancel`
 - `POST /v1/turns/:id/actions` — A2UI 客户端动作；写入 log；继续同一 turn
 
+Webhook（yml 挂上 `@flintloom/channel-webhook` 才存在）：
+
+- `POST /v1/hooks` — 等到 turn 结束返回 JSON `{ turnId, status, text }`（见 [webhook 通道设计](2026-08-20-flintloom-channel-webhook-design.md)）
+
 文件与文档：
 
 - `GET /v1/files?path=`
@@ -196,11 +200,11 @@ v1 组件目录：text、markdown、button、choice、data table、chart、infog
 
 ## 9. Channel
 
-除桌面通道所使用的 host API 外，入站只走 `ctx.channels`。
+除桌面通道所使用的 host API 外，入站只走 `ctx.channels`。Webhook 的 listen / hostToken 仍由 host 拥有；**turn 入站**走 `ctx.channels.inbound("webhook")`。见 [webhook 通道设计](2026-08-20-flintloom-channel-webhook-design.md)。Telegram 的 `getUpdates` 由插件拥有，仅 `startHost` overlay 才轮询；**turn 入站**走 `ctx.channels.inbound("telegram")`。见 [Telegram 通道设计](2026-08-20-flintloom-channel-telegram-design.md)。桌面 `POST /v1/turns` 与 CLI 不迁入该接口。Telegram 出站走 `ctx.channels.send("telegram", …)`（见 [channels.send 设计](2026-08-22-flintloom-channels-send-design.md)）。`deliver` 仍后续。
 
 v1 内置通道：desktop、cli、webhook、telegram。ACP 作为同一接口上的可选插件。Slack、Discord、邮件、飞书以及 ZeroClaw 其余通道不进 v1，以后按插件挂载。
 
-入站附件先存进工作区，需要时再经 DocForge 解析。Telegram 和 webhook 只发送文本和文件路径，不推送完整 A2UI 树。
+入站附件先存进工作区，需要时再经 DocForge 解析。Telegram 和 webhook 只发送文本和文件路径，不推送完整 A2UI 树。本片 webhook 与 Telegram 都只收文本；Telegram 出站是 `sendMessage` 文本，不是登记表 `send` API。
 
 ## 10. DocForge
 
@@ -211,11 +215,11 @@ v1 内置通道：desktop、cli、webhook、telegram。ACP 作为同一接口上
 | `doc_probe` | 类型、页数、是否可解析 |
 | `doc_parse` | pdf / docx / pptx / xlsx / html / md → 结构化 markdown |
 | `doc_ingest` | 解析后写入个人知识库 |
-| `doc_convert` | 上述格式互转；说明保真损失 |
-| `doc_generate` | 工作区 markdown → md / html / docx / pdf（见 [生成设计](2026-08-17-flintloom-docforge-generate-design.md)）。从结构化数据生成仍留后续 |
-| `doc_edit` | 对工作区文档打补丁 |
-| `doc_compare` | 两份文档 diff |
-| `doc_summarize` | 基于 parse 结果 + 模型；摘要写入 log，全文不塞进下一次 prompt |
+| `doc_convert` | 可 parse 的六种源 → md / html / docx / pdf / xlsx / pptx，成功 JSON 带固定 `loss`（见 [转换设计](2026-08-18-flintloom-docforge-convert-design.md)） |
+| `doc_generate` | 工作区 markdown 或 document JSON → md / html / docx / pdf / xlsx / pptx（见 [生成设计](2026-08-17-flintloom-docforge-generate-design.md) 与 [JSON 生成设计](2026-08-22-flintloom-docforge-generate-json-design.md)） |
+| `doc_edit` | 工作区 markdown 一次精确唯一替换并原地覆盖（见 [编辑设计](2026-08-18-flintloom-docforge-edit-design.md)）。pdf/docx 仍先 convert |
+| `doc_compare` | 两份文档 parse 成 markdown 后行级 unified diff，成功 JSON 不写盘（见 [对比设计](2026-08-19-flintloom-docforge-compare-design.md)） |
+| `doc_summarize` | 基于 parse 结果 + 内层 chat；摘要 JSON 写入 log，全文不塞进下一次 prompt（见 [摘要设计](2026-08-19-flintloom-docforge-summarize-design.md)） |
 
 聊天附件、知识库导入、预览都调用这个包。
 
@@ -262,7 +266,7 @@ v1 内置通道：desktop、cli、webhook、telegram。ACP 作为同一接口上
 - 不变量：请求里每一段模型可见字符串都能从 session log 重建。
 - DocForge：md/docx/pdf 的解析与转换夹具（外加一份失败的二进制）。
 - A2UI：拒绝非法 envelope；接受带按钮的 surface，并在 action 后续跑。
-- Channel：webhook POST 产生与桌面 turn 相同的 session 事件。
+- Channel：webhook POST 与 Telegram `inbound` 经同一套 `runTurn` 写入 session 事件。同一 `text`、无 A2UI wait 时与 `channel: "host"` 事件同构；hooks / Telegram 对 `text` 的 trim 与 `/v1/turns` 不同。见 [webhook 通道设计](2026-08-20-flintloom-channel-webhook-design.md) 与 [Telegram 通道设计](2026-08-20-flintloom-channel-telegram-design.md)。
 - 桌面：用固定 SSE 夹具渲染气泡，不依赖真实 API key。
 
 ## 15. v1 不做
@@ -282,8 +286,32 @@ v1 内置通道：desktop、cli、webhook、telegram。ACP 作为同一接口上
 
 1. Kernel + session + loop + `ctx.models` + `models-chat` + fs/grep/shell + host + CLI — 一轮编程对话。当时 host 手工 `register`（已交付）。
 1.5. **插件组装** — yml 真正加载、`apply` / `effect` / `require`、loop 作为插件、`tools/pre-execute`。host/CLI 不再手工 register。见 [插件组装设计](2026-08-17-flintloom-plugin-composition-design.md)。
-2. 桌面工作台 + 预览 + DocForge 解析（已交付，见 [文件预览设计](2026-08-17-flintloom-files-preview-design.md)）；个人知识库 + `doc_ingest`（**从出生就是插件**，见 [知识库设计](2026-08-17-flintloom-knowledge-design.md)）。
-3. A2UI 交互核心（见 [A2UI 设计](2026-08-17-flintloom-a2ui-design.md)）+ 信息图（见 [信息图设计](2026-08-17-flintloom-infographic-design.md)）+ 其余 DocForge 工具（生成见 [生成设计](2026-08-17-flintloom-docforge-generate-design.md)；转换/编辑/对比/摘要仍待拆）— 均为插件，不改 host 组装。A2UI 核心与信息图 / 其余 DocForge 分开写计划。
-4. Webhook + Telegram 通道 + `flint plugin add`（安装器：拷 bundle、在 yml 加一行；组装机制已在 1.5 存在）。
+2. 桌面工作台 + 预览 + DocForge 解析（已交付，见 [文件预览设计](2026-08-17-flintloom-files-preview-design.md)）；个人知识库 + `doc_ingest`（**从出生就是插件**，见 [知识库设计](2026-08-17-flintloom-knowledge-design.md)）。**工坊视觉抛光**（暖色 token、空状态、文件选中，见 [工坊 UI 设计](2026-08-22-flintloom-workbench-workshop-ui-design.md)）— 仅 `apps/desktop` CSS/结构，不改 host。
+3. A2UI 交互核心（见 [A2UI 设计](2026-08-17-flintloom-a2ui-design.md)）+ 信息图（见 [信息图设计](2026-08-17-flintloom-infographic-design.md)）+ 其余 DocForge 工具（生成见 [生成设计](2026-08-17-flintloom-docforge-generate-design.md)；转换见 [转换设计](2026-08-18-flintloom-docforge-convert-design.md)；编辑见 [编辑设计](2026-08-18-flintloom-docforge-edit-design.md)；对比见 [对比设计](2026-08-19-flintloom-docforge-compare-design.md)；摘要见 [摘要设计](2026-08-19-flintloom-docforge-summarize-design.md)）— 均为插件，不改 host 组装。A2UI 核心与信息图 / 其余 DocForge 分开写计划。**DataTable / Chart** 见 [table/chart 设计](2026-08-22-flintloom-a2ui-table-chart-design.md)。
+4. Webhook 通道（见 [webhook 通道设计](2026-08-20-flintloom-channel-webhook-design.md)）+ Telegram 通道（见 [Telegram 通道设计](2026-08-20-flintloom-channel-telegram-design.md)）+ `flint plugin add`（见 [安装器设计](2026-08-21-flintloom-plugin-add-design.md)）。
+5. Skill（见 [Skill 设计](2026-08-22-flintloom-skill-design.md)）— 本地目录 + `skill` 工具，不改 `runTurn`。
+6. MCP（见 [MCP 设计](2026-08-22-flintloom-mcp-design.md)）— stdio + tools，一行一个 server，工具名 `mcp__<id>__<name>`。`mcp-servers.yml` 自动加载见 [MCP 使用说明](../mcp-servers.md)。
+7. Guard ask（见 [Guard ask 设计](2026-08-22-flintloom-guard-ask-design.md)）— host 上 `gate` 为 `ask` 时暂停，工作台允许/拒绝后续跑。
+8. 桌面插件/模型页（见 [插件与模型页设计](2026-08-22-flintloom-desktop-plugins-models-design.md)）— `GET /v1/plugins`、只读 Plugins/Models 顶栏。
+9. A2UI DataTable / Chart（见 [table/chart 设计](2026-08-22-flintloom-a2ui-table-chart-design.md)）— 展示组件，内联 SVG 图，不 wait。
+10. A2UI Infographic（见 [Infographic 组件设计](2026-08-22-flintloom-a2ui-infographic-design.md)）— 复用 `renderSvg` 与预览 API。
+11. DocForge xlsx / pptx 写出（见 [xlsx/pptx 写出设计](2026-08-22-flintloom-docforge-xlsx-pptx-write-design.md)）— `doc_generate` / `doc_convert` 支持 `.xlsx` / `.pptx` 输出。
+12. `channels.send`（见 [channels.send 设计](2026-08-22-flintloom-channels-send-design.md)）— 登记表出站；Telegram poller 经 `send` 回包。
+13. DocForge JSON 结构化生成（见 [JSON 生成设计](2026-08-22-flintloom-docforge-generate-json-design.md)）— `doc_generate` 接受 `.json` `blocks` 源。
+14. 薄 Electron 桌面壳（见 [Electron 设计](2026-08-22-flintloom-desktop-electron-design.md)）— `pnpm desktop:app` 原生窗口；`pnpm desktop` 仍为浏览器。
+15. `channels.deliver`（见 [deliver 设计](2026-08-22-flintloom-channels-deliver-design.md)）— loop turn 结束自动出站；Telegram `deliver` + 去掉 poller 手动 `send`。
+16. 媒体 Provider（见 [媒体与 ACP 设计](2026-08-22-flintloom-media-acp-design.md) §16）— `asr` / `tts` / `t2i` / `t2v` / `omni` 登记与 DashScope 原生实现。
+17. 媒体工具（同上 §17）— `image_generate` / `video_generate`。
+18. ACP stdio 通道（同上 §18）— `flint acp` + `@flintloom/channel-acp`。
+19. ACP `tool_call` 推送（同上 §19）— `tool/call` / `tool/result` → `session/update`。
+20. 语音 ASR 入站（同上 §20）— Host `/v1/asr`、桌面语音按钮、Telegram voice 转写入站。
+21. T2V 异步轮询（同上 §21）— DashScope `task_id` 轮询，`video_generate` 可用。
+22. TTS 出站（同上 §22）— Host `/v1/tts`、桌面「朗读」、Telegram `sendVoice` 回包。
+23. ACP `session/request_permission`（同上 §23）— guard ask 扩展到 ACP 通道。
+24. 知识库 embedding / rerank（同上 §24）— 向量检索 + 可选重排，FTS 回退。
+26. 图片入站 + omni 多模态消息（同上 §26）— `user/message` 带图、Host `/v1/turns`、桌面图片按钮、Telegram photo 入站。
+27. Guard steward + `models-guard`（同上 §27）— 执行后 `guard/steward` 记 log；OpenAI 兼容 gate/steward provider。
+28. ACP 多模态 prompt（同上 §28）— `promptCapabilities` 与 image/audio/embedded_context 块入站。
+29. 工作台 guard/steward 展示（同上 §29）— 可疑 steward 气泡；根 `flintloom.yml` 挂 `models-guard`。
 
-第 2–4 刀在同一份总 spec 上继续拆计划。新 Loom 包必须带 `apply`，禁止再往 `createRuntime` 里堆 `register`。
+第 2–7 刀在同一份总 spec 上继续拆计划。新 Loom 包必须带 `apply`，禁止再往 `createRuntime` 里堆 `register`。

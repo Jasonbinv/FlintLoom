@@ -7,13 +7,18 @@
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "flint": "tsx apps/cli/src/bin.ts",
-    "desktop": "tsx scripts/desktop-dev.ts"
+    "desktop": "tsx scripts/desktop-dev.ts",
+    "desktop:app": "tsx scripts/desktop-electron.ts"
   },
   "engines": {
     "node": ">=22"
   },
   "devDependencies": {
     "@flintloom/a2ui": "workspace:*",
+    "@flintloom/channel": "workspace:*",
+    "@flintloom/channel-acp": "workspace:*",
+    "@flintloom/channel-webhook": "workspace:*",
+    "@flintloom/channel-telegram": "workspace:*",
     "@flintloom/docforge": "workspace:*",
     "@flintloom/fs": "workspace:*",
     "@flintloom/grep": "workspace:*",
@@ -21,10 +26,15 @@
     "@flintloom/infographic": "workspace:*",
     "@flintloom/knowledge": "workspace:*",
     "@flintloom/loop": "workspace:*",
+    "@flintloom/mcp": "workspace:*",
+    "@flintloom/media-tools": "workspace:*",
     "@flintloom/models": "workspace:*",
     "@flintloom/models-chat": "workspace:*",
+    "@flintloom/models-guard": "workspace:*",
+    "@flintloom/models-media": "workspace:*",
     "@flintloom/session": "workspace:*",
     "@flintloom/shell": "workspace:*",
+    "@flintloom/skill": "workspace:*",
     "@flintloom/tools": "workspace:*",
     "@types/node": "^22.20.1",
     "tsx": "^4.20.5",

@@ -2,14 +2,14 @@ import { describe, expect, it } from "vitest";
 import { Context } from "@flintloom/kernel";
 import modelsPlugin from "@flintloom/models";
 import toolsPlugin, { type ToolRegistry } from "@flintloom/tools";
-import plugin from "../src/index.ts";
+import plugin from "../src/plugin.ts";
 
 describe("infographic plugin", () => {
-  it("registers get/patch and stop() unregisters them", () => {
+  it("registers get/patch and stop() unregisters them", async () => {
     const ctx = new Context();
-    ctx.plugin(modelsPlugin);
-    ctx.plugin(toolsPlugin);
-    const stop = ctx.plugin(plugin);
+    await ctx.plugin(modelsPlugin);
+    await ctx.plugin(toolsPlugin);
+    const stop = await ctx.plugin(plugin);
     const tools = ctx.require<ToolRegistry>("tools");
     const names = tools.schemas().map((s) => s.name);
     expect(names).toContain("infographic_get");

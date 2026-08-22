@@ -8,7 +8,9 @@
   "dependencies": {
     "@flintloom/kernel": "workspace:*",
     "@flintloom/knowledge": "workspace:*",
+    "@flintloom/models": "workspace:*",
     "@flintloom/tools": "workspace:*",
+    "diff": "^8.0.4",
     "docx": "^9.7.1",
     "exceljs": "^4.4.0",
     "jszip": "^3.10.1",
@@ -19,7 +21,6 @@
     "unpdf": "^1.8.1"
   },
   "devDependencies": {
-    "@flintloom/models": "workspace:*",
     "@types/pdfkit": "^0.17.6"
   }
 }

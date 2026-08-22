@@ -1,5 +1,5 @@
 import { parseSseBuffer } from "./sse.ts";
-import type { WorkbenchEvent } from "./types.ts";
+import type { UserImage, WorkbenchEvent } from "./types.ts";
 
 const UNREACHABLE: WorkbenchEvent = {
   type: "model/error",
@@ -7,12 +7,62 @@ const UNREACHABLE: WorkbenchEvent = {
   message: "host unreachable",
 };
 
+export async function synthesizeSpeech(text: string, signal?: AbortSignal): Promise<Blob> {
+  const res = await fetch("/v1/tts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+    signal,
+  });
+  if (res.status === 503) {
+    throw new Error("tts not configured");
+  }
+  if (!res.ok) {
+    throw new Error("tts failed");
+  }
+  const mime = res.headers.get("Content-Type") ?? "audio/wav";
+  const bytes = await res.arrayBuffer();
+  return new Blob([bytes], { type: mime });
+}
+
+export async function transcribeAudio(blob: Blob, signal?: AbortSignal): Promise<string> {
+  const res = await fetch("/v1/asr", {
+    method: "POST",
+    headers: { "Content-Type": blob.type || "application/octet-stream" },
+    body: blob,
+    signal,
+  });
+  if (res.status === 503) {
+    throw new Error("asr not configured");
+  }
+  if (!res.ok) {
+    throw new Error("asr failed");
+  }
+  const body = (await res.json()) as { text?: unknown };
+  if (typeof body.text !== "string") {
+    throw new Error("asr failed");
+  }
+  return body.text;
+}
+
 export async function fetchModels(
   signal?: AbortSignal,
-): Promise<{ kind: string; configured: boolean }[]> {
+): Promise<{ kind: string; configured: boolean; defaultId: string | null }[]> {
   const res = await fetch("/v1/models", { signal });
   if (!res.ok) throw new Error("host unreachable");
-  return (await res.json()) as { kind: string; configured: boolean }[];
+  return (await res.json()) as {
+    kind: string;
+    configured: boolean;
+    defaultId: string | null;
+  }[];
+}
+
+export async function fetchPlugins(
+  signal?: AbortSignal,
+): Promise<{ id: string; name: string; status: "loaded" }[]> {
+  const res = await fetch("/v1/plugins", { signal });
+  if (!res.ok) throw new Error("host unreachable");
+  return (await res.json()) as { id: string; name: string; status: "loaded" }[];
 }
 
 export async function fetchSession(
@@ -39,8 +89,13 @@ export async function postTurn(
   text: string,
   onEvent: (event: WorkbenchEvent) => void,
   signal?: AbortSignal,
+  images?: UserImage[],
 ): Promise<void> {
-  await postSse("/v1/turns", { sessionId, text }, onEvent, signal);
+  const body: Record<string, unknown> = { sessionId, text };
+  if (images !== undefined && images.length > 0) {
+    body.images = images;
+  }
+  await postSse("/v1/turns", body, onEvent, signal);
 }
 
 export async function postTurnAction(
@@ -51,6 +106,20 @@ export async function postTurnAction(
 ): Promise<void> {
   await postSse(
     `/v1/turns/${encodeURIComponent(turnId)}/actions`,
+    body,
+    onEvent,
+    signal,
+  );
+}
+
+export async function postTurnGuard(
+  turnId: string,
+  body: { callId: string; decision: "allow" | "deny" },
+  onEvent: (event: WorkbenchEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  await postSse(
+    `/v1/turns/${encodeURIComponent(turnId)}/guard`,
     body,
     onEvent,
     signal,

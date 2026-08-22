@@ -1,4 +1,5 @@
 import type { ChatChunk, ChatProvider, ChatRequest } from "@flintloom/models";
+import type { ChatContentPart } from "@flintloom/session";
 
 export interface OpenAiCompatChatOptions {
   baseUrl: string;
@@ -12,11 +13,26 @@ interface ToolCallAccumulator {
   arguments: string;
 }
 
+function mapContent(content: string | ChatContentPart[]): unknown {
+  if (typeof content === "string") {
+    return content;
+  }
+  return content.map((part) => {
+    if (part.type === "text") {
+      return { type: "text", text: part.text };
+    }
+    return {
+      type: "image_url",
+      image_url: { url: `data:${part.mime};base64,${part.data}` },
+    };
+  });
+}
+
 function mapMessages(req: ChatRequest): Record<string, unknown>[] {
   return req.messages.map((msg) => {
     const out: Record<string, unknown> = {
       role: msg.role,
-      content: msg.content,
+      content: mapContent(msg.content),
     };
     if (msg.toolCallId !== undefined) {
       out.tool_call_id = msg.toolCallId;

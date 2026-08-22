@@ -49,6 +49,7 @@ export class ToolRegistry {
         workspaceRoot: exec.workspaceRoot,
         channel: exec.channel,
         signal: exec.signal,
+        guardBypass: exec.guardBypass,
       },
       () => def.execute(args, exec),
     );

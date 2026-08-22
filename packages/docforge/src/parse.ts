@@ -8,6 +8,13 @@ import { parsePptx } from "./parsers/pptx.ts";
 import { parseXlsx } from "./parsers/xlsx.ts";
 import { truncateOutput } from "./truncate.ts";
 
+export type ParseMarkdownResult =
+  | { ok: true; markdown: string }
+  | {
+      ok: false;
+      reason: "not found" | "unreadable" | "unsupported type" | "encrypted";
+    };
+
 function isNotFound(err: unknown): boolean {
   return (
     typeof err === "object" &&
@@ -17,15 +24,17 @@ function isNotFound(err: unknown): boolean {
   );
 }
 
-export async function parse(absPath: string): Promise<string> {
+export async function parseToMarkdown(
+  absPath: string,
+): Promise<ParseMarkdownResult> {
   let bytes: Buffer;
   try {
     bytes = await readFile(absPath);
   } catch (err) {
     if (isNotFound(err)) {
-      return "failed: not found";
+      return { ok: false, reason: "not found" };
     }
-    return "failed: unreadable";
+    return { ok: false, reason: "unreadable" };
   }
 
   const type = detectType(absPath, bytes);
@@ -57,21 +66,28 @@ export async function parse(absPath: string): Promise<string> {
         break;
       }
       case "unknown":
-        return "failed: unsupported type";
+        return { ok: false, reason: "unsupported type" };
       default:
-        return "failed: unreadable";
+        return { ok: false, reason: "unreadable" };
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (/password|encrypt/i.test(message)) {
-      return "failed: encrypted";
+      return { ok: false, reason: "encrypted" };
     }
-    return "failed: unreadable";
+    return { ok: false, reason: "unreadable" };
   }
+  return { ok: true, markdown: body };
+}
 
-  const trimmed = body.replace(/\s+/g, " ").trim();
+export async function parse(absPath: string): Promise<string> {
+  const result = await parseToMarkdown(absPath);
+  if (!result.ok) {
+    return `failed: ${result.reason}`;
+  }
+  const trimmed = result.markdown.replace(/\s+/g, " ").trim();
   if (trimmed.length === 0) {
     return "failed: empty text";
   }
-  return truncateOutput(body);
+  return truncateOutput(result.markdown);
 }

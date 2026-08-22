@@ -7,7 +7,7 @@ export type WaterfallHandler = (
 
 export interface FlintPlugin {
   name: string;
-  apply(ctx: Context, config: Record<string, unknown>): void;
+  apply(ctx: Context, config: Record<string, unknown>): void | Promise<void>;
 }
 
 export class Context {
@@ -79,19 +79,40 @@ export class Context {
   plugin(
     plugin: FlintPlugin,
     config: Record<string, unknown> = {},
-  ): Disposer {
+  ): Promise<Disposer> {
     const before = this.#disposers.length;
-    try {
-      plugin.apply(this, config);
-    } catch (err) {
+    const rollbackPartial = (): void => {
       const mine = this.#disposers.slice(before);
       for (const d of mine.reverse()) d();
       this.#disposers.length = before;
+    };
+    const makeDisposer = (): Disposer => {
+      const mine = this.#disposers.slice(before);
+      return () => {
+        for (const d of mine.reverse()) d();
+      };
+    };
+
+    try {
+      const result = plugin.apply(this, config);
+      if (
+        result !== null &&
+        typeof result === "object" &&
+        "then" in result &&
+        typeof (result as Promise<void>).then === "function"
+      ) {
+        return (result as Promise<void>).then(
+          () => makeDisposer(),
+          (err: unknown) => {
+            rollbackPartial();
+            throw err;
+          },
+        );
+      }
+      return Promise.resolve(makeDisposer());
+    } catch (err) {
+      rollbackPartial();
       throw err;
     }
-    const mine = this.#disposers.slice(before);
-    return () => {
-      for (const d of mine.reverse()) d();
-    };
   }
 }

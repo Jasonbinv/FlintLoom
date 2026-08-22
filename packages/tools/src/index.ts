@@ -1,3 +1,4 @@
+export { GuardAskError, isGuardAskError } from "./guard-ask.ts";
 export { resolveInside, WorkspaceEscapeError } from "./workspace.ts";
 export { isHiddenRelPath } from "./hidden.ts";
 export { ToolRegistry } from "./registry.ts";

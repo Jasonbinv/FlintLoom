@@ -29,6 +29,9 @@ describe("tools plugin", () => {
       async gate() {
         return "deny";
       },
+      async steward() {
+        return { verdict: "ok", summary: "" };
+      },
     };
     models.registerGuard("default-guard", guard);
     models.setDefault("guard", "default-guard");

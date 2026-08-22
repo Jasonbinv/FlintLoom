@@ -25,6 +25,7 @@ function v1Proxy(): Plugin {
             chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
           }
           const body = chunks.length > 0 ? Buffer.concat(chunks) : undefined;
+          const contentType = req.headers["content-type"];
 
           const forwarded = await forwardV1({
             upstreamOrigin: UPSTREAM,
@@ -32,6 +33,7 @@ function v1Proxy(): Plugin {
             method,
             path: url,
             body,
+            contentType: typeof contentType === "string" ? contentType : undefined,
           });
 
           res.statusCode = forwarded.status;

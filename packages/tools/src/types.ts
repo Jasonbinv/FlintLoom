@@ -6,6 +6,7 @@ export type ToolPreExecutePayload = {
   workspaceRoot: string;
   channel: string;
   signal: AbortSignal;
+  guardBypass?: boolean;
 };
 
 export interface ToolDefinition {
@@ -19,4 +20,5 @@ export interface ToolExec {
   workspaceRoot: string;
   signal: AbortSignal;
   channel: string;
+  guardBypass?: boolean;
 }

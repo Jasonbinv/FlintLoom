@@ -62,6 +62,21 @@ const SURFACE_SSE =
     messages: confirmMessages(),
   })}\n\n` + `data: {"type":"end","status":"awaiting_action"}\n\n`;
 
+const GUARD_SSE =
+  `data: {"type":"turn/start","turnId":"t-guard"}\n\n` +
+  `data: ${JSON.stringify({
+    type: "guard/ask",
+    turnId: "t-guard",
+    callId: "call-touch",
+    tool: "touch",
+    remainingCalls: [],
+  })}\n\n` + `data: {"type":"end","status":"awaiting_action"}\n\n`;
+
+const GUARD_ALLOW_SSE =
+  `data: {"type":"tool/result","callId":"call-touch","name":"touch","text":"ok"}\n\n` +
+  `data: {"type":"assistant/message","text":"done"}\n\n` +
+  `data: {"type":"end","status":"ok"}\n\n`;
+
 let root: Root | undefined;
 let container: HTMLDivElement | undefined;
 
@@ -73,9 +88,11 @@ function requestUrl(input: RequestInfo | URL): string {
 
 function installFetch(opts: {
   models?: Response | Error;
+  plugins?: Response | Error;
   session?: Response | Error;
   turn?: Response | Error;
   actions?: Response | Error;
+  guard?: Response | Error;
   cancel?: Response | Error;
   files?: Response | Error;
   preview?: Response | Error;
@@ -156,12 +173,21 @@ function installFetch(opts: {
     }
     if (url.includes("/v1/models")) {
       if (opts.models instanceof Error) throw opts.models;
-      return (
-        opts.models ??
-        new Response(JSON.stringify([{ kind: "chat", configured: false }]), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        })
+      if (opts.models) return opts.models.clone();
+      return new Response(JSON.stringify([{ kind: "chat", configured: false }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (url.includes("/v1/plugins")) {
+      if (opts.plugins instanceof Error) throw opts.plugins;
+      if (opts.plugins) return opts.plugins.clone();
+      return new Response(
+        JSON.stringify([
+          { id: "loop", name: "@flintloom/loop", status: "loaded" },
+          { id: "tools", name: "@flintloom/tools", status: "loaded" },
+        ]),
+        { status: 200, headers: { "Content-Type": "application/json" } },
       );
     }
     if (url.includes("/v1/sessions/")) {
@@ -177,6 +203,16 @@ function installFetch(opts: {
       return (
         opts.actions ??
         new Response(ACTIONS_SSE, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        })
+      );
+    }
+    if (url.includes("/guard")) {
+      if (opts.guard instanceof Error) throw opts.guard;
+      return (
+        opts.guard ??
+        new Response(GUARD_ALLOW_SSE, {
           status: 200,
           headers: { "Content-Type": "text/event-stream" },
         })
@@ -817,6 +853,155 @@ describe("App", () => {
     expect(actionCalls).toHaveLength(1);
   });
 
+  it("renders guard ask with tool name only and disables send", async () => {
+    installFetch({
+      turn: new Response(GUARD_SSE, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    });
+    await mountApp();
+    await typeAndSend("run tool");
+    await waitForText("touch");
+    expect(document.body.textContent).toContain("允许执行工具");
+    expect(document.body.textContent).not.toContain("call-touch");
+    const sendButton = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "发送",
+    );
+    expect(sendButton?.disabled).toBe(true);
+    const allowButton = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "允许",
+    );
+    expect(allowButton).toBeTruthy();
+    const denyButton = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "拒绝",
+    );
+    expect(denyButton).toBeTruthy();
+  });
+
+  it("posts allow to /guard with callId", async () => {
+    installFetch({
+      turn: new Response(GUARD_SSE, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    });
+    await mountApp();
+    await typeAndSend("run tool");
+    await waitForText("允许");
+    const allowButton = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "允许",
+    );
+    if (!allowButton) throw new Error("no allow button");
+    await act(async () => {
+      allowButton.click();
+    });
+    await waitForText("done");
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const guardCall = fetchMock.mock.calls.find(([input, init]) => {
+      const url = requestUrl(input as RequestInfo | URL);
+      return (
+        url.includes("/guard") &&
+        (init as RequestInit | undefined)?.method === "POST"
+      );
+    });
+    expect(guardCall).toBeTruthy();
+    const body = JSON.parse(String((guardCall![1] as RequestInit).body)) as {
+      callId: string;
+      decision: string;
+    };
+    expect(body.callId).toBe("call-touch");
+    expect(body.decision).toBe("allow");
+  });
+
+  it("posts deny to /guard when reject clicked", async () => {
+    installFetch({
+      turn: new Response(GUARD_SSE, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+      guard: new Response(
+        `data: {"type":"tool/result","callId":"call-touch","name":"touch","text":"guard denied: touch"}\n\n` +
+          `data: {"type":"end","status":"ok"}\n\n`,
+        {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        },
+      ),
+    });
+    await mountApp();
+    await typeAndSend("run tool");
+    await waitForText("拒绝");
+    const denyButton = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "拒绝",
+    );
+    if (!denyButton) throw new Error("no deny button");
+    await act(async () => {
+      denyButton.click();
+    });
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const guardCall = fetchMock.mock.calls.find(([input, init]) => {
+      const url = requestUrl(input as RequestInfo | URL);
+      return (
+        url.includes("/guard") &&
+        (init as RequestInit | undefined)?.method === "POST"
+      );
+    });
+    expect(guardCall).toBeTruthy();
+    const body = JSON.parse(String((guardCall![1] as RequestInit).body)) as {
+      decision: string;
+    };
+    expect(body.decision).toBe("deny");
+  });
+
+  it("restores guard waiting state from session reload", async () => {
+    installFetch({
+      session: new Response(
+        JSON.stringify({
+          events: [
+            { type: "turn/start", turnId: "t-guard" },
+            {
+              type: "guard/ask",
+              turnId: "t-guard",
+              callId: "call-touch",
+              tool: "touch",
+              remainingCalls: [],
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    await waitForText("touch");
+    const sendButton = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "发送",
+    );
+    expect(sendButton?.disabled).toBe(true);
+  });
+
+  it("hydrates guard/steward events from session", async () => {
+    installFetch({
+      session: new Response(
+        JSON.stringify({
+          events: [
+            {
+              type: "guard/steward",
+              callId: "c1",
+              tool: "fs",
+              verdict: "suspicious",
+              summary: "api key in output",
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    await waitForText("api key in output");
+    expect(document.body.textContent).toContain("可疑");
+  });
+
   it("button click posts the current picker value in data", async () => {
     const messages = [
       {
@@ -1009,5 +1194,260 @@ describe("App", () => {
       await Promise.resolve();
     });
     expect(sendButton?.disabled).toBe(true);
+  });
+
+  it("shows empty log copy as a paragraph", async () => {
+    installFetch();
+    await mountApp();
+    await waitForText("向工作区说一句话");
+    const empty = document.querySelector(".log-empty");
+    expect(empty).toBeTruthy();
+    expect(empty?.tagName).toBe("P");
+  });
+
+  it("hides empty log copy after session hydrate", async () => {
+    installFetch({
+      session: new Response(
+        JSON.stringify({
+          events: [
+            { type: "user/message", text: "past user" },
+            { type: "assistant/message", text: "past assistant" },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    await waitForText("past user");
+    expect(document.body.textContent).not.toContain("向工作区说一句话");
+    expect(document.querySelector(".log-empty")).toBeNull();
+  });
+
+  it("renders warn pill when chat is not configured", async () => {
+    installFetch();
+    await mountApp();
+    await waitForText("chat 未配置");
+    expect(document.querySelector(".status-pill.warn")?.textContent).toBe(
+      "chat 未配置",
+    );
+  });
+
+  it("renders ok pill when chat is configured", async () => {
+    installFetch({
+      models: new Response(JSON.stringify([{ kind: "chat", configured: true }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    });
+    await mountApp();
+    await waitForText("chat 已配置");
+    expect(document.querySelector(".status-pill.ok")?.textContent).toBe(
+      "chat 已配置",
+    );
+  });
+
+  it("renders down pill when models fetch fails", async () => {
+    installFetch({ models: new Error("network") });
+    await mountApp();
+    await waitForText("host 未连接");
+    expect(document.querySelector(".status-pill.down")?.textContent).toBe(
+      "host 未连接",
+    );
+  });
+
+  it("marks clicked file selected and never selects directories", async () => {
+    installFetch({
+      files: new Response(
+        JSON.stringify({
+          path: ".",
+          entries: [
+            { name: "docs", type: "dir" },
+            { name: "README.md", type: "file" },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    await waitForText("README.md");
+    await waitForText("docs");
+    const readme = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "README.md",
+    );
+    const docs = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "docs",
+    );
+    if (!readme || !docs) throw new Error("missing tree buttons");
+    expect(readme.classList.contains("selected")).toBe(false);
+    await act(async () => {
+      docs.click();
+    });
+    expect(docs.classList.contains("selected")).toBe(false);
+    await act(async () => {
+      readme.click();
+    });
+    expect(readme.classList.contains("selected")).toBe(true);
+    expect(docs.classList.contains("selected")).toBe(false);
+  });
+
+  it("tags send as primary and cancel as ghost", async () => {
+    installFetch({
+      turn: new Response(SURFACE_SSE, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    });
+    await mountApp();
+    const send = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "发送",
+    );
+    expect(send?.classList.contains("btn-primary")).toBe(true);
+    await typeAndSend("hi");
+    await waitForText("OK");
+    const cancel = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "取消",
+    );
+    expect(cancel?.classList.contains("btn-ghost")).toBe(true);
+  });
+
+  it("shows plugin list on Plugins page", async () => {
+    installFetch();
+    await mountApp();
+    const pluginsTab = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "Plugins",
+    );
+    if (!pluginsTab) throw new Error("no Plugins tab");
+    await act(async () => {
+      pluginsTab.click();
+    });
+    await waitForText("@flintloom/loop");
+    expect(document.body.textContent).toContain("loop");
+    expect(document.body.textContent).toContain("loaded");
+    expect(document.querySelector("textarea")).toBeNull();
+  });
+
+  it("shows model kinds on Models page", async () => {
+    installFetch({
+      models: new Response(
+        JSON.stringify([
+          { kind: "chat", configured: true, defaultId: "default" },
+          { kind: "asr", configured: false, defaultId: null },
+        ]),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    const modelsTab = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "Models",
+    );
+    if (!modelsTab) throw new Error("no Models tab");
+    await act(async () => {
+      modelsTab.click();
+    });
+    await waitForText("asr");
+    expect(document.body.textContent).toContain("default");
+    expect(document.body.textContent).toContain("flintloom.yml");
+    expect(document.querySelector(".settings-table")).toBeTruthy();
+  });
+
+  it("renders a2ui DataTable and Chart without pausing turn", async () => {
+    const messages = [
+      {
+        version: "v0.9" as const,
+        createSurface: { surfaceId: "main", catalogId: "flintloom:a2ui:core" },
+      },
+      {
+        version: "v0.9" as const,
+        updateComponents: {
+          surfaceId: "main",
+          components: [
+            { id: "root", component: "Column", children: ["tbl", "chart"] },
+            {
+              id: "tbl",
+              component: "DataTable",
+              headers: ["item", "count"],
+              rows: [["apple", "3"]],
+            },
+            {
+              id: "chart",
+              component: "Chart",
+              kind: "bar",
+              labels: ["Q1", "Q2"],
+              values: [2, 5],
+            },
+          ],
+        },
+      },
+    ];
+    const sse =
+      `data: {"type":"turn/start","turnId":"t-show"}\n\n` +
+      `data: ${JSON.stringify({
+        type: "a2ui/surface",
+        turnId: "t-show",
+        surfaceId: "main",
+        wait: false,
+        messages,
+      })}\n\n` +
+      `data: {"type":"assistant/message","text":"shown"}\n\n` +
+      `data: {"type":"end","status":"ok"}\n\n`;
+    installFetch({
+      turn: new Response(sse, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    });
+    await mountApp();
+    await typeAndSend("show data");
+    await waitForText("apple");
+    expect(document.querySelector(".a2ui-table")).toBeTruthy();
+    expect(document.querySelector(".a2ui-chart-svg")).toBeTruthy();
+    expect(
+      Array.from(document.querySelectorAll("button")).some((b) => b.textContent === "取消"),
+    ).toBe(false);
+  });
+
+  it("renders a2ui Infographic from inline document", async () => {
+    const messages = [
+      {
+        version: "v0.9" as const,
+        createSurface: { surfaceId: "main", catalogId: "flintloom:a2ui:core" },
+      },
+      {
+        version: "v0.9" as const,
+        updateComponents: {
+          surfaceId: "main",
+          components: [
+            {
+              id: "root",
+              component: "Infographic",
+              document: {
+                nodes: [{ id: "n1", label: "HelloNode", x: 40, y: 30 }],
+                edges: [],
+              },
+            },
+          ],
+        },
+      },
+    ];
+    const sse =
+      `data: {"type":"turn/start","turnId":"t-ig"}\n\n` +
+      `data: ${JSON.stringify({
+        type: "a2ui/surface",
+        turnId: "t-ig",
+        surfaceId: "main",
+        wait: false,
+        messages,
+      })}\n\n` +
+      `data: {"type":"end","status":"ok"}\n\n`;
+    installFetch({
+      turn: new Response(sse, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    });
+    await mountApp();
+    await typeAndSend("show ig");
+    await waitForText("HelloNode");
+    expect(document.querySelector(".a2ui-infographic svg")).toBeTruthy();
   });
 });

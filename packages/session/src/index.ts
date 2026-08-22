@@ -1,4 +1,9 @@
-export type { ChatMessage, SessionEvent } from "./events.ts";
-export { Session } from "./session.ts";
+export type {
+  ChatContentPart,
+  ChatMessage,
+  SessionEvent,
+  UserImage,
+} from "./events.ts";
+export { Session, userMessageContent } from "./session.ts";
 export { SessionStore } from "./store.ts";
 export { default } from "./plugin.ts";

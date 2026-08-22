@@ -194,4 +194,60 @@ describe("Session", () => {
     session.append({ type: "turn/end", turnId: "t1", status: "ok" });
     expect(session.isWaiting("t1")).toBe(false);
   });
+
+  it("deriveMessages 将 user/message 图片投影为多模态 content parts", () => {
+    const session = new Session("s6");
+    session.append({
+      type: "user/message",
+      text: "what is this",
+      images: [{ mime: "image/png", data: "abc" }],
+    });
+
+    expect(session.deriveMessages()).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "what is this" },
+          { type: "image", mime: "image/png", data: "abc" },
+        ],
+      },
+    ]);
+  });
+
+  it("deriveMessages 仅图片时省略 text part", () => {
+    const session = new Session("s7");
+    session.append({
+      type: "user/message",
+      text: "",
+      images: [{ mime: "image/jpeg", data: "xyz" }],
+    });
+
+    expect(session.deriveMessages()).toEqual([
+      {
+        role: "user",
+        content: [{ type: "image", mime: "image/jpeg", data: "xyz" }],
+      },
+    ]);
+  });
+
+  it("isWaiting for guard ask until guard response", () => {
+    const session = new Session("s-guard");
+    session.append({ type: "turn/start", turnId: "t1" });
+    session.append({ type: "tool/call", callId: "c1", name: "shell", args: {} });
+    session.append({
+      type: "guard/ask",
+      turnId: "t1",
+      callId: "c1",
+      tool: "shell",
+      remainingCalls: [],
+    });
+    expect(session.isWaiting("t1")).toBe(true);
+    session.append({
+      type: "guard/response",
+      turnId: "t1",
+      callId: "c1",
+      decision: "allow",
+    });
+    expect(session.isWaiting("t1")).toBe(false);
+  });
 });

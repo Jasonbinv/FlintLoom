@@ -6,9 +6,20 @@ import {
   type A2uiMessage,
   type A2uiService,
 } from "./types.ts";
+import { isInfographicRelPath, parseDocument } from "@flintloom/infographic";
 
 const ENVELOPE_KEYS = ["createSurface", "updateComponents", "updateDataModel", "deleteSurface"] as const;
-const KNOWN_COMPONENTS = new Set(["Column", "Row", "Text", "Markdown", "Button", "ChoicePicker"]);
+const KNOWN_COMPONENTS = new Set([
+  "Column",
+  "Row",
+  "Text",
+  "Markdown",
+  "Button",
+  "ChoicePicker",
+  "DataTable",
+  "Chart",
+  "Infographic",
+]);
 const MAX_PAYLOAD = 65536;
 const PATH_RE = /^\/(?:[A-Za-z0-9_]+(?:\/[A-Za-z0-9_]+)*)?$/;
 
@@ -74,6 +85,19 @@ function checkPathBindings(value: unknown): void {
   }
 }
 
+function bindingPath(value: unknown): string | undefined {
+  if (!isRecord(value)) return undefined;
+  const keys = Object.keys(value);
+  if (keys.length === 1 && keys[0] === "path" && typeof value.path === "string") {
+    return value.path;
+  }
+  return undefined;
+}
+
+function validateStringCell(value: unknown, maxLen: number): boolean {
+  return typeof value === "string" && value.length <= maxLen;
+}
+
 function validateComponentShape(comp: A2uiComponent): void {
   if (comp.component === "Column" || comp.component === "Row") {
     if (!Array.isArray(comp.children) || comp.children.some((c) => typeof c !== "string")) {
@@ -106,6 +130,85 @@ function validateComponentShape(comp: A2uiComponent): void {
         fail("bad options");
       }
     }
+    return;
+  }
+  if (comp.component === "DataTable") {
+    const dataPath = bindingPath(comp.data);
+    if (dataPath !== undefined) {
+      return;
+    }
+    const headers = comp.headers;
+    if (
+      !Array.isArray(headers) ||
+      headers.length < 1 ||
+      headers.length > 20 ||
+      !headers.every((h) => validateStringCell(h, 200))
+    ) {
+      fail("bad table");
+    }
+    const rows = comp.rows;
+    if (!Array.isArray(rows) || rows.length > 100) {
+      fail("bad table");
+    }
+    for (const row of rows) {
+      if (!Array.isArray(row) || row.length !== headers.length) {
+        fail("bad table");
+      }
+      for (const cell of row) {
+        if (!validateStringCell(cell, 2000)) {
+          fail("bad table");
+        }
+      }
+    }
+    return;
+  }
+  if (comp.component === "Chart") {
+    const kind = comp.kind;
+    if (kind !== undefined && kind !== "bar" && kind !== "line") {
+      fail("bad chart");
+    }
+    const dataPath = bindingPath(comp.data);
+    if (dataPath !== undefined) {
+      return;
+    }
+    const labels = comp.labels;
+    const values = comp.values;
+    if (
+      !Array.isArray(labels) ||
+      labels.length < 1 ||
+      labels.length > 24 ||
+      !labels.every((l) => validateStringCell(l, 80))
+    ) {
+      fail("bad chart");
+    }
+    if (
+      !Array.isArray(values) ||
+      values.length !== labels.length ||
+      !values.every((v) => typeof v === "number" && Number.isFinite(v))
+    ) {
+      fail("bad chart");
+    }
+    return;
+  }
+  if (comp.component === "Infographic") {
+    const dataPath = bindingPath(comp.data);
+    const hasDoc = isRecord(comp.document);
+    const hasFile = typeof comp.file === "string";
+    const modes = [dataPath !== undefined, hasDoc, hasFile].filter(Boolean).length;
+    if (modes !== 1) {
+      fail("bad infographic");
+    }
+    if (dataPath !== undefined) {
+      return;
+    }
+    if (hasFile) {
+      const file = comp.file as string;
+      if (file.includes("..") || !isInfographicRelPath(file)) {
+        fail("bad path");
+      }
+      return;
+    }
+    parseDocument(JSON.stringify(comp.document));
   }
 }
 

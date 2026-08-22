@@ -4,8 +4,8 @@ import {
   type ChatChunkToolCall,
   type ModelRegistry,
 } from "@flintloom/models";
-import { Session, type SessionEvent } from "@flintloom/session";
-import type { ToolRegistry } from "@flintloom/tools";
+import { Session, type SessionEvent, type UserImage } from "@flintloom/session";
+import { isGuardAskError, type ToolRegistry } from "@flintloom/tools";
 
 const SYSTEM_MESSAGE =
   "You are FlintLoom, a real agent. Use tools to work in the workspace.";
@@ -23,6 +23,7 @@ export interface RunTurnInput {
   ctx: Context;
   session: Session;
   text: string;
+  images?: UserImage[];
   workspaceRoot: string;
   channel: string;
   signal: AbortSignal;
@@ -42,9 +43,22 @@ export type ContinueTurnInput = {
   onEvent?: (event: SessionEvent) => void;
 };
 
+export type ContinueGuardTurnInput = {
+  ctx: Context;
+  session: Session;
+  turnId: string;
+  callId: string;
+  decision: "allow" | "deny";
+  workspaceRoot: string;
+  channel: string;
+  signal: AbortSignal;
+  onEvent?: (event: SessionEvent) => void;
+};
+
 export type LoopService = {
   runTurn(input: RunTurnInput): Promise<RunTurnResult>;
   continueTurn(input: ContinueTurnInput): Promise<RunTurnResult>;
+  continueGuardTurn(input: ContinueGuardTurnInput): Promise<RunTurnResult>;
 };
 
 type RunStepsInput = {
@@ -55,6 +69,7 @@ type RunStepsInput = {
   channel: string;
   signal: AbortSignal;
   onEvent?: (event: SessionEvent) => void;
+  pendingToolCalls?: ChatChunkToolCall[];
 };
 
 type TurnEndStatus = Exclude<RunTurnResult["status"], "awaiting_action">;
@@ -79,19 +94,67 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-function failChat(
+const STEWARD_RESULT_MAX = 2000;
+
+function shouldSteward(resultText: string): boolean {
+  return !resultText.startsWith("guard denied:");
+}
+
+async function maybeAppendGuardSteward(
+  ctx: Context,
   session: Session,
   onEvent: RunTurnInput["onEvent"],
-  finish: (status: TurnEndStatus) => RunTurnResult,
-  err: unknown,
-  kind = "chat",
-): RunTurnResult {
-  appendEvent(session, onEvent, {
-    type: "model/error",
-    kind,
-    message: errorMessage(err),
-  });
-  return finish("failed");
+  callId: string,
+  tool: string,
+  args: unknown,
+  resultText: string,
+  workspaceRoot: string,
+  channel: string,
+  signal: AbortSignal,
+): Promise<void> {
+  if (!shouldSteward(resultText)) {
+    return;
+  }
+  const guard = ctx.require<ModelRegistry>("models").resolveGuard();
+  if (guard === undefined) {
+    return;
+  }
+  const clipped =
+    resultText.length > STEWARD_RESULT_MAX
+      ? `${resultText.slice(0, STEWARD_RESULT_MAX)}…`
+      : resultText;
+  try {
+    const steward = await guard.steward(
+      {
+        tool,
+        args,
+        resultText: clipped,
+        workspaceRoot,
+        channel,
+      },
+      signal,
+    );
+    appendEvent(session, onEvent, {
+      type: "guard/steward",
+      callId,
+      tool,
+      verdict: steward.verdict,
+      summary: steward.summary,
+    });
+  } catch {
+    // steward failure does not block the turn
+  }
+}
+
+function resolveConversationProvider(models: ModelRegistry): {
+  provider: import("@flintloom/models").ChatProvider;
+  kind: "chat" | "omni";
+} {
+  const omniConfigured = models.snapshot().some((row) => row.kind === "omni" && row.configured);
+  if (omniConfigured) {
+    return { provider: models.resolveOmni(), kind: "omni" };
+  }
+  return { provider: models.resolveChat(), kind: "chat" };
 }
 
 function lastTurnStartId(session: Session): string | undefined {
@@ -119,7 +182,192 @@ function lastSurfaceForTurn(
   return undefined;
 }
 
-async function runSteps(input: RunStepsInput): Promise<RunTurnResult> {
+function lastGuardAsk(
+  session: Session,
+  turnId: string,
+): Extract<SessionEvent, { type: "guard/ask" }> | undefined {
+  const events = session.events();
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i];
+    if (event?.type === "guard/ask" && event.turnId === turnId) {
+      return event;
+    }
+  }
+  return undefined;
+}
+
+function toolCallById(
+  session: Session,
+  callId: string,
+): Extract<SessionEvent, { type: "tool/call" }> | undefined {
+  for (const event of session.events()) {
+    if (event.type === "tool/call" && event.callId === callId) {
+      return event;
+    }
+  }
+  return undefined;
+}
+
+type FinishFn = (status: TurnEndStatus) => Promise<RunTurnResult>;
+
+async function maybeDeliver(
+  ctx: Context,
+  channel: string,
+  session: Session,
+  turnId: string,
+  signal: AbortSignal,
+): Promise<void> {
+  if (channel === "host" || channel === "cli") {
+    return;
+  }
+  type DeliverRegistry = {
+    has(id: string): boolean;
+    deliver(
+      id: string,
+      outbound: { sessionId: string; turnId: string; signal: AbortSignal },
+    ): Promise<void>;
+  };
+  const channels = ctx.get<DeliverRegistry>("channels");
+  if (channels === undefined || !channels.has(channel)) {
+    return;
+  }
+  try {
+    await channels.deliver(channel, {
+      sessionId: session.id,
+      turnId,
+      signal,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.message === "no deliver") {
+      return;
+    }
+    throw err;
+  }
+}
+
+async function failChat(
+  session: Session,
+  onEvent: RunTurnInput["onEvent"],
+  finish: FinishFn,
+  err: unknown,
+  kind = "chat",
+): Promise<RunTurnResult> {
+  appendEvent(session, onEvent, {
+    type: "model/error",
+    kind,
+    message: errorMessage(err),
+  });
+  return await finish("failed");
+}
+
+async function executeToolCall(
+  input: RunStepsInput,
+  call: ChatChunkToolCall,
+  stepWait: { value: boolean },
+): Promise<RunTurnResult | undefined> {
+  const { session, turnId, workspaceRoot, channel, signal, onEvent } = input;
+  const tools = input.ctx.require<ToolRegistry>("tools");
+
+  appendEvent(session, onEvent, {
+    type: "tool/call",
+    callId: call.id,
+    name: call.name,
+    args: call.args,
+  });
+
+  let resultText: string;
+  try {
+    resultText = await tools.execute(call.name, parseToolArgs(call.args), {
+      workspaceRoot,
+      signal,
+      channel,
+    });
+  } catch (err) {
+    if (signal.aborted) {
+      return { turnId, status: "cancelled" } as RunTurnResult;
+    }
+    if (isGuardAskError(err) && (channel === "host" || channel === "acp")) {
+      const batch = input.pendingToolCalls ?? [];
+      const idx = batch.findIndex((c) => c.id === call.id);
+      const remainingCalls =
+        idx >= 0
+          ? batch.slice(idx + 1).map((c) => ({
+              id: c.id,
+              name: c.name,
+              args: c.args,
+            }))
+          : [];
+      appendEvent(session, onEvent, {
+        type: "guard/decision",
+        tool: call.name,
+        decision: "ask",
+      });
+      appendEvent(session, onEvent, {
+        type: "guard/ask",
+        turnId,
+        callId: call.id,
+        tool: call.name,
+        remainingCalls,
+      });
+      return { turnId, status: "awaiting_action" };
+    }
+    resultText = err instanceof Error ? err.message : String(err);
+  }
+
+  if (!resultText.startsWith("guard denied:")) {
+    await maybeAppendGuardSteward(
+      input.ctx,
+      session,
+      onEvent,
+      call.id,
+      call.name,
+      call.args,
+      resultText,
+      workspaceRoot,
+      channel,
+      signal,
+    );
+  }
+
+  appendEvent(session, onEvent, {
+    type: "tool/result",
+    callId: call.id,
+    name: call.name,
+    text: resultText,
+  });
+
+  if (call.name === "a2ui_emit") {
+    let parsed: { status?: string; emitId?: string; wait?: boolean; surfaceId?: string };
+    try {
+      parsed = JSON.parse(resultText) as typeof parsed;
+    } catch {
+      parsed = {};
+    }
+    const a2ui = input.ctx.get<A2uiLoopService>("a2ui");
+    if (parsed.status === "ok" && typeof parsed.emitId === "string" && a2ui) {
+      const snap = a2ui.takeEmit(parsed.emitId);
+      if (snap) {
+        appendEvent(session, onEvent, {
+          type: "a2ui/surface",
+          turnId,
+          surfaceId: snap.surfaceId,
+          messages: snap.messages,
+          wait: snap.wait,
+        });
+        if (snap.wait) {
+          stepWait.value = true;
+        }
+      }
+    }
+  }
+
+  if (signal.aborted) {
+    return { turnId, status: "cancelled" };
+  }
+  return undefined;
+}
+
+async function runStepIterations(input: RunStepsInput): Promise<RunTurnResult> {
   const models = input.ctx.require<ModelRegistry>("models");
   const tools = input.ctx.require<ToolRegistry>("tools");
   const {
@@ -131,27 +379,31 @@ async function runSteps(input: RunStepsInput): Promise<RunTurnResult> {
     onEvent,
   } = input;
 
-  const finish = (status: TurnEndStatus): RunTurnResult => {
+  const finish = async (status: TurnEndStatus): Promise<RunTurnResult> => {
     appendEvent(session, onEvent, { type: "turn/end", turnId, status });
+    await maybeDeliver(input.ctx, channel, session, turnId, signal);
     return { turnId, status };
   };
 
   for (let step = 0; step < MAX_STEPS; step++) {
     if (signal.aborted) {
-      return finish("cancelled");
+      return await finish("cancelled");
     }
 
-    let chat;
+    let chatProvider;
+    let modelKind: "chat" | "omni" = "chat";
     try {
-      chat = models.resolveChat();
+      const resolved = resolveConversationProvider(models);
+      chatProvider = resolved.provider;
+      modelKind = resolved.kind;
     } catch (err) {
       if (signal.aborted) {
-        return finish("cancelled");
+        return await finish("cancelled");
       }
       if (err instanceof ModelKindMissingError) {
-        return failChat(session, onEvent, finish, err, err.kind);
+        return await failChat(session, onEvent, finish, err, err.kind);
       }
-      return failChat(session, onEvent, finish, err);
+      return await failChat(session, onEvent, finish, err);
     }
 
     const messages = [
@@ -163,12 +415,12 @@ async function runSteps(input: RunStepsInput): Promise<RunTurnResult> {
     const toolCalls: ChatChunkToolCall[] = [];
 
     try {
-      for await (const chunk of chat.stream(
+      for await (const chunk of chatProvider.stream(
         { messages, tools: tools.schemas() },
         signal,
       )) {
         if (signal.aborted) {
-          return finish("cancelled");
+          return await finish("cancelled");
         }
 
         switch (chunk.type) {
@@ -185,21 +437,21 @@ async function runSteps(input: RunStepsInput): Promise<RunTurnResult> {
           case "error":
             appendEvent(session, onEvent, {
               type: "model/error",
-              kind: "chat",
+              kind: modelKind,
               message: chunk.message,
             });
-            return finish("failed");
+            return await finish("failed");
         }
       }
     } catch (err) {
       if (signal.aborted) {
-        return finish("cancelled");
+        return await finish("cancelled");
       }
-      return failChat(session, onEvent, finish, err);
+      return await failChat(session, onEvent, finish, err);
     }
 
     if (signal.aborted) {
-      return finish("cancelled");
+      return await finish("cancelled");
     }
 
     if (toolCalls.length === 0) {
@@ -207,68 +459,28 @@ async function runSteps(input: RunStepsInput): Promise<RunTurnResult> {
         type: "assistant/message",
         text: accumulatedText,
       });
-      return finish("ok");
+      return await finish("ok");
     }
 
-    let stepWait = false;
+    let stepWait = { value: false };
+    const batchInput = { ...input, pendingToolCalls: toolCalls };
     for (const call of toolCalls) {
-      appendEvent(session, onEvent, {
-        type: "tool/call",
-        callId: call.id,
-        name: call.name,
-        args: call.args,
-      });
-
-      let resultText: string;
-      try {
-        resultText = await tools.execute(
-          call.name,
-          parseToolArgs(call.args),
-          { workspaceRoot, signal, channel },
-        );
-      } catch (err) {
-        if (signal.aborted) {
-          return finish("cancelled");
+      const paused = await executeToolCall(batchInput, call, stepWait);
+      if (paused !== undefined) {
+        if (paused.status === "awaiting_action" && accumulatedText.length > 0) {
+          appendEvent(session, onEvent, {
+            type: "assistant/message",
+            text: accumulatedText,
+          });
         }
-        resultText = err instanceof Error ? err.message : String(err);
-      }
-
-      appendEvent(session, onEvent, {
-        type: "tool/result",
-        callId: call.id,
-        name: call.name,
-        text: resultText,
-      });
-
-      if (call.name === "a2ui_emit") {
-        let parsed: { status?: string; emitId?: string; wait?: boolean; surfaceId?: string };
-        try {
-          parsed = JSON.parse(resultText) as typeof parsed;
-        } catch {
-          parsed = {};
+        if (paused.status === "cancelled") {
+          return await finish("cancelled");
         }
-        const a2ui = input.ctx.get<A2uiLoopService>("a2ui");
-        if (parsed.status === "ok" && typeof parsed.emitId === "string" && a2ui) {
-          const snap = a2ui.takeEmit(parsed.emitId);
-          if (snap) {
-            appendEvent(session, onEvent, {
-              type: "a2ui/surface",
-              turnId,
-              surfaceId: snap.surfaceId,
-              messages: snap.messages,
-              wait: snap.wait,
-            });
-            if (snap.wait) stepWait = true;
-          }
-        }
-      }
-
-      if (signal.aborted) {
-        return finish("cancelled");
+        return paused;
       }
     }
 
-    if (channel === "host" && stepWait) {
+    if (channel === "host" && stepWait.value) {
       if (accumulatedText.length > 0) {
         appendEvent(session, onEvent, { type: "assistant/message", text: accumulatedText });
       }
@@ -276,7 +488,7 @@ async function runSteps(input: RunStepsInput): Promise<RunTurnResult> {
     }
   }
 
-  return finish("failed");
+  return await finish("failed");
 }
 
 export async function runTurn(input: RunTurnInput): Promise<RunTurnResult> {
@@ -285,14 +497,106 @@ export async function runTurn(input: RunTurnInput): Promise<RunTurnResult> {
   const {
     session,
     text,
+    images,
     onEvent,
   } = input;
 
   const turnId = crypto.randomUUID();
   appendEvent(session, onEvent, { type: "turn/start", turnId });
-  appendEvent(session, onEvent, { type: "user/message", text });
+  if (images !== undefined && images.length > 0) {
+    appendEvent(session, onEvent, { type: "user/message", text, images });
+  } else {
+    appendEvent(session, onEvent, { type: "user/message", text });
+  }
 
-  return runSteps({ ...input, turnId });
+  return runStepIterations({ ...input, turnId });
+}
+
+export async function continueGuardTurn(
+  input: ContinueGuardTurnInput,
+): Promise<RunTurnResult> {
+  const { session, turnId, callId, decision, onEvent } = input;
+
+  if (lastTurnStartId(session) !== turnId) {
+    throw new Error("not waiting");
+  }
+
+  const ask = lastGuardAsk(session, turnId);
+  if (ask === undefined || ask.callId !== callId) {
+    throw new Error("not waiting");
+  }
+
+  const tools = input.ctx.require<ToolRegistry>("tools");
+  const call = toolCallById(session, callId);
+  if (call === undefined) {
+    throw new Error("not waiting");
+  }
+
+  appendEvent(session, onEvent, {
+    type: "guard/response",
+    turnId,
+    callId,
+    decision,
+  });
+
+  let resultText: string;
+  if (decision === "deny") {
+    resultText = `guard denied: ${call.name}`;
+  } else {
+    resultText = await tools.execute(call.name, parseToolArgs(call.args), {
+      workspaceRoot: input.workspaceRoot,
+      signal: input.signal,
+      channel: input.channel,
+      guardBypass: true,
+    });
+    await maybeAppendGuardSteward(
+      input.ctx,
+      session,
+      onEvent,
+      callId,
+      call.name,
+      call.args,
+      resultText,
+      input.workspaceRoot,
+      input.channel,
+      input.signal,
+    );
+  }
+
+  appendEvent(session, onEvent, {
+    type: "tool/result",
+    callId,
+    name: call.name,
+    text: resultText,
+  });
+
+  const stepWait = { value: false };
+  for (const remaining of ask.remainingCalls) {
+    const paused = await executeToolCall(
+      { ...input, turnId },
+      {
+        type: "tool_call",
+        id: remaining.id,
+        name: remaining.name,
+        args: remaining.args,
+      },
+      stepWait,
+    );
+    if (paused !== undefined) {
+      if (paused.status === "cancelled") {
+        appendEvent(session, onEvent, { type: "turn/end", turnId, status: "cancelled" });
+        await maybeDeliver(input.ctx, input.channel, session, turnId, input.signal);
+        return paused;
+      }
+      return paused;
+    }
+  }
+
+  if (input.channel === "host" && stepWait.value) {
+    return { turnId, status: "awaiting_action" };
+  }
+
+  return runStepIterations({ ...input, turnId });
 }
 
 export async function continueTurn(input: ContinueTurnInput): Promise<RunTurnResult> {
@@ -322,5 +626,5 @@ export async function continueTurn(input: ContinueTurnInput): Promise<RunTurnRes
     ...(action.data !== undefined ? { data: action.data } : {}),
   });
 
-  return runSteps({ ...input, turnId });
+  return runStepIterations({ ...input, turnId });
 }

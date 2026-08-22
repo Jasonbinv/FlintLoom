@@ -1,6 +1,8 @@
 export {
   runTurn,
   continueTurn,
+  continueGuardTurn,
+  type ContinueGuardTurnInput,
   type ContinueTurnInput,
   type LoopService,
   type RunTurnInput,

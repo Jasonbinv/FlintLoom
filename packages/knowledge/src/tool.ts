@@ -1,3 +1,4 @@
+import { ModelKindMissingError, type ModelRegistry } from "@flintloom/models";
 import type { ToolDefinition } from "@flintloom/tools";
 import type { KnowledgeService } from "./types.ts";
 
@@ -12,7 +13,10 @@ function qArg(args: Record<string, unknown>): string | undefined {
   return trimmed;
 }
 
-export function createKnowledgeSearchTool(kb: KnowledgeService): ToolDefinition {
+export function createKnowledgeSearchTool(
+  kb: KnowledgeService,
+  models: ModelRegistry,
+): ToolDefinition {
   return {
     name: "knowledge_search",
     description: "Search the local knowledge base by query text.",
@@ -29,7 +33,34 @@ export function createKnowledgeSearchTool(kb: KnowledgeService): ToolDefinition 
       if (trimmed === undefined) {
         return "failed: missing q";
       }
-      const hits = kb.search(trimmed).map(({ workspaceRoot: _workspaceRoot, ...rest }) => rest);
+      const hits = (
+        await kb.search(trimmed, {
+          signal: exec.signal,
+          embedQuery: async (text, signal) => {
+            try {
+              const embedding = models.resolveEmbedding();
+              const vectors = await embedding.embed({ texts: [text] }, signal);
+              return vectors[0];
+            } catch (err) {
+              if (err instanceof ModelKindMissingError) {
+                return undefined;
+              }
+              throw err;
+            }
+          },
+          rerank: async (query, documents, signal) => {
+            try {
+              const rerank = models.resolveRerank();
+              return await rerank.rerank({ query, documents }, signal);
+            } catch (err) {
+              if (err instanceof ModelKindMissingError) {
+                return undefined;
+              }
+              throw err;
+            }
+          },
+        })
+      ).map(({ workspaceRoot: _workspaceRoot, ...rest }) => rest);
       return JSON.stringify({ q: trimmed, hits });
     },
   };
