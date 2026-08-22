@@ -7,6 +7,8 @@ import {
   createDashscopeTts,
   dashscopeOrigin,
 } from "./dashscope.ts";
+import { createOpenAiCompatEmbedding } from "./embeddings.ts";
+import { createDashscopeRerank } from "./rerank.ts";
 
 const plugin: FlintPlugin = {
   name: "@flintloom/models-media",
@@ -31,6 +33,12 @@ const plugin: FlintPlugin = {
       typeof config.asrModel === "string" ? config.asrModel : "paraformer-v2";
     const t2vModel =
       typeof config.t2vModel === "string" ? config.t2vModel : "wan2.1-t2v-turbo";
+    const embeddingModel =
+      typeof config.embeddingModel === "string"
+        ? config.embeddingModel
+        : "text-embedding-v3";
+    const rerankModel =
+      typeof config.rerankModel === "string" ? config.rerankModel : "gte-rerank-v2";
 
     ctx.effect(
       models.registerT2i("default", createDashscopeT2i({ ...mediaOpts, model: t2iModel })),
@@ -58,6 +66,26 @@ const plugin: FlintPlugin = {
       models.registerT2v("default", createDashscopeT2v({ ...mediaOpts, model: t2vModel })),
     );
     models.setDefault("t2v", "default");
+
+    ctx.effect(
+      models.registerEmbedding(
+        "default",
+        createOpenAiCompatEmbedding({
+          baseUrl,
+          apiKey,
+          model: embeddingModel,
+        }),
+      ),
+    );
+    models.setDefault("embedding", "default");
+
+    ctx.effect(
+      models.registerRerank(
+        "default",
+        createDashscopeRerank({ ...mediaOpts, model: rerankModel }),
+      ),
+    );
+    models.setDefault("rerank", "default");
   },
 };
 
@@ -67,5 +95,8 @@ export {
   createDashscopeT2v,
   createDashscopeTts,
   dashscopeOrigin,
+  dashscopeJson,
 } from "./dashscope.ts";
+export { createOpenAiCompatEmbedding } from "./embeddings.ts";
+export { createDashscopeRerank } from "./rerank.ts";
 export default plugin;

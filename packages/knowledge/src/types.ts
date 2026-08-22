@@ -27,9 +27,23 @@ export type KnowledgeIngestInput = {
   failReason?: string;
 };
 
+export type KnowledgeSearchOptions = {
+  signal?: AbortSignal;
+  embedQuery?: (text: string, signal: AbortSignal) => Promise<number[] | undefined>;
+  rerank?: (
+    query: string,
+    documents: string[],
+    signal: AbortSignal,
+  ) => Promise<number[] | undefined>;
+};
+
 export type KnowledgeService = {
-  ingest(input: KnowledgeIngestInput): KnowledgeRecord;
-  search(q: string): KnowledgeHit[];
+  ingest(input: KnowledgeIngestInput): Promise<KnowledgeRecord>;
+  search(q: string, opts?: KnowledgeSearchOptions): Promise<KnowledgeHit[]>;
   list(): KnowledgeRecord[];
   close(): void;
+};
+
+export type KnowledgeStoreOptions = {
+  embedText?: (text: string, signal: AbortSignal) => Promise<number[] | undefined>;
 };

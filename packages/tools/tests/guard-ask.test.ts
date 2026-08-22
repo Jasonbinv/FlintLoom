@@ -38,6 +38,39 @@ describe("guard ask in tools plugin", () => {
     ).rejects.toThrow(GuardAskError);
   });
 
+  it("throws GuardAskError on acp channel when guard asks", async () => {
+    const ctx = new Context();
+    const models = new ModelRegistry();
+    models.registerGuard("g", {
+      async gate() {
+        return "ask";
+      },
+    });
+    models.setDefault("guard", "g");
+    ctx.provide("models", models);
+    await ctx.plugin(toolsPlugin);
+    const tools = ctx.require<ToolRegistry>("tools");
+    tools.register({
+      name: "touch",
+      description: "touch",
+      parameters: { type: "object", properties: {} },
+      async execute() {
+        return "ok";
+      },
+    });
+    await expect(
+      tools.execute(
+        "touch",
+        {},
+        {
+          workspaceRoot: "/tmp",
+          signal: new AbortController().signal,
+          channel: "acp",
+        },
+      ),
+    ).rejects.toThrow(GuardAskError);
+  });
+
   it("denies ask on cli channel", async () => {
     const ctx = new Context();
     const models = new ModelRegistry();

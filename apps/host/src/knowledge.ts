@@ -108,14 +108,15 @@ export async function handleKnowledgeRequest(
     return true;
   }
 
-  if (req.method === "GET" && opts.pathname === "/v1/knowledge/search") {
+    if (req.method === "GET" && opts.pathname === "/v1/knowledge/search") {
     const q = opts.url.searchParams.get("q")?.trim() ?? "";
     if (q.length === 0 || q.length > 200) {
       send(res, 400);
       return true;
     }
+    const hits = await kb.search(q);
     sendJson(res, 200, {
-      hits: kb.search(q).map((hit) => toPublicHit(hit, opts.workspaceRoot)),
+      hits: hits.map((hit) => toPublicHit(hit, opts.workspaceRoot)),
     });
     return true;
   }

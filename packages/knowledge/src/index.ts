@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Context, FlintPlugin } from "@flintloom/kernel";
+import { ModelKindMissingError, type ModelRegistry } from "@flintloom/models";
 import type { ToolRegistry } from "@flintloom/tools";
 import { openKnowledge } from "./store.ts";
 import { createKnowledgeSearchTool } from "./tool.ts";
@@ -15,12 +16,31 @@ const plugin: FlintPlugin = {
   name: "@flintloom/knowledge",
   apply(ctx: Context, config: Record<string, unknown>) {
     const tools = ctx.require<ToolRegistry>("tools");
-    const kb = openKnowledge(dbPathFromConfig(config));
+    const models = ctx.get<ModelRegistry>("models");
+    const kb = openKnowledge(dbPathFromConfig(config), {
+      embedText:
+        models === undefined
+          ? undefined
+          : async (text, signal) => {
+              try {
+                const embedding = models.resolveEmbedding();
+                const vectors = await embedding.embed({ texts: [text] }, signal);
+                return vectors[0];
+              } catch (err) {
+                if (err instanceof ModelKindMissingError) {
+                  return undefined;
+                }
+                throw err;
+              }
+            },
+    });
     ctx.provide("knowledge", kb);
     ctx.effect(() => {
       kb.close();
     });
-    ctx.effect(tools.register(createKnowledgeSearchTool(kb)));
+    if (models !== undefined) {
+      ctx.effect(tools.register(createKnowledgeSearchTool(kb, models)));
+    }
   },
 };
 

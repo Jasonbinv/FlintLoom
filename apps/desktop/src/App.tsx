@@ -5,6 +5,7 @@ import { FilePane } from "./FilePane.tsx";
 import { ModelsPane } from "./ModelsPane.tsx";
 import { PluginsPane } from "./PluginsPane.tsx";
 import { VoiceInput } from "./VoiceInput.tsx";
+import { TtsPlay } from "./TtsPlay.tsx";
 import { insertPath } from "./files.ts";
 import type { WorkbenchEvent } from "./types.ts";
 import "./app.css";
@@ -122,6 +123,7 @@ export function App() {
   const [hostDown, setHostDown] = useState(false);
   const [chatConfigured, setChatConfigured] = useState<boolean | undefined>();
   const [asrConfigured, setAsrConfigured] = useState(false);
+  const [ttsConfigured, setTtsConfigured] = useState(false);
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
   const [draft, setDraft] = useState("");
   const [input, setInput] = useState("");
@@ -191,6 +193,8 @@ export function App() {
         setChatConfigured(chat?.configured ?? false);
         const asr = models.find((m) => m.kind === "asr");
         setAsrConfigured(asr?.configured ?? false);
+        const tts = models.find((m) => m.kind === "tts");
+        setTtsConfigured(tts?.configured ?? false);
         setHostDown(false);
       })
       .catch(() => {
@@ -321,7 +325,12 @@ export function App() {
             {bubbles.map((bubble) => (
               <div key={bubble.id} className={`bubble ${bubble.kind}`}>
                 {bubble.kind === "user" && bubble.text}
-                {bubble.kind === "assistant" && bubble.text}
+                {bubble.kind === "assistant" && (
+                  <div className="assistant-row">
+                    <span>{bubble.text}</span>
+                    {ttsConfigured ? <TtsPlay text={bubble.text} /> : null}
+                  </div>
+                )}
                 {bubble.kind === "error" && bubble.message}
                 {bubble.kind === "tool-call" &&
                   `${bubble.name} ${bubble.argsText}`}

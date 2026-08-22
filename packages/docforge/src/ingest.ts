@@ -68,7 +68,7 @@ export async function ingestWorkspaceFile(
   const parsed = await parse(absPath);
   if (parsed.startsWith("failed:")) {
     const failReason = parsed.slice("failed: ".length);
-    const record = kb.ingest({
+    const record = await kb.ingest({
       workspaceRoot: realRoot,
       relPath,
       title: basename(relPath),
@@ -79,7 +79,7 @@ export async function ingestWorkspaceFile(
     return { kind: "written", record };
   }
 
-  const record = kb.ingest({
+  const record = await kb.ingest({
     workspaceRoot: realRoot,
     relPath,
     title: titleFromBody(parsed, relPath),

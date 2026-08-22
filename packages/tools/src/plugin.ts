@@ -32,7 +32,7 @@ const plugin: FlintPlugin = {
         return `guard denied: ${p.tool}`;
       }
       if (decision === "ask") {
-        if (p.channel === "host") {
+        if (p.channel === "host" || p.channel === "acp") {
           throw new GuardAskError(p.tool);
         }
         return `guard denied: ${p.tool}`;

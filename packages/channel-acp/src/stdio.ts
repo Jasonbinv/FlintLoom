@@ -2,6 +2,8 @@ import { createInterface } from "node:readline";
 import type { Context } from "@flintloom/kernel";
 import type { LoopService } from "@flintloom/loop";
 import type { SessionEvent, SessionStore } from "@flintloom/session";
+import { AcpClientRpc } from "./client-rpc.ts";
+import { pendingGuardAsk, resolveAcpGuardAsks } from "./guard.ts";
 import { emitAcpSessionEvent } from "./updates.ts";
 
 type JsonRpcRequest = {
@@ -9,11 +11,15 @@ type JsonRpcRequest = {
   id?: string | number;
   method?: string;
   params?: unknown;
+  result?: unknown;
+  error?: { message?: string };
 };
 
 type AcpState = {
   controllers: Map<string, AbortController>;
   promptControllers: Map<string, AbortController>;
+  clientRpc: AcpClientRpc;
+  writeStdout: (msg: unknown) => void;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -34,14 +40,6 @@ function promptText(prompt: unknown): string {
     }
   }
   return parts.join("\n").trim();
-}
-
-function writeStdout(msg: unknown): void {
-  process.stdout.write(`${JSON.stringify(msg)}\n`);
-}
-
-function writeNotification(method: string, params: unknown): void {
-  writeStdout({ jsonrpc: "2.0", method, params });
 }
 
 export async function handleAcpRequest(
@@ -90,6 +88,7 @@ export async function handleAcpRequest(
     if (ac !== undefined) {
       ac.abort();
     }
+    state.clientRpc.cancelAll();
     return undefined;
   }
 
@@ -109,7 +108,7 @@ export async function handleAcpRequest(
     const ac = new AbortController();
     state.promptControllers.set(sessionId, ac);
     try {
-      const result = await loop.runTurn({
+      let result = await loop.runTurn({
         ctx,
         session,
         text,
@@ -117,9 +116,33 @@ export async function handleAcpRequest(
         channel: "acp",
         signal: ac.signal,
         onEvent(event: SessionEvent) {
-          emitAcpSessionEvent(sessionId, event, writeNotification);
+          emitAcpSessionEvent(sessionId, event, (m, p) =>
+            state.writeStdout({ jsonrpc: "2.0", method: m, params: p }),
+          );
         },
       });
+      if (
+        result.status === "awaiting_action" &&
+        pendingGuardAsk(session, result.turnId) !== undefined
+      ) {
+        const onEvent = (event: SessionEvent) => {
+          emitAcpSessionEvent(sessionId, event, (m, p) =>
+            state.writeStdout({ jsonrpc: "2.0", method: m, params: p }),
+          );
+        };
+        result = await resolveAcpGuardAsks({
+          session,
+          sessionId,
+          turnId: result.turnId,
+          loop,
+          ctx,
+          workspaceRoot,
+          signal: ac.signal,
+          clientRpc: state.clientRpc,
+          writeStdout: state.writeStdout,
+          onEvent,
+        });
+      }
       const stopReason =
         result.status === "cancelled"
           ? "cancelled"
@@ -136,9 +159,15 @@ export async function handleAcpRequest(
 }
 
 export async function runAcpStdio(ctx: Context, workspaceRoot: string): Promise<void> {
+  const clientRpc = new AcpClientRpc();
+  const writeStdout = (msg: unknown): void => {
+    process.stdout.write(`${JSON.stringify(msg)}\n`);
+  };
   const state: AcpState = {
     controllers: new Map(),
     promptControllers: new Map(),
+    clientRpc,
+    writeStdout,
   };
   const reader = createInterface({ input: process.stdin, crlfDelay: Infinity });
   for await (const line of reader) {
@@ -146,15 +175,21 @@ export async function runAcpStdio(ctx: Context, workspaceRoot: string): Promise<
     if (trimmed.length === 0) {
       continue;
     }
-    let req: JsonRpcRequest;
+    let msg: JsonRpcRequest;
     try {
-      req = JSON.parse(trimmed) as JsonRpcRequest;
+      msg = JSON.parse(trimmed) as JsonRpcRequest;
     } catch {
       continue;
     }
-    if (req.id === undefined) {
+    if (msg.method === undefined) {
+      if (clientRpc.handleResponse(msg)) {
+        continue;
+      }
+      continue;
+    }
+    if (msg.id === undefined) {
       try {
-        await handleAcpRequest(ctx, workspaceRoot, req, state);
+        await handleAcpRequest(ctx, workspaceRoot, msg, state);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         process.stderr.write(message + "\n");
@@ -162,13 +197,13 @@ export async function runAcpStdio(ctx: Context, workspaceRoot: string): Promise<
       continue;
     }
     try {
-      const result = await handleAcpRequest(ctx, workspaceRoot, req, state);
-      writeStdout({ jsonrpc: "2.0", id: req.id, result });
+      const result = await handleAcpRequest(ctx, workspaceRoot, msg, state);
+      writeStdout({ jsonrpc: "2.0", id: msg.id, result });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       writeStdout({
         jsonrpc: "2.0",
-        id: req.id,
+        id: msg.id,
         error: { code: -32603, message },
       });
     }

@@ -93,6 +93,17 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+function resolveConversationProvider(models: ModelRegistry): {
+  provider: import("@flintloom/models").ChatProvider;
+  kind: "chat" | "omni";
+} {
+  const omniConfigured = models.snapshot().some((row) => row.kind === "omni" && row.configured);
+  if (omniConfigured) {
+    return { provider: models.resolveOmni(), kind: "omni" };
+  }
+  return { provider: models.resolveChat(), kind: "chat" };
+}
+
 function lastTurnStartId(session: Session): string | undefined {
   const events = session.events();
   for (let i = events.length - 1; i >= 0; i--) {
@@ -222,7 +233,7 @@ async function executeToolCall(
     if (signal.aborted) {
       return { turnId, status: "cancelled" } as RunTurnResult;
     }
-    if (isGuardAskError(err) && channel === "host") {
+    if (isGuardAskError(err) && (channel === "host" || channel === "acp")) {
       const batch = input.pendingToolCalls ?? [];
       const idx = batch.findIndex((c) => c.id === call.id);
       const remainingCalls =
@@ -311,9 +322,12 @@ async function runStepIterations(input: RunStepsInput): Promise<RunTurnResult> {
       return await finish("cancelled");
     }
 
-    let chat;
+    let chatProvider;
+    let modelKind: "chat" | "omni" = "chat";
     try {
-      chat = models.resolveChat();
+      const resolved = resolveConversationProvider(models);
+      chatProvider = resolved.provider;
+      modelKind = resolved.kind;
     } catch (err) {
       if (signal.aborted) {
         return await finish("cancelled");
@@ -333,7 +347,7 @@ async function runStepIterations(input: RunStepsInput): Promise<RunTurnResult> {
     const toolCalls: ChatChunkToolCall[] = [];
 
     try {
-      for await (const chunk of chat.stream(
+      for await (const chunk of chatProvider.stream(
         { messages, tools: tools.schemas() },
         signal,
       )) {
@@ -355,7 +369,7 @@ async function runStepIterations(input: RunStepsInput): Promise<RunTurnResult> {
           case "error":
             appendEvent(session, onEvent, {
               type: "model/error",
-              kind: "chat",
+              kind: modelKind,
               message: chunk.message,
             });
             return await finish("failed");

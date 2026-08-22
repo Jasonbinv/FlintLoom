@@ -2,6 +2,8 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { Context } from "@flintloom/kernel";
+import modelsPlugin, { type ModelRegistry } from "@flintloom/models";
 import { openKnowledge } from "../src/store.ts";
 import { createKnowledgeSearchTool } from "../src/tool.ts";
 
@@ -13,16 +15,18 @@ describe("knowledge_search", () => {
   it("returns hits without the full body and rejects empty q", async () => {
     const dir = mkdtempSync(join(tmpdir(), "flintloom-kb-tool-"));
     const kb = openKnowledge(join(dir, "k.sqlite"));
-    // Plan used repeat(80) (~106 chars); makeSnippet limit is 240, so pad past it.
+    const ctx = new Context();
+    await ctx.plugin(modelsPlugin);
+    const models = ctx.require<ModelRegistry>("models");
     const body = `hello ${"x".repeat(300)} unique-search-token`;
-    kb.ingest({
+    await kb.ingest({
       workspaceRoot: dir,
       relPath: "a.md",
       title: "A",
       status: "ok",
       body,
     });
-    const tool = createKnowledgeSearchTool(kb);
+    const tool = createKnowledgeSearchTool(kb, models);
     const parsed = JSON.parse(
       await tool.execute({ q: "unique-search-token" }, exec(dir)),
     ) as { hits: { snippet: string }[] };

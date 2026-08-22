@@ -82,6 +82,23 @@ export interface T2vProvider {
   generate(input: T2vInput, signal: AbortSignal): Promise<MediaBytes>;
 }
 
+export interface EmbeddingInput {
+  texts: string[];
+}
+
+export interface EmbeddingProvider {
+  embed(input: EmbeddingInput, signal: AbortSignal): Promise<number[][]>;
+}
+
+export interface RerankInput {
+  query: string;
+  documents: string[];
+}
+
+export interface RerankProvider {
+  rerank(input: RerankInput, signal: AbortSignal): Promise<number[]>;
+}
+
 export type OmniProvider = ChatProvider;
 
 export class ModelRegistry {
@@ -110,6 +127,14 @@ export class ModelRegistry {
 
   registerT2v(id: string, provider: T2vProvider): Disposer {
     return this.#register("t2v", id, provider);
+  }
+
+  registerEmbedding(id: string, provider: EmbeddingProvider): Disposer {
+    return this.#register("embedding", id, provider);
+  }
+
+  registerRerank(id: string, provider: RerankProvider): Disposer {
+    return this.#register("rerank", id, provider);
   }
 
   registerOmni(id: string, provider: OmniProvider): Disposer {
@@ -146,6 +171,14 @@ export class ModelRegistry {
 
   resolveT2v(): T2vProvider {
     return this.#resolve("t2v");
+  }
+
+  resolveEmbedding(): EmbeddingProvider {
+    return this.#resolve("embedding");
+  }
+
+  resolveRerank(): RerankProvider {
+    return this.#resolve("rerank");
   }
 
   resolveOmni(): OmniProvider {

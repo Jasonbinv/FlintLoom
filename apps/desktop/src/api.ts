@@ -7,6 +7,24 @@ const UNREACHABLE: WorkbenchEvent = {
   message: "host unreachable",
 };
 
+export async function synthesizeSpeech(text: string, signal?: AbortSignal): Promise<Blob> {
+  const res = await fetch("/v1/tts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+    signal,
+  });
+  if (res.status === 503) {
+    throw new Error("tts not configured");
+  }
+  if (!res.ok) {
+    throw new Error("tts failed");
+  }
+  const mime = res.headers.get("Content-Type") ?? "audio/wav";
+  const bytes = await res.arrayBuffer();
+  return new Blob([bytes], { type: mime });
+}
+
 export async function transcribeAudio(blob: Blob, signal?: AbortSignal): Promise<string> {
   const res = await fetch("/v1/asr", {
     method: "POST",

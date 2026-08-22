@@ -110,10 +110,21 @@ describe("docforge plugin", () => {
   });
 
   it("apply without models throws models", () => {
-    const dbPath = join(mkdtempSync(join(tmpdir(), "flintloom-docforge-kb-")), "k.sqlite");
     const ctx = new Context();
     ctx.plugin(toolsPlugin);
-    ctx.plugin(knowledgePlugin, { dbPath });
+    ctx.provide("knowledge", {
+      ingest: async () => ({
+        id: 1,
+        path: "a",
+        title: "a",
+        status: "ok" as const,
+        ingestedAt: 0,
+        workspaceRoot: "/",
+      }),
+      search: async () => [],
+      list: () => [],
+      close: () => {},
+    });
     expect(() => ctx.plugin(plugin)).toThrow(/models/);
   });
 });

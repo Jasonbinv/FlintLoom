@@ -385,6 +385,18 @@ body,
   align-items: center;
 }
 
+.bubble.assistant .assistant-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.bubble.assistant .bubble-tts {
+  align-self: flex-start;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.85rem;
+}
+
 .composer {
   display: flex;
   gap: 0.6rem;

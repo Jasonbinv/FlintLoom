@@ -42,7 +42,29 @@
 - 默认间隔 15s、最长等待 10 分钟；`signal` 取消即中止
 - `SUCCEEDED` 后从 `output.video_url` 下载 MP4；`video_generate` 工具无需改动
 
+## 22. TTS 出站
+
+- Host：`POST /v1/tts` JSON `{ text }` → raw audio；未配 tts → 503
+- 桌面：助手气泡「朗读」按钮（`tts.configured`）
+- Telegram：`deliver` / `send` 在 TTS 已配置时优先 `sendVoice`，失败回退文本
+
+## 23. ACP `session/request_permission`
+
+- guard `ask` + `channel === "acp"`：Agent 向 Client 发 `session/request_permission`
+- `allow-once` / `reject-once` → `continueGuardTurn`；`cancelled` → 取消 turn
+- stdio 双向 JSON-RPC：`AcpClientRpc` 等待 Client 响应
+
+## 24. 知识库 embedding / rerank
+
+- `ModelRegistry`：`embedding` / `rerank` provider（DashScope 兼容 embeddings + 原生 rerank）
+- 入库时写入向量；检索优先向量相似度，未配则 FTS/LIKE
+- 可选 rerank 对 top 命中重排；`knowledge_search` 接口形状不变
+
+## 25. omni 消费者
+
+- `models-chat` 同时登记 `omni`（默认同 chat 模型或 `omniModel`）
+- loop `runStepIterations`：omni 已配置时 `resolveOmni()` 替代 `resolveChat()`
+
 ## 非目标
 
-- ACP v2、Streamable HTTP、fs/terminal 客户端能力、permission 弹窗
-- omni 消费者
+- ACP v2、Streamable HTTP、fs/terminal 客户端能力

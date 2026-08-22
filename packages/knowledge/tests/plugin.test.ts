@@ -20,7 +20,7 @@ describe("knowledge plugin", () => {
     const kb = ctx.require<KnowledgeService>("knowledge");
     stop();
     expect(tools.schemas().map((s) => s.name)).not.toContain("knowledge_search");
-    expect(() =>
+    await expect(
       kb.ingest({
         workspaceRoot: dbPath,
         relPath: "a.md",
@@ -28,6 +28,6 @@ describe("knowledge plugin", () => {
         status: "ok",
         body: "hi",
       }),
-    ).toThrow();
+    ).rejects.toThrow();
   });
 });

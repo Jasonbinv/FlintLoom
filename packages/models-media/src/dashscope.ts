@@ -118,7 +118,7 @@ async function pollDashscopeT2vTask(
   throw new Error("t2v poll timeout");
 }
 
-async function dashscopeJson(
+export async function dashscopeJson(
   opts: DashscopeMediaOptions,
   path: string,
   body: unknown,

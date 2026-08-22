@@ -26,5 +26,9 @@ describe("models-chat plugin", () => {
       ctx.require<ModelRegistry>("models").snapshot().find((r) => r.kind === "chat")
         ?.configured,
     ).toBe(true);
+    expect(
+      ctx.require<ModelRegistry>("models").snapshot().find((r) => r.kind === "omni")
+        ?.configured,
+    ).toBe(true);
   });
 });

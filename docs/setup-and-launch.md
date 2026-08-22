@@ -224,6 +224,8 @@ FlintLoom 作为 ACP Agent 通过 stdin/stdout 提供 JSON-RPC；`assistant/chun
 
 在 `.env` 中配置 DashScope ASR（与 chat 共用 `FLINTLOOM_API_KEY`）后，工作台 composer 会出现「语音」按钮：浏览器录音 → Host `POST /v1/asr` → 转写文本填入输入框。Telegram 语音消息在 ASR 已配置时会自动转写并入站。
 
+配置 TTS 后，助手回复气泡会出现「朗读」按钮；Telegram 出站优先发送语音消息。
+
 ---
 
 ## 10. 端口与探测逻辑

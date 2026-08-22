@@ -17,14 +17,14 @@ const plugin: FlintPlugin = {
         : "https://api.deepseek.com/v1";
     const model =
       typeof config.model === "string" ? config.model : "deepseek-chat";
+    const omniModel =
+      typeof config.omniModel === "string" ? config.omniModel : model;
     const models = ctx.require<ModelRegistry>("models");
-    ctx.effect(
-      models.registerChat(
-        "default",
-        createOpenAiCompatChat({ baseUrl, apiKey, model }),
-      ),
-    );
+    const chat = createOpenAiCompatChat({ baseUrl, apiKey, model });
+    ctx.effect(models.registerChat("default", chat));
     models.setDefault("chat", "default");
+    ctx.effect(models.registerOmni("default", createOpenAiCompatChat({ baseUrl, apiKey, model: omniModel })));
+    models.setDefault("omni", "default");
   },
 };
 

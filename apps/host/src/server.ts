@@ -17,6 +17,7 @@ import {
 } from "./files.ts";
 import { handleKnowledgeRequest } from "./knowledge.ts";
 import { ASR_MAX_BYTES, readBodyBytes, transcribeAudio } from "./asr.ts";
+import { synthesizeSpeech } from "./tts.ts";
 import { loadOrCreateToken, readCredentials } from "./token.ts";
 
 export type PluginSnapshot = {
@@ -450,6 +451,45 @@ async function handleRequest(
     } catch (err) {
       if (err instanceof ModelKindMissingError) {
         sendJson(res, 503, { error: "unconfigured asr" });
+        return;
+      }
+      send(res, 500);
+    }
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/v1/tts") {
+    const raw = await readBody(req);
+    let text: string | undefined;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (
+        parsed !== null &&
+        typeof parsed === "object" &&
+        "text" in parsed &&
+        typeof (parsed as { text: unknown }).text === "string"
+      ) {
+        text = (parsed as { text: string }).text;
+      }
+    } catch {
+      text = undefined;
+    }
+    if (text === undefined || text.trim().length === 0) {
+      send(res, 400);
+      return;
+    }
+    try {
+      const media = await synthesizeSpeech(
+        opts.runtime.ctx,
+        text,
+        new AbortController().signal,
+      );
+      res.statusCode = 200;
+      res.setHeader("Content-Type", media.mimeType);
+      res.end(Buffer.from(media.bytes));
+    } catch (err) {
+      if (err instanceof ModelKindMissingError) {
+        sendJson(res, 503, { error: "unconfigured tts" });
         return;
       }
       send(res, 500);

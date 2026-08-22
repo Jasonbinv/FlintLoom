@@ -7,7 +7,18 @@ import modelsPlugin, {
 } from "@flintloom/models";
 import sessionPlugin from "@flintloom/session";
 import toolsPlugin from "@flintloom/tools";
+import { AcpClientRpc } from "../src/client-rpc.ts";
 import { handleAcpRequest } from "../src/stdio.ts";
+
+function acpState() {
+  const clientRpc = new AcpClientRpc();
+  return {
+    controllers: new Map<string, AbortController>(),
+    promptControllers: new Map<string, AbortController>(),
+    clientRpc,
+    writeStdout: () => {},
+  };
+}
 
 describe("ACP stdio handler", () => {
   it("initialize returns protocol version", async () => {
@@ -16,7 +27,7 @@ describe("ACP stdio handler", () => {
       ctx,
       process.cwd(),
       { jsonrpc: "2.0", id: 0, method: "initialize", params: {} },
-      { controllers: new Map(), promptControllers: new Map() },
+      acpState(),
     );
     expect(result).toMatchObject({ protocolVersion: 1 });
   });
@@ -35,11 +46,12 @@ describe("ACP stdio handler", () => {
     ctx.require<ModelRegistry>("models").registerChat("fake", fakeChat);
     ctx.require<ModelRegistry>("models").setDefault("chat", "fake");
 
+    const state = acpState();
     const newSession = await handleAcpRequest(
       ctx,
       process.cwd(),
       { jsonrpc: "2.0", id: 1, method: "session/new", params: {} },
-      { controllers: new Map(), promptControllers: new Map() },
+      state,
     ) as { sessionId: string };
 
     const result = await handleAcpRequest(
@@ -54,7 +66,7 @@ describe("ACP stdio handler", () => {
           prompt: [{ type: "text", text: "hello acp" }],
         },
       },
-      { controllers: new Map(), promptControllers: new Map() },
+      state,
     );
     expect(result).toEqual({ stopReason: "end_turn" });
     const loop = ctx.require<LoopService>("loop");

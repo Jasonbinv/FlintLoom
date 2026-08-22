@@ -19,6 +19,10 @@ export {
   type T2iProvider,
   type T2vInput,
   type T2vProvider,
+  type EmbeddingInput,
+  type EmbeddingProvider,
+  type RerankInput,
+  type RerankProvider,
   type TtsInput,
   type TtsProvider,
 } from "./registry.ts";
