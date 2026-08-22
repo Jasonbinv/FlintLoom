@@ -232,7 +232,7 @@ FlintLoom 作为 ACP Agent 通过 stdin/stdout 提供 JSON-RPC；`assistant/chun
 
 ### 9.4 Guard 与 ACP 多模态
 
-配置 API key 后 host 会自动 overlay `@flintloom/models-guard`（可用 `FLINTLOOM_GUARD_MODEL` 覆盖模型名）。工具执行成功后会写 `guard/steward` 事件（可疑结果带 summary），不自动禁用插件。工作台对可疑 steward 显示提示气泡；Models 页显示 guard 是否已配置。`flint acp` 会将可疑 steward 附在对应 `tool_call_update` 上转发给 Client。根 `flintloom.yml` 已挂 `channel-telegram`；在 `.env` 配置 `FLINTLOOM_TELEGRAM_TOKEN` 与 `FLINTLOOM_TELEGRAM_CHAT_IDS` 后，`pnpm desktop` / `startHost` 会自动轮询 Telegram。`flint acp` 在 omni/asr 已配置时 `initialize` 会声明 image/audio/embeddedContext 能力；`session/prompt` 可带 image 块或 audio 块（音频经 ASR 转写）。
+配置 API key 后 host 会自动 overlay `@flintloom/models-guard`（可用 `FLINTLOOM_GUARD_MODEL` 覆盖模型名）。工具执行成功后会写 `guard/steward` 事件（可疑结果带 summary），不自动禁用插件。工作台顶栏与 Models 页显示 `chat` / `guard` 是否已配置；Models 页另汇总 asr/tts/omni 等媒体 kind。`flint acp` 会将可疑 steward 附在对应 `tool_call_update` 上转发给 Client。根 `flintloom.yml` 已挂 `channel-telegram`；在 `.env` 配置 `FLINTLOOM_TELEGRAM_TOKEN` 与 `FLINTLOOM_TELEGRAM_CHAT_IDS` 后，`pnpm desktop` / `startHost` 会自动轮询 Telegram。Plugins 页说明 `mcp-servers.yml` 自动合并，MCP 行带 `mcp` 标签。`flint acp` 在 omni/asr 已配置时 `initialize` 会声明 image/audio/embeddedContext 能力；`session/prompt` 可带 image 块或 audio 块（音频经 ASR 转写）。
 
 ---
 

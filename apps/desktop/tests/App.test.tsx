@@ -1348,6 +1348,7 @@ describe("App", () => {
     expect(document.body.textContent).toContain("loop");
     expect(document.body.textContent).toContain("loaded");
     expect(document.querySelector(".plugin-tag.mcp")).toBeTruthy();
+    expect(document.body.textContent).toContain("mcp-servers.yml");
     expect(document.querySelector("textarea")).toBeNull();
   });
 
@@ -1394,7 +1395,7 @@ describe("App", () => {
       modelsTab.click();
     });
     await waitForText("guard 已配置");
-    expect(document.querySelector(".models-guard-status .status-pill.ok")).toBeTruthy();
+    expect(document.querySelector(".models-kind-status .status-pill.ok")).toBeTruthy();
   });
 
   it("shows guard not configured on Models page", async () => {
@@ -1416,7 +1417,32 @@ describe("App", () => {
       modelsTab.click();
     });
     await waitForText("guard 未配置");
-    expect(document.querySelector(".models-guard-status .status-pill.warn")).toBeTruthy();
+    expect(document.querySelector(".models-kind-status .status-pill.warn")).toBeTruthy();
+  });
+
+  it("shows media kind pills on Models page", async () => {
+    installFetch({
+      models: new Response(
+        JSON.stringify([
+          { kind: "chat", configured: true, defaultId: "default" },
+          { kind: "asr", configured: true, defaultId: "default" },
+          { kind: "tts", configured: false, defaultId: null },
+          { kind: "omni", configured: true, defaultId: "default" },
+        ]),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    const modelsTab = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "Models",
+    );
+    if (!modelsTab) throw new Error("no Models tab");
+    await act(async () => {
+      modelsTab.click();
+    });
+    await waitForText("asr 已配置");
+    expect(document.body.textContent).toContain("tts 未配置");
+    expect(document.body.textContent).toContain("omni 已配置");
   });
 
   it("renders a2ui DataTable and Chart without pausing turn", async () => {

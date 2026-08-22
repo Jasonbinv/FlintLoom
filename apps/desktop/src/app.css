@@ -86,7 +86,22 @@ body,
   margin-bottom: 1rem;
 }
 
-.models-guard-hint {
+.models-kind-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+}
+
+.models-media-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.models-guard-hint,
+.models-kind-hint {
   color: var(--text-muted);
   font-size: 0.85rem;
   line-height: 1.4;
@@ -94,6 +109,10 @@ body,
 
 .models-row-guard td {
   background: rgba(0, 0, 0, 0.03);
+}
+
+.models-row-media td {
+  background: rgba(0, 0, 0, 0.02);
 }
 
 .settings-table tr.models-row-guard td:first-child {

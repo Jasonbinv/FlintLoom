@@ -103,6 +103,12 @@
 - Chat 顶栏并列 `chat` / `guard` 配置 pill（与 Models 页一致）
 - Plugins 表：`name === "@flintloom/mcp"` 的行在 `id` 旁显示 `mcp` 标签（含 `mcp-servers.yml` 自动合并行）
 
+## 32. Models 媒体 kind + Plugins MCP 说明
+
+- Models 页：asr / tts / omni / t2i / t2v 配置 pill 与表格高亮
+- Plugins 页：`mcp-servers.yml` 自动合并说明文案
+- Host：`GET /v1/plugins` 列出 `mcp-servers.yml` 合并行
+
 ## 非目标
 
 - ACP v2、Streamable HTTP、fs/terminal 客户端能力
