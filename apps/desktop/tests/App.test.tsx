@@ -1350,6 +1350,50 @@ describe("App", () => {
     expect(document.querySelector(".settings-table")).toBeTruthy();
   });
 
+  it("shows guard configured status on Models page", async () => {
+    installFetch({
+      models: new Response(
+        JSON.stringify([
+          { kind: "chat", configured: true, defaultId: "default" },
+          { kind: "guard", configured: true, defaultId: "default" },
+        ]),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    const modelsTab = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "Models",
+    );
+    if (!modelsTab) throw new Error("no Models tab");
+    await act(async () => {
+      modelsTab.click();
+    });
+    await waitForText("guard 已配置");
+    expect(document.querySelector(".models-guard-status .status-pill.ok")).toBeTruthy();
+  });
+
+  it("shows guard not configured on Models page", async () => {
+    installFetch({
+      models: new Response(
+        JSON.stringify([
+          { kind: "chat", configured: true, defaultId: "default" },
+          { kind: "guard", configured: false, defaultId: null },
+        ]),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    const modelsTab = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "Models",
+    );
+    if (!modelsTab) throw new Error("no Models tab");
+    await act(async () => {
+      modelsTab.click();
+    });
+    await waitForText("guard 未配置");
+    expect(document.querySelector(".models-guard-status .status-pill.warn")).toBeTruthy();
+  });
+
   it("renders a2ui DataTable and Chart without pausing turn", async () => {
     const messages = [
       {

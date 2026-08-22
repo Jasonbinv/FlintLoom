@@ -73,6 +73,33 @@ body,
   color: var(--pill-down);
 }
 
+.status-pill.compact {
+  font-size: 0.7rem;
+  padding: 0.05rem 0.4rem;
+}
+
+.models-guard-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+}
+
+.models-guard-hint {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.models-row-guard td {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.settings-table tr.models-row-guard td:first-child {
+  font-weight: 600;
+}
+
 .topbar-nav {
   display: flex;
   gap: 0.25rem;

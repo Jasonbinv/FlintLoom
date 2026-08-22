@@ -81,6 +81,47 @@ function resolveChatApiKey(
   );
 }
 
+function parseTelegramChatIds(raw: string | undefined): number[] | undefined {
+  if (raw === undefined || raw.length === 0) {
+    return undefined;
+  }
+  const ids: number[] = [];
+  for (const part of raw.split(",")) {
+    const trimmed = part.trim();
+    if (trimmed.length === 0) {
+      continue;
+    }
+    const n = Number(trimmed);
+    if (!Number.isSafeInteger(n)) {
+      return undefined;
+    }
+    ids.push(n);
+  }
+  return ids.length > 0 ? ids : undefined;
+}
+
+function resolveTelegramOverlay(
+  fileEnv: Record<string, string>,
+): { token: string; allowedChatIds: number[] } | undefined {
+  const token = firstNonEmpty(
+    process.env.FLINTLOOM_TELEGRAM_TOKEN,
+    fileEnv.FLINTLOOM_TELEGRAM_TOKEN,
+  );
+  if (token === undefined) {
+    return undefined;
+  }
+  const allowedChatIds = parseTelegramChatIds(
+    firstNonEmpty(
+      process.env.FLINTLOOM_TELEGRAM_CHAT_IDS,
+      fileEnv.FLINTLOOM_TELEGRAM_CHAT_IDS,
+    ),
+  );
+  if (allowedChatIds === undefined) {
+    return undefined;
+  }
+  return { token, allowedChatIds };
+}
+
 export async function createRuntime(
   workspaceRoot: string,
   homeDir: string,
@@ -135,9 +176,11 @@ export async function createRuntime(
   };
 
   if (opts?.pollChannels === true) {
+    const telegram = resolveTelegramOverlay(fileEnv);
     runtimeConfigById["channel-telegram"] = {
       workspaceRoot,
       poll: true,
+      ...(telegram ?? {}),
     };
   }
 

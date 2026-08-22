@@ -36,5 +36,7 @@ plugins:
     name: "@flintloom/channel"
   - id: channel-webhook
     name: "@flintloom/channel-webhook"
+  - id: channel-telegram
+    name: "@flintloom/channel-telegram"
   - id: channel-acp
     name: "@flintloom/channel-acp"

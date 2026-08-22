@@ -57,4 +57,51 @@ describe("emitAcpSessionEvent", () => {
       },
     });
   });
+
+  it("emits steward tool_call_update on guard/steward when suspicious", () => {
+    const write = vi.fn();
+    emitAcpSessionEvent(
+      "sess",
+      {
+        type: "guard/steward",
+        callId: "c1",
+        tool: "shell",
+        verdict: "suspicious",
+        summary: "looks destructive",
+      },
+      write,
+    );
+    expect(write).toHaveBeenCalledWith("session/update", {
+      sessionId: "sess",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "c1",
+        content: [
+          {
+            type: "content",
+            content: {
+              type: "text",
+              text: "Guard steward (suspicious, shell): looks destructive",
+            },
+          },
+        ],
+      },
+    });
+  });
+
+  it("skips guard/steward when ok with empty summary", () => {
+    const write = vi.fn();
+    emitAcpSessionEvent(
+      "sess",
+      {
+        type: "guard/steward",
+        callId: "c1",
+        tool: "fs",
+        verdict: "ok",
+        summary: "",
+      },
+      write,
+    );
+    expect(write).not.toHaveBeenCalled();
+  });
 });

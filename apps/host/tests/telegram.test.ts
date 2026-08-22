@@ -89,8 +89,11 @@ describe("telegram host overlay", () => {
 
   it("default assembly yml does not include channel-telegram", () => {
     expect(ASSEMBLY).not.toMatch(/channel-telegram/);
+  });
+
+  it("root flintloom.yml includes channel-telegram plugin row", () => {
     const rootYml = readFileSync(join(here, "../../../flintloom.yml"), "utf8");
-    expect(rootYml).not.toMatch(/channel-telegram/);
+    expect(rootYml).toMatch(/channel-telegram/);
   });
 });
 

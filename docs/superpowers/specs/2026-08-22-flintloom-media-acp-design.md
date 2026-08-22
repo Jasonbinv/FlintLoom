@@ -92,6 +92,12 @@
 - 根 `flintloom.yml` 增加 `models-guard` 行（host overlay 配 API key 后真正登记 guard）
 - 非目标：ACP 转发 steward、自动禁用工具
 
+## 30. ACP steward 转发 + Telegram 默认组装 + Models guard 状态
+
+- ACP：`guard/steward`（`suspicious` 或 `summary` 非空）→ `session/update` `tool_call_update` 附 steward 文本
+- 根 `flintloom.yml` 挂 `channel-telegram`；无 token 时插件 no-op；host overlay `FLINTLOOM_TELEGRAM_TOKEN` + `FLINTLOOM_TELEGRAM_CHAT_IDS`
+- Models 页：guard 配置 pill 与表格高亮
+
 ## 非目标
 
 - ACP v2、Streamable HTTP、fs/terminal 客户端能力

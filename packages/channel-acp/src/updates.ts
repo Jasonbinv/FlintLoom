@@ -74,6 +74,30 @@ export function emitAcpSessionEvent(
         },
       });
       return;
+    case "guard/steward":
+      if (event.verdict === "ok" && event.summary.length === 0) {
+        return;
+      }
+      const stewardLabel =
+        event.verdict === "suspicious" ? "suspicious" : "note";
+      const stewardText =
+        event.summary.length > 0
+          ? `Guard steward (${stewardLabel}, ${event.tool}): ${event.summary}`
+          : `Guard steward (${stewardLabel}, ${event.tool})`;
+      write("session/update", {
+        sessionId,
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCallId: event.callId,
+          content: [
+            {
+              type: "content",
+              content: { type: "text", text: stewardText },
+            },
+          ],
+        },
+      });
+      return;
     case "tool/result": {
       const text = truncateToolResult(event.text);
       const failed =
