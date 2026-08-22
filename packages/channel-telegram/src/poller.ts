@@ -3,6 +3,7 @@ import type { ChannelRegistry } from "@flintloom/channel";
 import type { SessionStore } from "@flintloom/session";
 import { botPost } from "./bot.ts";
 import type { TelegramConfig } from "./config.ts";
+import { telegramInboundText } from "./inbound-text.ts";
 import { sessionHasWaitingTurn } from "./waiting.ts";
 
 function isAbort(signal: AbortSignal, err: unknown): boolean {
@@ -76,7 +77,11 @@ async function runTelegramLoop(
       for (const item of result) {
         const update = item as {
           update_id: number;
-          message?: { chat?: { id?: unknown }; text?: unknown };
+          message?: {
+            chat?: { id?: unknown };
+            text?: unknown;
+            voice?: { file_id?: unknown };
+          };
         };
         offset = update.update_id + 1;
         const chatId = update.message?.chat?.id;
@@ -87,11 +92,8 @@ async function runTelegramLoop(
         if (!parsed.allowedChatIds.has(chatKey)) {
           continue;
         }
-        if (typeof update.message?.text !== "string") {
-          continue;
-        }
-        const text = update.message.text.trim();
-        if (text.length === 0) {
+        const text = await telegramInboundText(ctx, parsed, update.message, signal);
+        if (text === undefined) {
           continue;
         }
         const sessionId = `telegram:${chatKey}`;

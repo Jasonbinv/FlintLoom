@@ -7,6 +7,26 @@ const UNREACHABLE: WorkbenchEvent = {
   message: "host unreachable",
 };
 
+export async function transcribeAudio(blob: Blob, signal?: AbortSignal): Promise<string> {
+  const res = await fetch("/v1/asr", {
+    method: "POST",
+    headers: { "Content-Type": blob.type || "application/octet-stream" },
+    body: blob,
+    signal,
+  });
+  if (res.status === 503) {
+    throw new Error("asr not configured");
+  }
+  if (!res.ok) {
+    throw new Error("asr failed");
+  }
+  const body = (await res.json()) as { text?: unknown };
+  if (typeof body.text !== "string") {
+    throw new Error("asr failed");
+  }
+  return body.text;
+}
+
 export async function fetchModels(
   signal?: AbortSignal,
 ): Promise<{ kind: string; configured: boolean; defaultId: string | null }[]> {

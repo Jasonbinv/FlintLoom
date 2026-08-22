@@ -559,6 +559,60 @@ describe("startHost", () => {
     await first.catch(() => undefined);
   });
 
+  it("POST /v1/asr transcribes audio when asr is configured", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-asr-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-asr-home-"));
+    writeAssembly(workspaceRoot);
+    const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+    close = host.close;
+    const token = loadOrCreateToken(homeDir);
+    const models = host.runtime.ctx.require<ModelRegistry>("models");
+    models.registerAsr("fake", {
+      async transcribe(input) {
+        expect(input.mimeType).toBe("audio/webm");
+        expect(input.audio).toEqual(new Uint8Array([9, 8, 7]));
+        return "transcribed text";
+      },
+    });
+    models.setDefault("asr", "fake");
+
+    const unauth = await fetch(`${host.url}/v1/asr`, {
+      method: "POST",
+      body: new Uint8Array([9, 8, 7]),
+    });
+    expect(unauth.status).toBe(401);
+
+    const res = await fetch(`${host.url}/v1/asr`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "audio/webm",
+      },
+      body: new Uint8Array([9, 8, 7]),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { text: string };
+    expect(body.text).toBe("transcribed text");
+  });
+
+  it("POST /v1/asr returns 503 when asr is not configured", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-no-asr-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-no-asr-home-"));
+    writeAssembly(workspaceRoot);
+    const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+    close = host.close;
+    const token = loadOrCreateToken(homeDir);
+    const res = await fetch(`${host.url}/v1/asr`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "audio/webm",
+      },
+      body: new Uint8Array([1]),
+    });
+    expect(res.status).toBe(503);
+  });
+
   it("createRuntime provides turnBusy and stop disposes plugins", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-runtime-stop-"));
     const homeDir = mkdtempSync(join(tmpdir(), "flintloom-runtime-stop-home-"));

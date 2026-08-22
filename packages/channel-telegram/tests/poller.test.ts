@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Context } from "@flintloom/kernel";
 import channelPlugin, { type ChannelRegistry } from "@flintloom/channel";
+import modelsPlugin, { type ModelRegistry } from "@flintloom/models";
 import sessionPlugin, { type SessionStore } from "@flintloom/session";
 import type { LoopService, RunTurnInput } from "@flintloom/loop";
 import { parseTelegramConfig } from "../src/config.ts";
@@ -22,6 +23,7 @@ function boot(
 ) {
   const ctx = new Context();
   ctx.provide("turnBusy", new Set<string>());
+  ctx.plugin(modelsPlugin);
   ctx.plugin(sessionPlugin);
   ctx.plugin(channelPlugin);
   ctx.provide("loop", {
@@ -377,6 +379,73 @@ describe("startTelegramPoller", () => {
       expect(updates).toBeGreaterThan(1);
     });
     expect(inboundTexts).toEqual([]);
+  });
+
+  it("transcribes allowlisted voice messages when asr is configured", async () => {
+    const calls: Call[] = [];
+    const inboundTexts: string[] = [];
+    let updates = 0;
+    const apiFetch: typeof fetch = async (url, init) => {
+      const body =
+        init?.body === undefined ? undefined : JSON.parse(String(init.body));
+      calls.push({ url: String(url), body });
+      if (String(url).includes("deleteWebhook")) {
+        return jsonOk(true);
+      }
+      if (String(url).includes("getUpdates")) {
+        updates += 1;
+        if (updates === 1) {
+          return jsonOk([
+            {
+              update_id: 20,
+              message: { chat: { id: 123 }, voice: { file_id: "voice-1" } },
+            },
+          ]);
+        }
+        await hangUntilAbort(init);
+      }
+      if (String(url).includes("getFile")) {
+        return jsonOk({ file_path: "voice/file.ogg" });
+      }
+      if (String(url).includes("/file/bot")) {
+        return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
+      }
+      if (String(url).includes("sendMessage")) {
+        return jsonOk({ message_id: 1 });
+      }
+      return jsonOk([]);
+    };
+    const ctx = boot(apiFetch, async (input: RunTurnInput) => {
+      inboundTexts.push(input.text);
+      input.session.append({ type: "turn/start", turnId: "t-voice" });
+      input.session.append({ type: "user/message", text: input.text });
+      return { turnId: "t-voice", status: "ok" };
+    });
+    ctx.require<ModelRegistry>("models").registerAsr("fake", {
+      async transcribe(input) {
+        expect(input.mimeType).toBe("audio/ogg");
+        expect(input.audio).toEqual(new Uint8Array([1, 2, 3]));
+        return "hello from voice";
+      },
+    });
+    ctx.require<ModelRegistry>("models").setDefault("asr", "fake");
+    stops.push(
+      startTelegramPoller(
+        ctx,
+        parseTelegramConfig({
+          token: "tok",
+          allowedChatIds: [123],
+          poll: true,
+          workspaceRoot: "/ws",
+          apiFetch,
+        }),
+      ),
+    );
+    await vi.waitFor(() => {
+      expect(inboundTexts).toEqual(["hello from voice"]);
+    });
+    const sent = calls.find((c) => c.url.endsWith("/sendMessage"));
+    expect(sent?.body).toEqual({ chat_id: 123, text: "reply-text" });
   });
 
   it("retries deleteWebhook and never getUpdates while it fails", async () => {

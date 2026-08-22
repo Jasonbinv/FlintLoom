@@ -5,6 +5,7 @@ import type { ChannelRegistry } from "@flintloom/channel";
 import { applyConfig, Context, loadConfig, mergeMcpServersIntoConfig } from "@flintloom/kernel";
 import type { LoopService, RunTurnResult } from "@flintloom/loop";
 import type { ModelRegistry } from "@flintloom/models";
+import { ModelKindMissingError } from "@flintloom/models";
 import type { Session, SessionEvent, SessionStore } from "@flintloom/session";
 import { WorkspaceEscapeError } from "@flintloom/tools";
 import { cancelWaitingTurn, handleTurnActions, sessionHasWaitingTurn } from "./a2ui.ts";
@@ -15,6 +16,7 @@ import {
   previewWorkspaceFile,
 } from "./files.ts";
 import { handleKnowledgeRequest } from "./knowledge.ts";
+import { ASR_MAX_BYTES, readBodyBytes, transcribeAudio } from "./asr.ts";
 import { loadOrCreateToken, readCredentials } from "./token.ts";
 
 export type PluginSnapshot = {
@@ -422,6 +424,36 @@ async function handleRequest(
 
   if (req.method === "GET" && pathname === "/v1/models") {
     sendJson(res, 200, opts.runtime.ctx.require<ModelRegistry>("models").snapshot());
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/v1/asr") {
+    const bytes = await readBodyBytes(req, ASR_MAX_BYTES);
+    if (bytes === "too_large") {
+      send(res, 413);
+      return;
+    }
+    if (bytes.length === 0) {
+      send(res, 400);
+      return;
+    }
+    const mimeRaw = req.headers["content-type"];
+    const mimeType = typeof mimeRaw === "string" ? mimeRaw : "application/octet-stream";
+    try {
+      const text = await transcribeAudio(
+        opts.runtime.ctx,
+        bytes,
+        mimeType,
+        new AbortController().signal,
+      );
+      sendJson(res, 200, { text });
+    } catch (err) {
+      if (err instanceof ModelKindMissingError) {
+        sendJson(res, 503, { error: "unconfigured asr" });
+        return;
+      }
+      send(res, 500);
+    }
     return;
   }
 

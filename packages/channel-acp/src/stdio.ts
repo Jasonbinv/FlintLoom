@@ -2,6 +2,7 @@ import { createInterface } from "node:readline";
 import type { Context } from "@flintloom/kernel";
 import type { LoopService } from "@flintloom/loop";
 import type { SessionEvent, SessionStore } from "@flintloom/session";
+import { emitAcpSessionEvent } from "./updates.ts";
 
 type JsonRpcRequest = {
   jsonrpc?: string;
@@ -116,15 +117,7 @@ export async function handleAcpRequest(
         channel: "acp",
         signal: ac.signal,
         onEvent(event: SessionEvent) {
-          if (event.type === "assistant/chunk") {
-            writeNotification("session/update", {
-              sessionId,
-              update: {
-                sessionUpdate: "agent_message_chunk",
-                content: { type: "text", text: event.text },
-              },
-            });
-          }
+          emitAcpSessionEvent(sessionId, event, writeNotification);
         },
       });
       const stopReason =

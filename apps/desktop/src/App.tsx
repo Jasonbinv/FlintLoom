@@ -4,6 +4,7 @@ import { cancelTurn, fetchModels, fetchSession, postTurn, postTurnAction, postTu
 import { FilePane } from "./FilePane.tsx";
 import { ModelsPane } from "./ModelsPane.tsx";
 import { PluginsPane } from "./PluginsPane.tsx";
+import { VoiceInput } from "./VoiceInput.tsx";
 import { insertPath } from "./files.ts";
 import type { WorkbenchEvent } from "./types.ts";
 import "./app.css";
@@ -120,6 +121,7 @@ export function App() {
   const submittingActionRef = useRef(false);
   const [hostDown, setHostDown] = useState(false);
   const [chatConfigured, setChatConfigured] = useState<boolean | undefined>();
+  const [asrConfigured, setAsrConfigured] = useState(false);
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
   const [draft, setDraft] = useState("");
   const [input, setInput] = useState("");
@@ -187,6 +189,8 @@ export function App() {
       .then((models) => {
         const chat = models.find((m) => m.kind === "chat");
         setChatConfigured(chat?.configured ?? false);
+        const asr = models.find((m) => m.kind === "asr");
+        setAsrConfigured(asr?.configured ?? false);
         setHostDown(false);
       })
       .catch(() => {
@@ -379,6 +383,16 @@ export function App() {
               onKeyDown={onKeyDown}
               rows={3}
             />
+            {asrConfigured ? (
+              <VoiceInput
+                disabled={sending || waitingAction}
+                onText={(text) =>
+                  setInput((current) =>
+                    current.trim().length > 0 ? `${current.trim()} ${text}` : text,
+                  )
+                }
+              />
+            ) : null}
             <button
               type="button"
               className="btn-primary"

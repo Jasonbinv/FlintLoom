@@ -303,5 +303,7 @@ v1 内置通道：desktop、cli、webhook、telegram。ACP 作为同一接口上
 16. 媒体 Provider（见 [媒体与 ACP 设计](2026-08-22-flintloom-media-acp-design.md) §16）— `asr` / `tts` / `t2i` / `t2v` / `omni` 登记与 DashScope 原生实现。
 17. 媒体工具（同上 §17）— `image_generate` / `video_generate`。
 18. ACP stdio 通道（同上 §18）— `flint acp` + `@flintloom/channel-acp`。
+19. ACP `tool_call` 推送（同上 §19）— `tool/call` / `tool/result` → `session/update`。
+20. 语音 ASR 入站（同上 §20）— Host `/v1/asr`、桌面语音按钮、Telegram voice 转写入站。
 
 第 2–7 刀在同一份总 spec 上继续拆计划。新 Loom 包必须带 `apply`，禁止再往 `createRuntime` 里堆 `register`。

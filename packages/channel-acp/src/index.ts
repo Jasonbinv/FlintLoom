@@ -8,4 +8,5 @@ const plugin: FlintPlugin = {
 };
 
 export { handleAcpRequest, runAcpStdio } from "./stdio.ts";
+export { acpToolKind, emitAcpSessionEvent } from "./updates.ts";
 export default plugin;

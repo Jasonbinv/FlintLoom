@@ -210,6 +210,20 @@ pnpm flint plugin add ../my-plugin --id my-plugin
 
 CLI 会读取工作区的 `.env` 与 `flintloom.yml`，与桌面共用同一套 Host 逻辑（CLI 路径不经过 Vite 代理）。
 
+### 9.1 ACP stdio（IDE 集成）
+
+在已配置 `flintloom.yml` 的工作区根目录：
+
+```bash
+pnpm flint acp
+```
+
+FlintLoom 作为 ACP Agent 通过 stdin/stdout 提供 JSON-RPC；`assistant/chunk` 与工具调用（`tool_call` / `tool_call_update`）会推送到客户端。日志在 stderr。
+
+### 9.2 桌面语音输入
+
+在 `.env` 中配置 DashScope ASR（与 chat 共用 `FLINTLOOM_API_KEY`）后，工作台 composer 会出现「语音」按钮：浏览器录音 → Host `POST /v1/asr` → 转写文本填入输入框。Telegram 语音消息在 ASR 已配置时会自动转写并入站。
+
 ---
 
 ## 10. 端口与探测逻辑

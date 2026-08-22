@@ -24,7 +24,19 @@
 - 日志写 `stderr`；`stdout` 仅 ACP 消息
 - yml 挂 `@flintloom/channel-acp`；CLI `pnpm flint acp` 启动
 
+## 19. ACP `tool_call` 推送
+
+- `tool/call` → `session/update` `tool_call`（`pending`）+ `tool_call_update`（`in_progress`）
+- `tool/result` → `tool_call_update`（`completed` / `failed`）；工具名映射 ACP `kind`（`fs`/`grep`/`shell` 等）
+- 非目标：`session/request_permission`（guard ask 仍仅 host channel）
+
+## 20. 语音 ASR 入站
+
+- Host：`POST /v1/asr`（raw audio + `Content-Type`）；Bearer 鉴权；未配 asr → 503
+- 桌面：composer「语音」按钮（`MediaRecorder` → `/v1/asr` → 填入输入框）；`asr.configured` 控制显示
+- Telegram：`message.voice` → `getFile` 下载 ogg → `resolveAsr().transcribe` → 现有 `channels.inbound` 文本路径
+
 ## 非目标
 
 - ACP v2、Streamable HTTP、fs/terminal 客户端能力、permission 弹窗
-- 桌面语音 UI、Telegram 语音入站
+- omni 消费者、T2V 异步轮询
