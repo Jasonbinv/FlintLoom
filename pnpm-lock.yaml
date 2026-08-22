@@ -41,6 +41,9 @@ importers:
       '@flintloom/loop':
         specifier: workspace:*
         version: link:packages/loop
+      '@flintloom/mcp':
+        specifier: workspace:*
+        version: link:packages/mcp
       '@flintloom/models':
         specifier: workspace:*
         version: link:packages/models
@@ -319,6 +322,15 @@ importers:
       '@flintloom/fs':
         specifier: workspace:*
         version: link:../fs
+
+  packages/mcp:
+    dependencies:
+      '@flintloom/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      '@flintloom/tools':
+        specifier: workspace:*
+        version: link:../tools
 
   packages/models:
     dependencies:

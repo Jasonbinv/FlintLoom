@@ -24,6 +24,7 @@
     "@flintloom/infographic": "workspace:*",
     "@flintloom/knowledge": "workspace:*",
     "@flintloom/loop": "workspace:*",
+    "@flintloom/mcp": "workspace:*",
     "@flintloom/models": "workspace:*",
     "@flintloom/models-chat": "workspace:*",
     "@flintloom/session": "workspace:*",
