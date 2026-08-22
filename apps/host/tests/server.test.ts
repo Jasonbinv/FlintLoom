@@ -86,6 +86,21 @@ describe("startHost", () => {
     await expect(createRuntime(workspaceRoot, homeDir)).rejects.toThrow(/models/);
   });
 
+  it("omitting skill from yml omits the skill tool", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-noskill-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
+    writeFileSync(
+      join(workspaceRoot, "flintloom.yml"),
+      ASSEMBLY.replace(
+        `  - id: skill\n    name: "@flintloom/skill"\n`,
+        "",
+      ),
+    );
+    const { ctx } = await createRuntime(workspaceRoot, homeDir);
+    const names = ctx.require<ToolRegistry>("tools").schemas().map((s) => s.name);
+    expect(names).not.toContain("skill");
+  });
+
   it("omitting docforge from yml omits doc_generate", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-nodoc-"));
     const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
@@ -155,6 +170,8 @@ describe("startHost", () => {
     expect(src).not.toMatch(/lastAssistantText/);
     expect(src).not.toMatch(/@flintloom\/channel-telegram/);
     expect(src).not.toMatch(/createTelegramAdapter/);
+    expect(src).not.toMatch(/@flintloom\/skill/);
+    expect(src).not.toMatch(/createSkillTool/);
   });
 
   it("returns 500 text/plain with the error message and redacts the api key", async () => {

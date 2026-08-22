@@ -28,6 +28,7 @@
     "@flintloom/models-chat": "workspace:*",
     "@flintloom/session": "workspace:*",
     "@flintloom/shell": "workspace:*",
+    "@flintloom/skill": "workspace:*",
     "@flintloom/tools": "workspace:*",
     "@types/node": "^22.20.1",
     "tsx": "^4.20.5",
