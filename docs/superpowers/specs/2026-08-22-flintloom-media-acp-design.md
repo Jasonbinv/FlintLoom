@@ -98,6 +98,11 @@
 - 根 `flintloom.yml` 挂 `channel-telegram`；无 token 时插件 no-op；host overlay `FLINTLOOM_TELEGRAM_TOKEN` + `FLINTLOOM_TELEGRAM_CHAT_IDS`
 - Models 页：guard 配置 pill 与表格高亮
 
+## 31. 工作台顶栏 guard + Plugins MCP 标注
+
+- Chat 顶栏并列 `chat` / `guard` 配置 pill（与 Models 页一致）
+- Plugins 表：`name === "@flintloom/mcp"` 的行在 `id` 旁显示 `mcp` 标签（含 `mcp-servers.yml` 自动合并行）
+
 ## 非目标
 
 - ACP v2、Streamable HTTP、fs/terminal 客户端能力

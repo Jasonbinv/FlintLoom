@@ -45,7 +45,12 @@ export function PluginsPane() {
         <tbody>
           {rows.map((row) => (
             <tr key={row.id}>
-              <td>{row.id}</td>
+              <td>
+                {row.id}
+                {row.name === "@flintloom/mcp" ? (
+                  <span className="plugin-tag mcp">mcp</span>
+                ) : null}
+              </td>
               <td className="mono">{row.name}</td>
               <td>{row.status}</td>
             </tr>

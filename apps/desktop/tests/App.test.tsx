@@ -1246,6 +1246,22 @@ describe("App", () => {
     );
   });
 
+  it("renders guard pill in topbar when guard is configured", async () => {
+    installFetch({
+      models: new Response(
+        JSON.stringify([
+          { kind: "chat", configured: true },
+          { kind: "guard", configured: true },
+        ]),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    await waitForText("guard 已配置");
+    const pills = Array.from(document.querySelectorAll(".topbar-status .status-pill.ok"));
+    expect(pills.some((pill) => pill.textContent === "guard 已配置")).toBe(true);
+  });
+
   it("renders down pill when models fetch fails", async () => {
     installFetch({ models: new Error("network") });
     await mountApp();
@@ -1311,7 +1327,15 @@ describe("App", () => {
   });
 
   it("shows plugin list on Plugins page", async () => {
-    installFetch();
+    installFetch({
+      plugins: new Response(
+        JSON.stringify([
+          { id: "loop", name: "@flintloom/loop", status: "loaded" },
+          { id: "fake", name: "@flintloom/mcp", status: "loaded" },
+        ]),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
     await mountApp();
     const pluginsTab = Array.from(document.querySelectorAll("button")).find(
       (b) => b.textContent === "Plugins",
@@ -1323,6 +1347,7 @@ describe("App", () => {
     await waitForText("@flintloom/loop");
     expect(document.body.textContent).toContain("loop");
     expect(document.body.textContent).toContain("loaded");
+    expect(document.querySelector(".plugin-tag.mcp")).toBeTruthy();
     expect(document.querySelector("textarea")).toBeNull();
   });
 
