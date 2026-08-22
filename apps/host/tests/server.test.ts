@@ -228,6 +228,57 @@ describe("startHost", () => {
     }
   });
 
+  it("createRuntime auto-loads workspace mcp-servers.yml", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-mcpauto-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
+    const fixture = fileURLToPath(
+      new URL("../../../packages/mcp/fixtures/fake-mcp-server.mjs", import.meta.url),
+    );
+    writeFileSync(
+      join(workspaceRoot, "flintloom.yml"),
+      `plugins:
+  - id: models
+    name: "@flintloom/models"
+  - id: tools
+    name: "@flintloom/tools"
+`,
+    );
+    writeFileSync(
+      join(workspaceRoot, "mcp-servers.yml"),
+      `servers:
+  - id: fake
+    command: ${JSON.stringify(process.execPath)}
+    args: [${JSON.stringify(fixture)}]
+    env: [FAKE_TOKEN]
+`,
+    );
+    writeFileSync(join(workspaceRoot, ".env"), "FAKE_TOKEN=from-dotenv\n", "utf8");
+    const prev = process.env.FAKE_TOKEN;
+    delete process.env.FAKE_TOKEN;
+    try {
+      const { ctx, stop } = await createRuntime(workspaceRoot, homeDir);
+      const names = ctx.require<ToolRegistry>("tools").schemas().map((s) => s.name);
+      expect(names).toContain("mcp__fake__echo");
+      const out = await ctx.require<ToolRegistry>("tools").execute(
+        "mcp__fake__echo",
+        { text: "auto" },
+        {
+          workspaceRoot,
+          signal: new AbortController().signal,
+          channel: "host",
+        },
+      );
+      expect(out).toBe("auto");
+      stop();
+    } finally {
+      if (prev === undefined) {
+        delete process.env.FAKE_TOKEN;
+      } else {
+        process.env.FAKE_TOKEN = prev;
+      }
+    }
+  });
+
   it("returns 500 text/plain with the error message and redacts the api key", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-ws-"));
     const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));

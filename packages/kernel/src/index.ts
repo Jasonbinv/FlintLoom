@@ -1,4 +1,11 @@
 export {
+  mergeMcpServersIntoConfig,
+  loadMcpServersFile,
+  MCP_SERVERS_HOME_REL,
+  MCP_SERVERS_WORKSPACE_FILE,
+  type McpServerRow,
+} from "./mcp-servers.ts";
+export {
   needsWorkspaceRootOverlay,
   WORKSPACE_ROOT_OVERLAY_PACKAGES,
 } from "./plugin-overlay.ts";

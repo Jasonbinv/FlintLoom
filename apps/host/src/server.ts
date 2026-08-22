@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { join } from "node:path";
 import type { ChannelRegistry } from "@flintloom/channel";
-import { applyConfig, Context, loadConfig } from "@flintloom/kernel";
+import { applyConfig, Context, loadConfig, mergeMcpServersIntoConfig } from "@flintloom/kernel";
 import type { LoopService, RunTurnResult } from "@flintloom/loop";
 import type { ModelRegistry } from "@flintloom/models";
 import type { Session, SessionEvent, SessionStore } from "@flintloom/session";
@@ -75,8 +75,11 @@ export async function createRuntime(
   if (!existsSync(ymlPath)) {
     throw new Error("plugins");
   }
-  const config = loadConfig(readFileSync(ymlPath, "utf8"));
   const fileEnv = readDotEnv(join(workspaceRoot, ".env"));
+  const config = mergeMcpServersIntoConfig(
+    loadConfig(readFileSync(ymlPath, "utf8")),
+    { workspaceRoot, homeDir, fileEnv },
+  );
   const apiKey = resolveChatApiKey(homeDir, fileEnv);
   const runtimeConfigById: Record<string, Record<string, unknown>> = {};
   if (apiKey !== undefined) {
