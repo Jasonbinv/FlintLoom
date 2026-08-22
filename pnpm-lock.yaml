@@ -98,6 +98,9 @@ importers:
       '@flintloom/host':
         specifier: workspace:*
         version: link:../host
+      '@flintloom/infographic':
+        specifier: workspace:*
+        version: link:../../packages/infographic
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -150,6 +153,9 @@ importers:
 
   packages/a2ui:
     dependencies:
+      '@flintloom/infographic':
+        specifier: workspace:*
+        version: link:../infographic
       '@flintloom/kernel':
         specifier: workspace:*
         version: link:../kernel
