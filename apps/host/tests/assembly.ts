@@ -21,7 +21,7 @@ export const ASSEMBLY = `plugins:
   - id: docforge
     name: "@flintloom/docforge"
   - id: infographic
-    name: "@flintloom/infographic"
+    name: "@flintloom/infographic/plugin"
   - id: a2ui
     name: "@flintloom/a2ui"
   - id: skill

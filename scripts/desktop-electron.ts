@@ -1,4 +1,4 @@
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
@@ -9,8 +9,22 @@ import { ensureHost } from "../apps/desktop/src/probe.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const electronDir = join(root, "apps/electron");
-const require = createRequire(import.meta.url);
-const electronBin = require(join(electronDir, "node_modules/electron/index.js")) as string;
+
+async function waitForHttpOk(url: string, timeoutMs = 30_000): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const res = await fetch(url);
+      if (res.ok) {
+        return;
+      }
+    } catch {
+      // Vite / host still starting
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`desktop not ready: ${url}`);
+}
 
 const token = loadOrCreateToken(homedir());
 await ensureHost({
@@ -33,10 +47,20 @@ await vite.listen();
 vite.printUrls();
 
 const desktopUrl = "http://127.0.0.1:5173";
-const child = spawn(electronBin, [electronDir], {
-  env: { ...process.env, FLINT_DESKTOP_URL: desktopUrl },
-  stdio: "inherit",
-});
+await waitForHttpOk(desktopUrl);
+
+const require = createRequire(import.meta.url);
+const electronBin = require(join(electronDir, "node_modules/electron/index.js")) as string;
+const userDataDir = join(tmpdir(), "flintloom-electron");
+
+const child = spawn(
+  electronBin,
+  [electronDir, `--user-data-dir=${userDataDir}`],
+  {
+    env: { ...process.env, FLINT_DESKTOP_URL: desktopUrl },
+    stdio: "inherit",
+  },
+);
 
 child.on("exit", (code) => {
   vite.close();

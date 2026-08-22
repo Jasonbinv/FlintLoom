@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Context } from "@flintloom/kernel";
 import modelsPlugin from "@flintloom/models";
 import toolsPlugin, { type ToolRegistry } from "@flintloom/tools";
-import plugin from "../src/index.ts";
+import plugin from "../src/plugin.ts";
 
 describe("infographic plugin", () => {
   it("registers get/patch and stop() unregisters them", async () => {
