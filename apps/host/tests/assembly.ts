@@ -24,6 +24,8 @@ export const ASSEMBLY = `plugins:
     name: "@flintloom/infographic"
   - id: a2ui
     name: "@flintloom/a2ui"
+  - id: skill
+    name: "@flintloom/skill"
   - id: loop
     name: "@flintloom/loop"
   - id: channel

@@ -95,6 +95,9 @@ export async function createRuntime(
   runtimeConfigById.knowledge = {
     dbPath: join(homeDir, ".flintloom", "knowledge.sqlite"),
   };
+  runtimeConfigById.skill = {
+    homeDir,
+  };
 
   if (opts?.pollChannels === true) {
     runtimeConfigById["channel-telegram"] = {

@@ -53,6 +53,9 @@ importers:
       '@flintloom/shell':
         specifier: workspace:*
         version: link:packages/shell
+      '@flintloom/skill':
+        specifier: workspace:*
+        version: link:packages/skill
       '@flintloom/tools':
         specifier: workspace:*
         version: link:packages/tools
@@ -353,6 +356,18 @@ importers:
       '@flintloom/models':
         specifier: workspace:*
         version: link:../models
+
+  packages/skill:
+    dependencies:
+      '@flintloom/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      '@flintloom/tools':
+        specifier: workspace:*
+        version: link:../tools
+      yaml:
+        specifier: ^2.7.0
+        version: 2.9.0
 
   packages/tools:
     dependencies:
