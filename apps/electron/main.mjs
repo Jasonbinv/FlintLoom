@@ -2,7 +2,7 @@ import { app, BrowserWindow } from "electron";
 
 const desktopUrl = process.env.FLINT_DESKTOP_URL ?? "http://127.0.0.1:5173";
 
-function createWindow(): void {
+function createWindow() {
   const win = new BrowserWindow({
     width: 1280,
     height: 840,
