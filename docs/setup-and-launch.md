@@ -230,6 +230,10 @@ FlintLoom 作为 ACP Agent 通过 stdin/stdout 提供 JSON-RPC；`assistant/chun
 
 在 `.env` 中配置 omni（`models-chat` 默认与 chat 共用模型，或单独 `omniModel`）后，工作台 composer 会出现「图片」按钮，可将 JPEG/PNG/GIF/WebP 随 `POST /v1/turns` 发送。session log 的 `user/message` 会带上 `images`，loop 用 `resolveOmni()` 投影为多模态 content。Telegram 图片消息在 omni 已配置时会下载最大尺寸并入站；未配置则忽略（与无 ASR 时忽略语音一致）。
 
+### 9.4 Guard 与 ACP 多模态
+
+配置 API key 后 host 会自动 overlay `@flintloom/models-guard`（可用 `FLINTLOOM_GUARD_MODEL` 覆盖模型名）。工具执行成功后会写 `guard/steward` 事件（可疑结果带 summary），不自动禁用插件。`flint acp` 在 omni/asr 已配置时 `initialize` 会声明 image/audio/embeddedContext 能力；`session/prompt` 可带 image 块或 audio 块（音频经 ASR 转写）。
+
 ---
 
 ## 10. 端口与探测逻辑

@@ -73,6 +73,19 @@
 - 桌面：`omni.configured` 时 composer「图片」按钮；发送时带 `images`
 - Telegram：`message.photo` → 下载最大尺寸 → omni 已配置时 `inbound` 带图；未配则忽略（与 voice 无 asr 一致）
 
+## 27. Guard steward + `@flintloom/models-guard`
+
+- `GuardProvider.steward`：工具成功执行后 loop 写 `guard/steward`（`ok` / `suspicious` + summary），再写 `tool/result`
+- `guard denied` 结果不 steward；steward 失败不阻断 turn
+- `@flintloom/models-guard`：OpenAI 兼容非流式分类；`gate` + `steward`；host overlay 与 chat 共用 API key
+- v1 不自动卸插件、不改工具登记
+
+## 28. ACP 多模态 prompt
+
+- `initialize.promptCapabilities`：`omni` → `image` + `embeddedContext`；`asr` → `audio`
+- `session/prompt` 块：`text`、`image`（mime + base64）、`audio`（ASR 转写并入 text）、`embedded_context`（text）
+- `runTurn` 带 `images` 与 slice 26 一致
+
 ## 非目标
 
 - ACP v2、Streamable HTTP、fs/terminal 客户端能力

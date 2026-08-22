@@ -13,6 +13,8 @@ export {
   type GuardDecision,
   type GuardGateInput,
   type GuardProvider,
+  type GuardStewardInput,
+  type GuardStewardResult,
   type MediaBytes,
   type OmniProvider,
   type T2iInput,

@@ -4,6 +4,7 @@ import type { LoopService } from "@flintloom/loop";
 import type { SessionEvent, SessionStore } from "@flintloom/session";
 import { AcpClientRpc } from "./client-rpc.ts";
 import { pendingGuardAsk, resolveAcpGuardAsks } from "./guard.ts";
+import { promptCapabilities, promptContent } from "./prompt.ts";
 import { emitAcpSessionEvent } from "./updates.ts";
 
 type JsonRpcRequest = {
@@ -26,22 +27,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function promptText(prompt: unknown): string {
-  if (!Array.isArray(prompt)) {
-    return "";
-  }
-  const parts: string[] = [];
-  for (const block of prompt) {
-    if (!isRecord(block) || block.type !== "text") {
-      continue;
-    }
-    if (typeof block.text === "string") {
-      parts.push(block.text);
-    }
-  }
-  return parts.join("\n").trim();
-}
-
 export async function handleAcpRequest(
   ctx: Context,
   workspaceRoot: string,
@@ -54,13 +39,14 @@ export async function handleAcpRequest(
   }
 
   if (method === "initialize") {
+    const caps = promptCapabilities(ctx);
     return {
       protocolVersion: 1,
       agentCapabilities: {
         promptCapabilities: {
-          image: false,
-          audio: false,
-          embeddedContext: false,
+          image: caps.image,
+          audio: caps.audio,
+          embeddedContext: caps.embeddedContext,
         },
       },
       agentInfo: {
@@ -99,19 +85,20 @@ export async function handleAcpRequest(
     if (!isRecord(params) || typeof params.sessionId !== "string") {
       throw new Error("sessionId");
     }
-    const text = promptText(params.prompt);
-    if (text.length === 0) {
-      throw new Error("prompt");
-    }
     const sessionId = params.sessionId;
-    const session = sessions.getOrCreate(sessionId);
     const ac = new AbortController();
     state.promptControllers.set(sessionId, ac);
+    const content = await promptContent(ctx, params.prompt, ac.signal);
+    if (content === undefined) {
+      throw new Error("prompt");
+    }
+    const session = sessions.getOrCreate(sessionId);
     try {
       let result = await loop.runTurn({
         ctx,
         session,
-        text,
+        text: content.text,
+        images: content.images,
         workspaceRoot,
         channel: "acp",
         signal: ac.signal,

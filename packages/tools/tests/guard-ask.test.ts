@@ -11,6 +11,9 @@ describe("guard ask in tools plugin", () => {
       async gate() {
         return "ask";
       },
+      async steward() {
+        return { verdict: "ok", summary: "" };
+      },
     };
     models.registerGuard("g", guard);
     models.setDefault("guard", "g");
@@ -45,6 +48,9 @@ describe("guard ask in tools plugin", () => {
       async gate() {
         return "ask";
       },
+      async steward() {
+        return { verdict: "ok", summary: "" };
+      },
     });
     models.setDefault("guard", "g");
     ctx.provide("models", models);
@@ -77,6 +83,9 @@ describe("guard ask in tools plugin", () => {
     models.registerGuard("g", {
       async gate() {
         return "ask";
+      },
+      async steward() {
+        return { verdict: "ok", summary: "" };
       },
     });
     models.setDefault("guard", "g");

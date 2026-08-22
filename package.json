@@ -30,6 +30,7 @@
     "@flintloom/media-tools": "workspace:*",
     "@flintloom/models": "workspace:*",
     "@flintloom/models-chat": "workspace:*",
+    "@flintloom/models-guard": "workspace:*",
     "@flintloom/models-media": "workspace:*",
     "@flintloom/session": "workspace:*",
     "@flintloom/shell": "workspace:*",

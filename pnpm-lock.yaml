@@ -56,6 +56,9 @@ importers:
       '@flintloom/models-chat':
         specifier: workspace:*
         version: link:packages/models-chat
+      '@flintloom/models-guard':
+        specifier: workspace:*
+        version: link:packages/models-guard
       '@flintloom/models-media':
         specifier: workspace:*
         version: link:packages/models-media
@@ -190,6 +193,9 @@ importers:
       '@flintloom/kernel':
         specifier: workspace:*
         version: link:../kernel
+      '@flintloom/session':
+        specifier: workspace:*
+        version: link:../session
 
   packages/channel-acp:
     dependencies:
@@ -393,6 +399,18 @@ importers:
         version: link:../session
 
   packages/models-chat:
+    dependencies:
+      '@flintloom/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      '@flintloom/models':
+        specifier: workspace:*
+        version: link:../models
+      '@flintloom/session':
+        specifier: workspace:*
+        version: link:../session
+
+  packages/models-guard:
     dependencies:
       '@flintloom/kernel':
         specifier: workspace:*

@@ -94,6 +94,58 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+const STEWARD_RESULT_MAX = 2000;
+
+function shouldSteward(resultText: string): boolean {
+  return !resultText.startsWith("guard denied:");
+}
+
+async function maybeAppendGuardSteward(
+  ctx: Context,
+  session: Session,
+  onEvent: RunTurnInput["onEvent"],
+  callId: string,
+  tool: string,
+  args: unknown,
+  resultText: string,
+  workspaceRoot: string,
+  channel: string,
+  signal: AbortSignal,
+): Promise<void> {
+  if (!shouldSteward(resultText)) {
+    return;
+  }
+  const guard = ctx.require<ModelRegistry>("models").resolveGuard();
+  if (guard === undefined) {
+    return;
+  }
+  const clipped =
+    resultText.length > STEWARD_RESULT_MAX
+      ? `${resultText.slice(0, STEWARD_RESULT_MAX)}…`
+      : resultText;
+  try {
+    const steward = await guard.steward(
+      {
+        tool,
+        args,
+        resultText: clipped,
+        workspaceRoot,
+        channel,
+      },
+      signal,
+    );
+    appendEvent(session, onEvent, {
+      type: "guard/steward",
+      callId,
+      tool,
+      verdict: steward.verdict,
+      summary: steward.summary,
+    });
+  } catch {
+    // steward failure does not block the turn
+  }
+}
+
 function resolveConversationProvider(models: ModelRegistry): {
   provider: import("@flintloom/models").ChatProvider;
   kind: "chat" | "omni";
@@ -260,6 +312,21 @@ async function executeToolCall(
       return { turnId, status: "awaiting_action" };
     }
     resultText = err instanceof Error ? err.message : String(err);
+  }
+
+  if (!resultText.startsWith("guard denied:")) {
+    await maybeAppendGuardSteward(
+      input.ctx,
+      session,
+      onEvent,
+      call.id,
+      call.name,
+      call.args,
+      resultText,
+      workspaceRoot,
+      channel,
+      signal,
+    );
   }
 
   appendEvent(session, onEvent, {
@@ -482,6 +549,18 @@ export async function continueGuardTurn(
       channel: input.channel,
       guardBypass: true,
     });
+    await maybeAppendGuardSteward(
+      input.ctx,
+      session,
+      onEvent,
+      callId,
+      call.name,
+      call.args,
+      resultText,
+      input.workspaceRoot,
+      input.channel,
+      input.signal,
+    );
   }
 
   appendEvent(session, onEvent, {

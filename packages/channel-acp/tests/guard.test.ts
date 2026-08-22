@@ -19,6 +19,9 @@ describe("resolveAcpGuardAsks", () => {
       async gate() {
         return "ask";
       },
+      async steward() {
+        return { verdict: "ok", summary: "" };
+      },
     };
     models.registerGuard("g", guard);
     models.setDefault("guard", "g");

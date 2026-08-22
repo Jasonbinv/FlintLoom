@@ -114,6 +114,18 @@ export async function createRuntime(
       apiKey,
       baseUrl,
     };
+    runtimeConfigById["models-guard"] = {
+      apiKey,
+      baseUrl,
+      model:
+        firstNonEmpty(
+          process.env.FLINTLOOM_GUARD_MODEL,
+          fileEnv.FLINTLOOM_GUARD_MODEL,
+        ) ?? firstNonEmpty(
+          process.env.FLINTLOOM_CHAT_MODEL,
+          fileEnv.FLINTLOOM_CHAT_MODEL,
+        ) ?? "deepseek-chat",
+    };
   }
   runtimeConfigById.knowledge = {
     dbPath: join(homeDir, ".flintloom", "knowledge.sqlite"),

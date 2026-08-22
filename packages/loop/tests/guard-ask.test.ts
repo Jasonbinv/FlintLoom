@@ -18,6 +18,9 @@ describe("guard ask in runTurn", () => {
         gateCalls += 1;
         return gateCalls === 1 ? "ask" : "allow";
       },
+      async steward() {
+        return { verdict: "ok", summary: "" };
+      },
     };
     models.registerGuard("g", guard);
     models.setDefault("guard", "g");

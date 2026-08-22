@@ -310,5 +310,7 @@ v1 内置通道：desktop、cli、webhook、telegram。ACP 作为同一接口上
 23. ACP `session/request_permission`（同上 §23）— guard ask 扩展到 ACP 通道。
 24. 知识库 embedding / rerank（同上 §24）— 向量检索 + 可选重排，FTS 回退。
 26. 图片入站 + omni 多模态消息（同上 §26）— `user/message` 带图、Host `/v1/turns`、桌面图片按钮、Telegram photo 入站。
+27. Guard steward + `models-guard`（同上 §27）— 执行后 `guard/steward` 记 log；OpenAI 兼容 gate/steward provider。
+28. ACP 多模态 prompt（同上 §28）— `promptCapabilities` 与 image/audio/embedded_context 块入站。
 
 第 2–7 刀在同一份总 spec 上继续拆计划。新 Loom 包必须带 `apply`，禁止再往 `createRuntime` 里堆 `register`。

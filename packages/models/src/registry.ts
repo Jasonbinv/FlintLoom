@@ -39,8 +39,20 @@ export interface GuardGateInput {
   workspaceRoot: string;
   channel: string;
 }
+export interface GuardStewardInput {
+  tool: string;
+  args: unknown;
+  resultText: string;
+  workspaceRoot: string;
+  channel: string;
+}
+export interface GuardStewardResult {
+  verdict: "ok" | "suspicious";
+  summary: string;
+}
 export interface GuardProvider {
   gate(input: GuardGateInput, signal: AbortSignal): Promise<GuardDecision>;
+  steward(input: GuardStewardInput, signal: AbortSignal): Promise<GuardStewardResult>;
 }
 
 export interface AsrInput {
