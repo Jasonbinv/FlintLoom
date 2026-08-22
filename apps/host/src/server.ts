@@ -106,18 +106,12 @@ export async function createRuntime(
     };
   }
 
-  for (const row of config.plugins) {
-    if (row.name === "@flintloom/mcp") {
-      runtimeConfigById[row.id] = {
-        ...runtimeConfigById[row.id],
-        workspaceRoot,
-      };
-    }
-  }
-
   const ctx = new Context();
   ctx.provide("turnBusy", new Set<string>());
-  const stop = await applyConfig(ctx, config, { runtimeConfigById });
+  const stop = await applyConfig(ctx, config, {
+    runtimeConfigById,
+    workspaceRoot,
+  });
   return { ctx, stop };
 }
 

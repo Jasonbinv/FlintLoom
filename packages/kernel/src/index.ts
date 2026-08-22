@@ -1,4 +1,8 @@
 export {
+  needsWorkspaceRootOverlay,
+  WORKSPACE_ROOT_OVERLAY_PACKAGES,
+} from "./plugin-overlay.ts";
+export {
   Context,
   type FlintPlugin,
   type Disposer,

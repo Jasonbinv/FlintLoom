@@ -92,6 +92,26 @@ describe("applyConfig", () => {
     expect(() => ctx.require("a")).toThrow(/a/);
   });
 
+  it("overlay workspaceRoot for configured package names", async () => {
+    const seen: Record<string, unknown>[] = [];
+    const ctx = new Context();
+    const mod = plugin("mcp", (c, config) => {
+      seen.push(config);
+      c.provide("mcp", true);
+    });
+
+    await applyConfig(
+      ctx,
+      { plugins: [{ id: "fake", name: "@flintloom/mcp" }] },
+      {
+        importFn: async () => mod,
+        workspaceRoot: "/workspace",
+      },
+    );
+
+    expect(seen[0]).toEqual({ id: "fake", workspaceRoot: "/workspace" });
+  });
+
   it("异步 apply 成功后工具已登记；失败则回滚", async () => {
     const ctx = new Context();
     const mods: Record<string, FlintPlugin> = {
