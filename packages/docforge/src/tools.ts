@@ -184,7 +184,7 @@ export function createDocGenerateTool(): ToolDefinition {
   return {
     name: "doc_generate",
     description:
-      "Write a workspace markdown file to md, html, docx, or pdf. Pass source and out; format is the out extension. Write the markdown with fs first. Do not use this to parse binaries.",
+      "Write a workspace markdown file to md, html, docx, pdf, xlsx, or pptx. Pass source and out; format is the out extension. Write the markdown with fs first. Do not use this to parse binaries.",
     parameters: {
       type: "object",
       properties: {
@@ -475,7 +475,7 @@ export function createDocConvertTool(): ToolDefinition {
   return {
     name: "doc_convert",
     description:
-      "Convert a workspace document (md, html, pdf, docx, pptx, or xlsx) to md, html, docx, or pdf. Pass source and out; format is the out extension. pptx and xlsx cannot be out. Do not use this to generate from scratch; write markdown first or use doc_generate for md sources if you prefer.",
+      "Convert a workspace document (md, html, pdf, docx, pptx, or xlsx) to md, html, docx, pdf, xlsx, or pptx. Pass source and out; format is the out extension. Do not use this to generate from scratch; write markdown first or use doc_generate for md sources if you prefer.",
     parameters: {
       type: "object",
       properties: {

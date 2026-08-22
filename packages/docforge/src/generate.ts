@@ -11,6 +11,8 @@ import {
 import { renderHtml } from "./html.ts";
 import { renderDocx } from "./writers/docx.ts";
 import { renderPdf } from "./writers/pdf.ts";
+import { renderPptx } from "./writers/pptx.ts";
+import { renderXlsx } from "./writers/xlsx.ts";
 
 export {
   GENERATE_MAX_BYTES,
@@ -27,6 +29,8 @@ export function formatFromOutRelPath(relPath: string): GenerateFormat | undefine
   if (lower.endsWith(".html")) return "html";
   if (lower.endsWith(".docx")) return "docx";
   if (lower.endsWith(".pdf")) return "pdf";
+  if (lower.endsWith(".xlsx")) return "xlsx";
+  if (lower.endsWith(".pptx")) return "pptx";
   return undefined;
 }
 
@@ -50,6 +54,10 @@ export async function buildDocument(
         return await renderDocx(parseBlocks(markdown));
       case "pdf":
         return await renderPdf(parseBlocks(markdown), opts?.fontPath ?? defaultFontPath());
+      case "xlsx":
+        return await renderXlsx(parseBlocks(markdown));
+      case "pptx":
+        return await renderPptx(parseBlocks(markdown));
     }
   } catch (err) {
     if (err instanceof Error && err.message === "unreadable") {

@@ -215,7 +215,7 @@ v1 内置通道：desktop、cli、webhook、telegram。ACP 作为同一接口上
 | `doc_probe` | 类型、页数、是否可解析 |
 | `doc_parse` | pdf / docx / pptx / xlsx / html / md → 结构化 markdown |
 | `doc_ingest` | 解析后写入个人知识库 |
-| `doc_convert` | 可 parse 的六种源 → md / html / docx / pdf，成功 JSON 带固定 `loss`（见 [转换设计](2026-08-18-flintloom-docforge-convert-design.md)）。写出 xlsx/pptx 仍留后续 |
+| `doc_convert` | 可 parse 的六种源 → md / html / docx / pdf / xlsx / pptx，成功 JSON 带固定 `loss`（见 [转换设计](2026-08-18-flintloom-docforge-convert-design.md)） |
 | `doc_generate` | 工作区 markdown → md / html / docx / pdf（见 [生成设计](2026-08-17-flintloom-docforge-generate-design.md)）。从结构化数据生成仍留后续 |
 | `doc_edit` | 工作区 markdown 一次精确唯一替换并原地覆盖（见 [编辑设计](2026-08-18-flintloom-docforge-edit-design.md)）。pdf/docx 仍先 convert |
 | `doc_compare` | 两份文档 parse 成 markdown 后行级 unified diff，成功 JSON 不写盘（见 [对比设计](2026-08-19-flintloom-docforge-compare-design.md)） |
@@ -287,13 +287,14 @@ v1 内置通道：desktop、cli、webhook、telegram。ACP 作为同一接口上
 1. Kernel + session + loop + `ctx.models` + `models-chat` + fs/grep/shell + host + CLI — 一轮编程对话。当时 host 手工 `register`（已交付）。
 1.5. **插件组装** — yml 真正加载、`apply` / `effect` / `require`、loop 作为插件、`tools/pre-execute`。host/CLI 不再手工 register。见 [插件组装设计](2026-08-17-flintloom-plugin-composition-design.md)。
 2. 桌面工作台 + 预览 + DocForge 解析（已交付，见 [文件预览设计](2026-08-17-flintloom-files-preview-design.md)）；个人知识库 + `doc_ingest`（**从出生就是插件**，见 [知识库设计](2026-08-17-flintloom-knowledge-design.md)）。**工坊视觉抛光**（暖色 token、空状态、文件选中，见 [工坊 UI 设计](2026-08-22-flintloom-workbench-workshop-ui-design.md)）— 仅 `apps/desktop` CSS/结构，不改 host。
-3. A2UI 交互核心（见 [A2UI 设计](2026-08-17-flintloom-a2ui-design.md)）+ 信息图（见 [信息图设计](2026-08-17-flintloom-infographic-design.md)）+ 其余 DocForge 工具（生成见 [生成设计](2026-08-17-flintloom-docforge-generate-design.md)；转换见 [转换设计](2026-08-18-flintloom-docforge-convert-design.md)；编辑见 [编辑设计](2026-08-18-flintloom-docforge-edit-design.md)；对比见 [对比设计](2026-08-19-flintloom-docforge-compare-design.md)；摘要见 [摘要设计](2026-08-19-flintloom-docforge-summarize-design.md)）— 均为插件，不改 host 组装。A2UI 核心与信息图 / 其余 DocForge 分开写计划。**DataTable / Chart** 见 [table/chart 设计](2026-08-22-flintloom-a2ui-table-chart-design.md)。A2UI Infographic 组件与 xlsx/pptx 写出仍留后续。
+3. A2UI 交互核心（见 [A2UI 设计](2026-08-17-flintloom-a2ui-design.md)）+ 信息图（见 [信息图设计](2026-08-17-flintloom-infographic-design.md)）+ 其余 DocForge 工具（生成见 [生成设计](2026-08-17-flintloom-docforge-generate-design.md)；转换见 [转换设计](2026-08-18-flintloom-docforge-convert-design.md)；编辑见 [编辑设计](2026-08-18-flintloom-docforge-edit-design.md)；对比见 [对比设计](2026-08-19-flintloom-docforge-compare-design.md)；摘要见 [摘要设计](2026-08-19-flintloom-docforge-summarize-design.md)）— 均为插件，不改 host 组装。A2UI 核心与信息图 / 其余 DocForge 分开写计划。**DataTable / Chart** 见 [table/chart 设计](2026-08-22-flintloom-a2ui-table-chart-design.md)。
 4. Webhook 通道（见 [webhook 通道设计](2026-08-20-flintloom-channel-webhook-design.md)）+ Telegram 通道（见 [Telegram 通道设计](2026-08-20-flintloom-channel-telegram-design.md)）+ `flint plugin add`（见 [安装器设计](2026-08-21-flintloom-plugin-add-design.md)）。
 5. Skill（见 [Skill 设计](2026-08-22-flintloom-skill-design.md)）— 本地目录 + `skill` 工具，不改 `runTurn`。
 6. MCP（见 [MCP 设计](2026-08-22-flintloom-mcp-design.md)）— stdio + tools，一行一个 server，工具名 `mcp__<id>__<name>`。`mcp-servers.yml` 自动加载见 [MCP 使用说明](../mcp-servers.md)。
 7. Guard ask（见 [Guard ask 设计](2026-08-22-flintloom-guard-ask-design.md)）— host 上 `gate` 为 `ask` 时暂停，工作台允许/拒绝后续跑。
 8. 桌面插件/模型页（见 [插件与模型页设计](2026-08-22-flintloom-desktop-plugins-models-design.md)）— `GET /v1/plugins`、只读 Plugins/Models 顶栏。
 9. A2UI DataTable / Chart（见 [table/chart 设计](2026-08-22-flintloom-a2ui-table-chart-design.md)）— 展示组件，内联 SVG 图，不 wait。
-10. A2UI Infographic（见 [Infographic 组件设计](2026-08-22-flintloom-a2ui-infographic-design.md)）— 复用 `renderSvg` 与预览 API。xlsx/pptx 写出仍留后续。
+10. A2UI Infographic（见 [Infographic 组件设计](2026-08-22-flintloom-a2ui-infographic-design.md)）— 复用 `renderSvg` 与预览 API。
+11. DocForge xlsx / pptx 写出（见 [xlsx/pptx 写出设计](2026-08-22-flintloom-docforge-xlsx-pptx-write-design.md)）— `doc_generate` / `doc_convert` 支持 `.xlsx` / `.pptx` 输出。
 
 第 2–7 刀在同一份总 spec 上继续拆计划。新 Loom 包必须带 `apply`，禁止再往 `createRuntime` 里堆 `register`。

@@ -86,13 +86,26 @@ describe("convertDocument", () => {
     expect(text).toContain("Hello");
   });
 
-  it("rejects xlsx out as bad out", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "flintloom-cv-badout-"));
+  it("converts md to xlsx and pptx with md loss", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "flintloom-cv-office-out-"));
     const source = join(dir, "hello.md");
-    writeFileSync(source, "# Hello\n");
-    await expect(convertDocument(source, join(dir, "out.xlsx"))).rejects.toThrow(
-      /bad out/,
-    );
+    writeFileSync(source, "# Hello\n\n发展\n");
+    const xlsxOut = join(dir, "out.xlsx");
+    const pptxOut = join(dir, "out.pptx");
+    const xlsxResult = await convertDocument(source, xlsxOut);
+    expect(xlsxResult).toEqual({
+      from: "md",
+      format: "xlsx",
+      loss: "images skipped; emphasis flattened",
+    });
+    expect(await parse(xlsxOut)).toContain("Hello");
+    const pptxResult = await convertDocument(source, pptxOut);
+    expect(pptxResult).toEqual({
+      from: "md",
+      format: "pptx",
+      loss: "images skipped; emphasis flattened",
+    });
+    expect(await parse(pptxOut)).toContain("Hello");
   });
 
   it("empty pdf is empty text and does not write out", async () => {

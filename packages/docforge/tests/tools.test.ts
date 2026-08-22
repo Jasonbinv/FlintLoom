@@ -16,6 +16,7 @@ import {
 } from "../src/tools.ts";
 import { EMPTY_PDF } from "./helpers/pdf.ts";
 import { writeHelloDocx } from "./helpers/office.ts";
+import { parse } from "../src/parse.ts";
 
 function createExec(workspaceRoot: string, signal = new AbortController().signal) {
   return { workspaceRoot, signal, channel: "cli" };
@@ -64,9 +65,28 @@ describe("doc tools", () => {
     });
     expect(readFileSync(join(workspace, "out.html"), "utf8")).toContain("Hello");
 
+    expect(
+      JSON.parse(await tool.execute({ source: "hello.md", out: "a.xlsx" }, exec)),
+    ).toEqual({
+      status: "ok",
+      source: "hello.md",
+      out: "a.xlsx",
+      format: "xlsx",
+    });
+    expect(await parse(join(workspace, "a.xlsx"))).toContain("Hello");
+    expect(
+      JSON.parse(await tool.execute({ source: "hello.md", out: "a.pptx" }, exec)),
+    ).toEqual({
+      status: "ok",
+      source: "hello.md",
+      out: "a.pptx",
+      format: "pptx",
+    });
+    expect(await parse(join(workspace, "a.pptx"))).toContain("Hello");
+
     expect(await tool.execute({ out: "a.pdf" }, exec)).toBe("failed: missing source");
     expect(await tool.execute({ source: "hello.md" }, exec)).toBe("failed: missing out");
-    expect(await tool.execute({ source: "hello.md", out: "a.pptx" }, exec)).toBe(
+    expect(await tool.execute({ source: "hello.md", out: "a.zip" }, exec)).toBe(
       "failed: bad out",
     );
     writeFileSync(join(workspace, "x.docx"), "x");
@@ -134,9 +154,26 @@ describe("doc tools", () => {
 
     expect(await tool.execute({ out: "a.pdf" }, exec)).toBe("failed: missing source");
     expect(await tool.execute({ source: "hello.md" }, exec)).toBe("failed: missing out");
-    expect(await tool.execute({ source: "hello.md", out: "a.xlsx" }, exec)).toBe(
-      "failed: bad out",
-    );
+    expect(
+      JSON.parse(await tool.execute({ source: "hello.md", out: "a.xlsx" }, exec)),
+    ).toEqual({
+      status: "ok",
+      source: "hello.md",
+      out: "a.xlsx",
+      from: "md",
+      format: "xlsx",
+      loss: "images skipped; emphasis flattened",
+    });
+    expect(
+      JSON.parse(await tool.execute({ source: "hello.md", out: "a.pptx" }, exec)),
+    ).toEqual({
+      status: "ok",
+      source: "hello.md",
+      out: "a.pptx",
+      from: "md",
+      format: "pptx",
+      loss: "images skipped; emphasis flattened",
+    });
     expect(await tool.execute({ source: "nope.md", out: "a.pdf" }, exec)).toBe(
       "failed: not found",
     );

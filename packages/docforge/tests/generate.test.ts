@@ -23,6 +23,8 @@ describe("formatFromOutRelPath", () => {
     expect(formatFromOutRelPath("a.markdown")).toBeUndefined();
     expect(formatFromOutRelPath("a.htm")).toBeUndefined();
     expect(formatFromOutRelPath("a.md")).toBe("md");
+    expect(formatFromOutRelPath("out.xlsx")).toBe("xlsx");
+    expect(formatFromOutRelPath("deck.PPTX")).toBe("pptx");
   });
 });
 
@@ -67,6 +69,18 @@ it("pdf and docx round-trip Hello and 发展 through parse", async () => {
   expect(await parse(pdfPath)).toContain("发展");
   expect(await parse(docxPath)).toContain("Hello");
   expect(await parse(docxPath)).toContain("发展");
+});
+
+it("xlsx and pptx round-trip Hello through parse", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "flintloom-gen-office-"));
+  const source = join(dir, "hello.md");
+  writeFileSync(source, helloMd);
+  const xlsxPath = join(dir, "hello.xlsx");
+  const pptxPath = join(dir, "hello.pptx");
+  await generateDocument(source, xlsxPath);
+  await generateDocument(source, pptxPath);
+  expect(await parse(xlsxPath)).toContain("Hello");
+  expect(await parse(pptxPath)).toContain("Hello");
 });
 
 it("missing fontPath is unreadable and leaves out unchanged", async () => {
