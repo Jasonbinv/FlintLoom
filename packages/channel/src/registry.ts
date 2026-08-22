@@ -11,14 +11,22 @@ export type ChannelInboundResult = {
   text: string;
 };
 
+export type ChannelOutbound = {
+  sessionId: string;
+  text: string;
+  signal: AbortSignal;
+};
+
 export type ChannelAdapter = {
   inbound(input: ChannelInbound): Promise<ChannelInboundResult>;
+  send?(outbound: ChannelOutbound): Promise<void>;
 };
 
 export type ChannelRegistry = {
   has(id: string): boolean;
   register(id: string, adapter: ChannelAdapter): () => void;
   inbound(id: string, input: ChannelInbound): Promise<ChannelInboundResult>;
+  send(id: string, outbound: ChannelOutbound): Promise<void>;
 };
 
 export function createChannelRegistry(): ChannelRegistry {
@@ -43,6 +51,16 @@ export function createChannelRegistry(): ChannelRegistry {
         throw new Error(id);
       }
       return adapter.inbound(input);
+    },
+    async send(id: string, outbound: ChannelOutbound): Promise<void> {
+      const adapter = adapters.get(id);
+      if (adapter === undefined) {
+        throw new Error(id);
+      }
+      if (adapter.send === undefined) {
+        throw new Error("no send");
+      }
+      await adapter.send(outbound);
     },
   };
 }

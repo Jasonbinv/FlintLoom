@@ -15,7 +15,11 @@ function jsonOk(result: unknown): Response {
   });
 }
 
-function boot(runTurn: LoopService["runTurn"], replyText = "reply-text") {
+function boot(
+  apiFetch: typeof fetch,
+  runTurn: LoopService["runTurn"],
+  replyText = "reply-text",
+) {
   const ctx = new Context();
   ctx.provide("turnBusy", new Set<string>());
   ctx.plugin(sessionPlugin);
@@ -24,16 +28,37 @@ function boot(runTurn: LoopService["runTurn"], replyText = "reply-text") {
     runTurn,
     continueTurn: async () => ({ turnId: "t", status: "ok" as const }),
   });
+  const parsed = parseTelegramConfig({
+    token: "tok",
+    allowedChatIds: [123],
+    poll: false,
+    apiFetch,
+  });
   ctx.require<ChannelRegistry>("channels").register("telegram", {
     async inbound(input) {
-      return ctx.require<LoopService>("loop").runTurn({
+      const result = await runTurn({
         ctx,
         session: ctx.require<SessionStore>("sessions").getOrCreate(input.sessionId),
         text: input.text,
         workspaceRoot: input.workspaceRoot,
         channel: "telegram",
         signal: input.signal,
-      }).then((r) => ({ turnId: r.turnId, status: r.status, text: replyText }));
+      });
+      return { turnId: result.turnId, status: result.status, text: replyText };
+    },
+    async send(outbound) {
+      if (outbound.text.length === 0) {
+        return;
+      }
+      const text =
+        outbound.text.length > 4096 ? outbound.text.slice(0, 4096) : outbound.text;
+      const chatId = Number(outbound.sessionId.slice("telegram:".length));
+      await apiFetch(`https://api.telegram.org/bottok/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId, text }),
+        signal: outbound.signal,
+      });
     },
   });
   return ctx;
@@ -61,12 +86,6 @@ describe("startTelegramPoller", () => {
   it("deleteWebhook before getUpdates then replies to allowlisted text", async () => {
     const calls: Call[] = [];
     const inboundTexts: string[] = [];
-    const ctx = boot(async (input: RunTurnInput) => {
-      inboundTexts.push(input.text);
-      input.session.append({ type: "turn/start", turnId: "t1" });
-      input.session.append({ type: "user/message", text: input.text });
-      return { turnId: "t1", status: "ok" };
-    });
     let updates = 0;
     const apiFetch: typeof fetch = async (url, init) => {
       const body = init?.body === undefined ? undefined : JSON.parse(String(init.body));
@@ -99,6 +118,12 @@ describe("startTelegramPoller", () => {
       }
       return jsonOk([]);
     };
+    const ctx = boot(apiFetch, async (input: RunTurnInput) => {
+      inboundTexts.push(input.text);
+      input.session.append({ type: "turn/start", turnId: "t1" });
+      input.session.append({ type: "user/message", text: input.text });
+      return { turnId: "t1", status: "ok" };
+    });
     const parsed = parseTelegramConfig({
       token: "tok",
       allowedChatIds: [123],
@@ -133,10 +158,6 @@ describe("startTelegramPoller", () => {
 
   it("acks a later same-chat text in one batch without a second inbound", async () => {
     const inboundTexts: string[] = [];
-    const ctx = boot(async (input: RunTurnInput) => {
-      inboundTexts.push(input.text);
-      return { turnId: "t1", status: "ok" };
-    });
     let updates = 0;
     const apiFetch: typeof fetch = async (url, init) => {
       if (String(url).includes("deleteWebhook")) {
@@ -157,6 +178,10 @@ describe("startTelegramPoller", () => {
       }
       return jsonOk([]);
     };
+    const ctx = boot(apiFetch, async (input: RunTurnInput) => {
+      inboundTexts.push(input.text);
+      return { turnId: "t1", status: "ok" };
+    });
     stops.push(
       startTelegramPoller(
         ctx,
@@ -177,11 +202,6 @@ describe("startTelegramPoller", () => {
 
   it("skips when turnBusy already has the session", async () => {
     const inboundTexts: string[] = [];
-    const ctx = boot(async (input: RunTurnInput) => {
-      inboundTexts.push(input.text);
-      return { turnId: "t1", status: "ok" };
-    });
-    ctx.require<Set<string>>("turnBusy").add("telegram:123");
     let updates = 0;
     const apiFetch: typeof fetch = async (url, init) => {
       if (String(url).includes("deleteWebhook")) return jsonOk(true);
@@ -196,6 +216,11 @@ describe("startTelegramPoller", () => {
       }
       return jsonOk([]);
     };
+    const ctx = boot(apiFetch, async (input: RunTurnInput) => {
+      inboundTexts.push(input.text);
+      return { turnId: "t1", status: "ok" };
+    });
+    ctx.require<Set<string>>("turnBusy").add("telegram:123");
     stops.push(
       startTelegramPoller(
         ctx,
@@ -216,7 +241,6 @@ describe("startTelegramPoller", () => {
 
   it("does not sendMessage when inbound text is empty", async () => {
     const calls: Call[] = [];
-    const ctx = boot(async () => ({ turnId: "t1", status: "ok" }), "");
     let updates = 0;
     const apiFetch: typeof fetch = async (url, init) => {
       const body = init?.body === undefined ? undefined : JSON.parse(String(init.body));
@@ -233,6 +257,7 @@ describe("startTelegramPoller", () => {
       }
       return jsonOk([]);
     };
+    const ctx = boot(apiFetch, async () => ({ turnId: "t1", status: "ok" }), "");
     stops.push(
       startTelegramPoller(
         ctx,
@@ -254,7 +279,6 @@ describe("startTelegramPoller", () => {
   it("truncates sendMessage text to 4096", async () => {
     const calls: Call[] = [];
     const reply = "a".repeat(4097);
-    const ctx = boot(async () => ({ turnId: "t1", status: "ok" }), reply);
     let updates = 0;
     const apiFetch: typeof fetch = async (url, init) => {
       const body = init?.body === undefined ? undefined : JSON.parse(String(init.body));
@@ -274,6 +298,7 @@ describe("startTelegramPoller", () => {
       }
       return jsonOk([]);
     };
+    const ctx = boot(apiFetch, async () => ({ turnId: "t1", status: "ok" }), reply);
     stops.push(
       startTelegramPoller(
         ctx,
@@ -295,21 +320,6 @@ describe("startTelegramPoller", () => {
 
   it("skips inbound when session is awaiting_action", async () => {
     const inboundTexts: string[] = [];
-    const ctx = boot(async (input: RunTurnInput) => {
-      inboundTexts.push(input.text);
-      return { turnId: "t1", status: "ok" };
-    });
-    const session = ctx.require<SessionStore>("sessions").getOrCreate("telegram:123");
-    session.append({ type: "turn/start", turnId: "t1" });
-    session.append({
-      type: "a2ui/surface",
-      turnId: "t1",
-      surfaceId: "main",
-      wait: true,
-      messages: [
-        { version: "v0.9", createSurface: { surfaceId: "main", catalogId: "flintloom:a2ui:core" } },
-      ],
-    });
     let updates = 0;
     const apiFetch: typeof fetch = async (url, init) => {
       if (String(url).includes("deleteWebhook")) return jsonOk(true);
@@ -324,6 +334,21 @@ describe("startTelegramPoller", () => {
       }
       return jsonOk([]);
     };
+    const ctx = boot(apiFetch, async (input: RunTurnInput) => {
+      inboundTexts.push(input.text);
+      return { turnId: "t1", status: "ok" };
+    });
+    const session = ctx.require<SessionStore>("sessions").getOrCreate("telegram:123");
+    session.append({ type: "turn/start", turnId: "t1" });
+    session.append({
+      type: "a2ui/surface",
+      turnId: "t1",
+      surfaceId: "main",
+      wait: true,
+      messages: [
+        { version: "v0.9", createSurface: { surfaceId: "main", catalogId: "flintloom:a2ui:core" } },
+      ],
+    });
     stops.push(
       startTelegramPoller(
         ctx,
@@ -345,7 +370,6 @@ describe("startTelegramPoller", () => {
   it("retries deleteWebhook and never getUpdates while it fails", async () => {
     vi.useFakeTimers();
     const calls: Call[] = [];
-    const ctx = boot(async () => ({ turnId: "t1", status: "ok" }));
     const apiFetch: typeof fetch = async (url, init) => {
       const body = init?.body === undefined ? undefined : JSON.parse(String(init.body));
       calls.push({ url: String(url), body });
@@ -357,6 +381,7 @@ describe("startTelegramPoller", () => {
       }
       return jsonOk([]);
     };
+    const ctx = boot(apiFetch, async () => ({ turnId: "t1", status: "ok" }));
     stops.push(
       startTelegramPoller(
         ctx,

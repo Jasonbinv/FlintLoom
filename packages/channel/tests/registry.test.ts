@@ -47,4 +47,29 @@ describe("channels registry", () => {
     expect(() => channels.register("webhook", adapter)).toThrow(/webhook/);
     expect(() => channels.inbound("nope", input)).toThrow(/nope/);
   });
+
+  it("send delegates to adapter and throws without handler", async () => {
+    const channels = createChannelRegistry();
+    const outbound = {
+      sessionId: "telegram:1",
+      text: "out",
+      signal: new AbortController().signal,
+    };
+    channels.register("telegram", {
+      async inbound() {
+        return { turnId: "t", status: "ok" as const, text: "" };
+      },
+      async send(out) {
+        expect(out.text).toBe("out");
+      },
+    });
+    await channels.send("telegram", outbound);
+    channels.register("webhook", {
+      async inbound() {
+        return { turnId: "t", status: "ok" as const, text: "" };
+      },
+    });
+    await expect(channels.send("webhook", outbound)).rejects.toThrow(/no send/);
+    await expect(channels.send("nope", outbound)).rejects.toThrow(/nope/);
+  });
 });

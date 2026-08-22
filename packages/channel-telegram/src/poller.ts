@@ -1,6 +1,7 @@
 import type { Context } from "@flintloom/kernel";
 import type { ChannelRegistry } from "@flintloom/channel";
 import type { SessionStore } from "@flintloom/session";
+import { botPost } from "./bot.ts";
 import type { TelegramConfig } from "./config.ts";
 import { sessionHasWaitingTurn } from "./waiting.ts";
 
@@ -29,40 +30,6 @@ async function delay(signal: AbortSignal): Promise<void> {
     };
     signal.addEventListener("abort", onAbort, { once: true });
   });
-}
-
-async function botPost(
-  parsed: TelegramConfig,
-  method: string,
-  body: unknown,
-  signal: AbortSignal,
-): Promise<unknown> {
-  try {
-    const res = await parsed.apiFetch(`https://api.telegram.org/bot${parsed.token}/${method}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal,
-    });
-    if (!res.ok) {
-      throw new Error(method);
-    }
-    const json: unknown = await res.json();
-    if (
-      json === null ||
-      typeof json !== "object" ||
-      !("ok" in json) ||
-      (json as { ok: unknown }).ok !== true
-    ) {
-      throw new Error(method);
-    }
-    return json;
-  } catch (err) {
-    if (isAbort(signal, err)) {
-      throw err;
-    }
-    throw new Error(method);
-  }
 }
 
 async function runTelegramLoop(
@@ -136,8 +103,6 @@ async function runTelegramLoop(
         void runInboundThenReply({
           channels,
           busy,
-          parsed,
-          chatId,
           sessionId,
           text,
           workspaceRoot,
@@ -160,8 +125,6 @@ async function runTelegramLoop(
 async function runInboundThenReply(opts: {
   channels: ChannelRegistry;
   busy: Set<string>;
-  parsed: TelegramConfig;
-  chatId: number;
   sessionId: string;
   text: string;
   workspaceRoot: string;
@@ -180,8 +143,11 @@ async function runInboundThenReply(opts: {
     if (result.text.length === 0) {
       return;
     }
-    const out = result.text.length > 4096 ? result.text.slice(0, 4096) : result.text;
-    await botPost(opts.parsed, "sendMessage", { chat_id: opts.chatId, text: out }, opts.signal);
+    await opts.channels.send("telegram", {
+      sessionId: opts.sessionId,
+      text: result.text,
+      signal: opts.signal,
+    });
   } catch (err) {
     if (isAbort(opts.signal, err)) {
       return;

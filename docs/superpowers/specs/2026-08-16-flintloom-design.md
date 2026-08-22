@@ -115,7 +115,7 @@ Guard **不是** 企业审批流，也 **不是** 用同一个 chat 模型再问
 | `packages/fs`、`grep`、`shell` | 工作区沙箱内的编程工具 |
 | `packages/skill` | 本地 skill 目录 + `skill` 工具 |
 | `packages/mcp` | 配置里一行一个 MCP server；工具以 `mcp__<server>__<name>` 登记到 `ctx.tools` |
-| `packages/channel` | 通道登记表：本片 `register` + `inbound`；`send` / `deliver` 出站留后续 |
+| `packages/channel` | 通道登记表：本片 `register` + `inbound` + `send`；`deliver` 出站留后续 |
 | `packages/channel-desktop` | 工作台 SSE（本片不迁入 `ctx.channels`） |
 | `packages/channel-cli` | `flint` 标准输入输出（本片不迁入 `ctx.channels`） |
 | `packages/channel-webhook` | 本机 HTTP 收消息：适配器经 `inbound("webhook")` 调 `runTurn` |
@@ -200,7 +200,7 @@ v1 组件目录：text、markdown、button、choice、data table、chart、infog
 
 ## 9. Channel
 
-除桌面通道所使用的 host API 外，入站只走 `ctx.channels`。Webhook 的 listen / hostToken 仍由 host 拥有；**turn 入站**走 `ctx.channels.inbound("webhook")`。见 [webhook 通道设计](2026-08-20-flintloom-channel-webhook-design.md)。Telegram 的 `getUpdates` 由插件拥有，仅 `startHost` overlay 才轮询；**turn 入站**走 `ctx.channels.inbound("telegram")`。见 [Telegram 通道设计](2026-08-20-flintloom-channel-telegram-design.md)。桌面 `POST /v1/turns` 与 CLI 不迁入该接口。`channels.send` 仍后续。
+除桌面通道所使用的 host API 外，入站只走 `ctx.channels`。Webhook 的 listen / hostToken 仍由 host 拥有；**turn 入站**走 `ctx.channels.inbound("webhook")`。见 [webhook 通道设计](2026-08-20-flintloom-channel-webhook-design.md)。Telegram 的 `getUpdates` 由插件拥有，仅 `startHost` overlay 才轮询；**turn 入站**走 `ctx.channels.inbound("telegram")`。见 [Telegram 通道设计](2026-08-20-flintloom-channel-telegram-design.md)。桌面 `POST /v1/turns` 与 CLI 不迁入该接口。Telegram 出站走 `ctx.channels.send("telegram", …)`（见 [channels.send 设计](2026-08-22-flintloom-channels-send-design.md)）。`deliver` 仍后续。
 
 v1 内置通道：desktop、cli、webhook、telegram。ACP 作为同一接口上的可选插件。Slack、Discord、邮件、飞书以及 ZeroClaw 其余通道不进 v1，以后按插件挂载。
 
@@ -296,5 +296,6 @@ v1 内置通道：desktop、cli、webhook、telegram。ACP 作为同一接口上
 9. A2UI DataTable / Chart（见 [table/chart 设计](2026-08-22-flintloom-a2ui-table-chart-design.md)）— 展示组件，内联 SVG 图，不 wait。
 10. A2UI Infographic（见 [Infographic 组件设计](2026-08-22-flintloom-a2ui-infographic-design.md)）— 复用 `renderSvg` 与预览 API。
 11. DocForge xlsx / pptx 写出（见 [xlsx/pptx 写出设计](2026-08-22-flintloom-docforge-xlsx-pptx-write-design.md)）— `doc_generate` / `doc_convert` 支持 `.xlsx` / `.pptx` 输出。
+12. `channels.send`（见 [channels.send 设计](2026-08-22-flintloom-channels-send-design.md)）— 登记表出站；Telegram poller 经 `send` 回包。
 
 第 2–7 刀在同一份总 spec 上继续拆计划。新 Loom 包必须带 `apply`，禁止再往 `createRuntime` 里堆 `register`。

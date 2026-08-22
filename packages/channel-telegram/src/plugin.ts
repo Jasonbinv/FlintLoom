@@ -11,7 +11,7 @@ const plugin: FlintPlugin = {
     ctx.require("sessions");
     ctx.require("loop");
     const parsed = parseTelegramConfig(config);
-    ctx.effect(channels.register("telegram", createTelegramAdapter(ctx)));
+    ctx.effect(channels.register("telegram", createTelegramAdapter(ctx, parsed)));
     if (parsed.poll) {
       ctx.require<Set<string>>("turnBusy");
       ctx.effect(startTelegramPoller(ctx, parsed));
