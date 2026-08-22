@@ -286,7 +286,7 @@ v1 内置通道：desktop、cli、webhook、telegram。ACP 作为同一接口上
 
 1. Kernel + session + loop + `ctx.models` + `models-chat` + fs/grep/shell + host + CLI — 一轮编程对话。当时 host 手工 `register`（已交付）。
 1.5. **插件组装** — yml 真正加载、`apply` / `effect` / `require`、loop 作为插件、`tools/pre-execute`。host/CLI 不再手工 register。见 [插件组装设计](2026-08-17-flintloom-plugin-composition-design.md)。
-2. 桌面工作台 + 预览 + DocForge 解析（已交付，见 [文件预览设计](2026-08-17-flintloom-files-preview-design.md)）；个人知识库 + `doc_ingest`（**从出生就是插件**，见 [知识库设计](2026-08-17-flintloom-knowledge-design.md)）。
+2. 桌面工作台 + 预览 + DocForge 解析（已交付，见 [文件预览设计](2026-08-17-flintloom-files-preview-design.md)）；个人知识库 + `doc_ingest`（**从出生就是插件**，见 [知识库设计](2026-08-17-flintloom-knowledge-design.md)）。**工坊视觉抛光**（暖色 token、空状态、文件选中，见 [工坊 UI 设计](2026-08-22-flintloom-workbench-workshop-ui-design.md)）— 仅 `apps/desktop` CSS/结构，不改 host。
 3. A2UI 交互核心（见 [A2UI 设计](2026-08-17-flintloom-a2ui-design.md)）+ 信息图（见 [信息图设计](2026-08-17-flintloom-infographic-design.md)）+ 其余 DocForge 工具（生成见 [生成设计](2026-08-17-flintloom-docforge-generate-design.md)；转换见 [转换设计](2026-08-18-flintloom-docforge-convert-design.md)；编辑见 [编辑设计](2026-08-18-flintloom-docforge-edit-design.md)；对比见 [对比设计](2026-08-19-flintloom-docforge-compare-design.md)；摘要见 [摘要设计](2026-08-19-flintloom-docforge-summarize-design.md)）— 均为插件，不改 host 组装。A2UI 核心与信息图 / 其余 DocForge 分开写计划。table / chart / Infographic 组件与 xlsx/pptx 写出仍留后续。
 4. Webhook 通道（见 [webhook 通道设计](2026-08-20-flintloom-channel-webhook-design.md)）+ Telegram 通道（见 [Telegram 通道设计](2026-08-20-flintloom-channel-telegram-design.md)）+ `flint plugin add`（见 [安装器设计](2026-08-21-flintloom-plugin-add-design.md)）。
 5. Skill（见 [Skill 设计](2026-08-22-flintloom-skill-design.md)）— 本地目录 + `skill` 工具，不改 `runTurn`。

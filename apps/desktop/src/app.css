@@ -355,6 +355,11 @@ body,
   font: inherit;
 }
 
+.bubble.guard-ask .btn-primary,
+.bubble.guard-ask .btn-ghost {
+  padding: 0.35rem 0.8rem;
+}
+
 .btn-primary:disabled,
 .knowledge-footer button:disabled,
 .bubble.a2ui button:disabled {
