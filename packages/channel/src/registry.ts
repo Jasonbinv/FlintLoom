@@ -17,9 +17,16 @@ export type ChannelOutbound = {
   signal: AbortSignal;
 };
 
+export type ChannelDeliver = {
+  sessionId: string;
+  turnId: string;
+  signal: AbortSignal;
+};
+
 export type ChannelAdapter = {
   inbound(input: ChannelInbound): Promise<ChannelInboundResult>;
   send?(outbound: ChannelOutbound): Promise<void>;
+  deliver?(outbound: ChannelDeliver): Promise<void>;
 };
 
 export type ChannelRegistry = {
@@ -27,6 +34,7 @@ export type ChannelRegistry = {
   register(id: string, adapter: ChannelAdapter): () => void;
   inbound(id: string, input: ChannelInbound): Promise<ChannelInboundResult>;
   send(id: string, outbound: ChannelOutbound): Promise<void>;
+  deliver(id: string, outbound: ChannelDeliver): Promise<void>;
 };
 
 export function createChannelRegistry(): ChannelRegistry {
@@ -61,6 +69,16 @@ export function createChannelRegistry(): ChannelRegistry {
         throw new Error("no send");
       }
       await adapter.send(outbound);
+    },
+    async deliver(id: string, outbound: ChannelDeliver): Promise<void> {
+      const adapter = adapters.get(id);
+      if (adapter === undefined) {
+        throw new Error(id);
+      }
+      if (adapter.deliver === undefined) {
+        throw new Error("no deliver");
+      }
+      await adapter.deliver(outbound);
     },
   };
 }

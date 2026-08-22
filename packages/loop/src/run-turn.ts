@@ -93,21 +93,6 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-function failChat(
-  session: Session,
-  onEvent: RunTurnInput["onEvent"],
-  finish: (status: TurnEndStatus) => RunTurnResult,
-  err: unknown,
-  kind = "chat",
-): RunTurnResult {
-  appendEvent(session, onEvent, {
-    type: "model/error",
-    kind,
-    message: errorMessage(err),
-  });
-  return finish("failed");
-}
-
 function lastTurnStartId(session: Session): string | undefined {
   const events = session.events();
   for (let i = events.length - 1; i >= 0; i--) {
@@ -157,6 +142,58 @@ function toolCallById(
     }
   }
   return undefined;
+}
+
+type FinishFn = (status: TurnEndStatus) => Promise<RunTurnResult>;
+
+async function maybeDeliver(
+  ctx: Context,
+  channel: string,
+  session: Session,
+  turnId: string,
+  signal: AbortSignal,
+): Promise<void> {
+  if (channel === "host" || channel === "cli") {
+    return;
+  }
+  type DeliverRegistry = {
+    has(id: string): boolean;
+    deliver(
+      id: string,
+      outbound: { sessionId: string; turnId: string; signal: AbortSignal },
+    ): Promise<void>;
+  };
+  const channels = ctx.get<DeliverRegistry>("channels");
+  if (channels === undefined || !channels.has(channel)) {
+    return;
+  }
+  try {
+    await channels.deliver(channel, {
+      sessionId: session.id,
+      turnId,
+      signal,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.message === "no deliver") {
+      return;
+    }
+    throw err;
+  }
+}
+
+async function failChat(
+  session: Session,
+  onEvent: RunTurnInput["onEvent"],
+  finish: FinishFn,
+  err: unknown,
+  kind = "chat",
+): Promise<RunTurnResult> {
+  appendEvent(session, onEvent, {
+    type: "model/error",
+    kind,
+    message: errorMessage(err),
+  });
+  return await finish("failed");
 }
 
 async function executeToolCall(
@@ -263,14 +300,15 @@ async function runStepIterations(input: RunStepsInput): Promise<RunTurnResult> {
     onEvent,
   } = input;
 
-  const finish = (status: TurnEndStatus): RunTurnResult => {
+  const finish = async (status: TurnEndStatus): Promise<RunTurnResult> => {
     appendEvent(session, onEvent, { type: "turn/end", turnId, status });
+    await maybeDeliver(input.ctx, channel, session, turnId, signal);
     return { turnId, status };
   };
 
   for (let step = 0; step < MAX_STEPS; step++) {
     if (signal.aborted) {
-      return finish("cancelled");
+      return await finish("cancelled");
     }
 
     let chat;
@@ -278,12 +316,12 @@ async function runStepIterations(input: RunStepsInput): Promise<RunTurnResult> {
       chat = models.resolveChat();
     } catch (err) {
       if (signal.aborted) {
-        return finish("cancelled");
+        return await finish("cancelled");
       }
       if (err instanceof ModelKindMissingError) {
-        return failChat(session, onEvent, finish, err, err.kind);
+        return await failChat(session, onEvent, finish, err, err.kind);
       }
-      return failChat(session, onEvent, finish, err);
+      return await failChat(session, onEvent, finish, err);
     }
 
     const messages = [
@@ -300,7 +338,7 @@ async function runStepIterations(input: RunStepsInput): Promise<RunTurnResult> {
         signal,
       )) {
         if (signal.aborted) {
-          return finish("cancelled");
+          return await finish("cancelled");
         }
 
         switch (chunk.type) {
@@ -320,18 +358,18 @@ async function runStepIterations(input: RunStepsInput): Promise<RunTurnResult> {
               kind: "chat",
               message: chunk.message,
             });
-            return finish("failed");
+            return await finish("failed");
         }
       }
     } catch (err) {
       if (signal.aborted) {
-        return finish("cancelled");
+        return await finish("cancelled");
       }
-      return failChat(session, onEvent, finish, err);
+      return await failChat(session, onEvent, finish, err);
     }
 
     if (signal.aborted) {
-      return finish("cancelled");
+      return await finish("cancelled");
     }
 
     if (toolCalls.length === 0) {
@@ -339,7 +377,7 @@ async function runStepIterations(input: RunStepsInput): Promise<RunTurnResult> {
         type: "assistant/message",
         text: accumulatedText,
       });
-      return finish("ok");
+      return await finish("ok");
     }
 
     let stepWait = { value: false };
@@ -354,7 +392,7 @@ async function runStepIterations(input: RunStepsInput): Promise<RunTurnResult> {
           });
         }
         if (paused.status === "cancelled") {
-          return finish("cancelled");
+          return await finish("cancelled");
         }
         return paused;
       }
@@ -368,7 +406,7 @@ async function runStepIterations(input: RunStepsInput): Promise<RunTurnResult> {
     }
   }
 
-  return finish("failed");
+  return await finish("failed");
 }
 
 export async function runTurn(input: RunTurnInput): Promise<RunTurnResult> {
@@ -448,6 +486,7 @@ export async function continueGuardTurn(
     if (paused !== undefined) {
       if (paused.status === "cancelled") {
         appendEvent(session, onEvent, { type: "turn/end", turnId, status: "cancelled" });
+        await maybeDeliver(input.ctx, input.channel, session, turnId, input.signal);
         return paused;
       }
       return paused;

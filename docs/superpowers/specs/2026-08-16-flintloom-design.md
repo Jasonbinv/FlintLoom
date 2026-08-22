@@ -115,7 +115,7 @@ Guard **不是** 企业审批流，也 **不是** 用同一个 chat 模型再问
 | `packages/fs`、`grep`、`shell` | 工作区沙箱内的编程工具 |
 | `packages/skill` | 本地 skill 目录 + `skill` 工具 |
 | `packages/mcp` | 配置里一行一个 MCP server；工具以 `mcp__<server>__<name>` 登记到 `ctx.tools` |
-| `packages/channel` | 通道登记表：本片 `register` + `inbound` + `send`；`deliver` 出站留后续 |
+| `packages/channel` | 通道登记表：本片 `register` + `inbound` + `send` + `deliver` |
 | `packages/channel-desktop` | 工作台 SSE（本片不迁入 `ctx.channels`） |
 | `packages/channel-cli` | `flint` 标准输入输出（本片不迁入 `ctx.channels`） |
 | `packages/channel-webhook` | 本机 HTTP 收消息：适配器经 `inbound("webhook")` 调 `runTurn` |
@@ -299,5 +299,6 @@ v1 内置通道：desktop、cli、webhook、telegram。ACP 作为同一接口上
 12. `channels.send`（见 [channels.send 设计](2026-08-22-flintloom-channels-send-design.md)）— 登记表出站；Telegram poller 经 `send` 回包。
 13. DocForge JSON 结构化生成（见 [JSON 生成设计](2026-08-22-flintloom-docforge-generate-json-design.md)）— `doc_generate` 接受 `.json` `blocks` 源。
 14. 薄 Electron 桌面壳（见 [Electron 设计](2026-08-22-flintloom-desktop-electron-design.md)）— `pnpm desktop:app` 原生窗口；`pnpm desktop` 仍为浏览器。
+15. `channels.deliver`（见 [deliver 设计](2026-08-22-flintloom-channels-deliver-design.md)）— loop turn 结束自动出站；Telegram `deliver` + 去掉 poller 手动 `send`。
 
 第 2–7 刀在同一份总 spec 上继续拆计划。新 Loom 包必须带 `apply`，禁止再往 `createRuntime` 里堆 `register`。

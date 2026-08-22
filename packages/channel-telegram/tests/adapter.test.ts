@@ -87,6 +87,35 @@ describe("createTelegramAdapter", () => {
     expect(callCount).toBe(1);
   });
 
+  it("deliver posts sendMessage from session assistant text", async () => {
+    const ctx = new Context();
+    ctx.plugin(sessionPlugin);
+    const sessions = ctx.require<import("@flintloom/session").SessionStore>("sessions");
+    const session = sessions.getOrCreate("telegram:7");
+    session.append({ type: "turn/start", turnId: "t1" });
+    session.append({ type: "assistant/message", text: "from-deliver" });
+    ctx.provide("loop", {
+      runTurn: async () => ({ turnId: "t1", status: "ok" as const }),
+      continueTurn: async () => ({ turnId: "t", status: "ok" as const }),
+    });
+    let body: string | undefined;
+    const parsed = mockParsed(async (_url, init) => {
+      body = typeof init?.body === "string" ? init.body : undefined;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true }),
+      } as Response;
+    });
+    const adapter = createTelegramAdapter(ctx, parsed);
+    await adapter.deliver!({
+      sessionId: "telegram:7",
+      turnId: "t1",
+      signal: new AbortController().signal,
+    });
+    expect(JSON.parse(body!)).toEqual({ chat_id: 7, text: "from-deliver" });
+  });
+
   it("apply registers telegram and stop unregisters", async () => {
     const ctx = new Context();
     await ctx.plugin(sessionPlugin);

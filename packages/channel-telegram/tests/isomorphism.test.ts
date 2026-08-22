@@ -36,7 +36,15 @@ function boot() {
   ctx.plugin(sessionPlugin);
   ctx.plugin(loopPlugin);
   ctx.plugin(channelPlugin);
-  ctx.plugin(telegramPlugin, { token: "tok", allowedChatIds: [1] });
+  ctx.plugin(telegramPlugin, {
+    token: "tok",
+    allowedChatIds: [1],
+    apiFetch: async () =>
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+  });
   const models = ctx.require<ModelRegistry>("models");
   models.registerChat("fake", textChat("hello-iso"));
   models.setDefault("chat", "fake");
@@ -49,7 +57,7 @@ describe("telegram inbound events", () => {
     const sessions = ctx.require<SessionStore>("sessions");
     const inbound = await ctx.require<ChannelRegistry>("channels").inbound("telegram", {
       text: "same-text",
-      sessionId: "tg",
+      sessionId: "telegram:1",
       workspaceRoot: process.cwd(),
       signal: new AbortController().signal,
     });
@@ -64,7 +72,7 @@ describe("telegram inbound events", () => {
       channel: "host",
       signal: new AbortController().signal,
     });
-    const telegramEvents = sessions.get("tg")!.events();
+    const telegramEvents = sessions.get("telegram:1")!.events();
     expect(stripTurnId(telegramEvents)).toEqual(stripTurnId(hostSession.events()));
   });
 });

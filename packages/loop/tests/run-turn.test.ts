@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import a2uiPlugin from "@flintloom/a2ui";
+import channelPlugin, { type ChannelRegistry } from "@flintloom/channel";
 import { createFsTool } from "@flintloom/fs";
 import { Context } from "@flintloom/kernel";
 import modelsPlugin, {
@@ -309,6 +310,39 @@ describe("runTurn", () => {
     });
     expect(result.status).toBe("ok");
     expect(session.events().some((e) => e.type === "turn/end")).toBe(true);
+  });
+
+  it("delivers when channel registry has deliver handler", async () => {
+    const delivered: string[] = [];
+    const fakeChat: ChatProvider = {
+      async *stream() {
+        yield { type: "text", text: "telegram-out" };
+      },
+    };
+    const ctx = boot();
+    ctx.plugin(channelPlugin);
+    ctx.require<ChannelRegistry>("channels").register("telegram", {
+      async inbound() {
+        throw new Error("inbound");
+      },
+      async deliver(out) {
+        delivered.push(out.turnId);
+      },
+    });
+    ctx.require<ModelRegistry>("models").registerChat("fake", fakeChat);
+    ctx.require<ModelRegistry>("models").setDefault("chat", "fake");
+    const session = new Session("telegram:1");
+    const result = await runTurn({
+      ctx,
+      session,
+      text: "hi",
+      workspaceRoot: process.cwd(),
+      channel: "telegram",
+      signal: new AbortController().signal,
+    });
+    expect(result.status).toBe("ok");
+    expect(delivered.length).toBe(1);
+    expect(delivered[0]).toBe(result.turnId);
   });
 
   it("continueTurn throws when not waiting", async () => {

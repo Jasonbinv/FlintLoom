@@ -331,6 +331,9 @@ importers:
       '@flintloom/a2ui':
         specifier: workspace:*
         version: link:../a2ui
+      '@flintloom/channel':
+        specifier: workspace:*
+        version: link:../channel
       '@flintloom/fs':
         specifier: workspace:*
         version: link:../fs

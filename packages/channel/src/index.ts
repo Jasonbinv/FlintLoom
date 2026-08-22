@@ -1,6 +1,7 @@
 export {
   createChannelRegistry,
   type ChannelAdapter,
+  type ChannelDeliver,
   type ChannelInbound,
   type ChannelInboundResult,
   type ChannelOutbound,

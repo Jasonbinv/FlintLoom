@@ -36,22 +36,34 @@ function boot(
   });
   ctx.require<ChannelRegistry>("channels").register("telegram", {
     async inbound(input) {
+      const session = ctx.require<SessionStore>("sessions").getOrCreate(input.sessionId);
       const result = await runTurn({
         ctx,
-        session: ctx.require<SessionStore>("sessions").getOrCreate(input.sessionId),
+        session,
         text: input.text,
         workspaceRoot: input.workspaceRoot,
         channel: "telegram",
         signal: input.signal,
       });
+      try {
+        await ctx.require<ChannelRegistry>("channels").deliver("telegram", {
+          sessionId: input.sessionId,
+          turnId: result.turnId,
+          signal: input.signal,
+        });
+      } catch (err) {
+        if (!(err instanceof Error && err.message === "no deliver")) {
+          throw err;
+        }
+      }
       return { turnId: result.turnId, status: result.status, text: replyText };
     },
-    async send(outbound) {
-      if (outbound.text.length === 0) {
+    async deliver(outbound) {
+      if (replyText.length === 0) {
         return;
       }
       const text =
-        outbound.text.length > 4096 ? outbound.text.slice(0, 4096) : outbound.text;
+        replyText.length > 4096 ? replyText.slice(0, 4096) : replyText;
       const chatId = Number(outbound.sessionId.slice("telegram:".length));
       await apiFetch(`https://api.telegram.org/bottok/sendMessage`, {
         method: "POST",

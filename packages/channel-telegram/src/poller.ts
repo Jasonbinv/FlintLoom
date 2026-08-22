@@ -140,14 +140,7 @@ async function runInboundThenReply(opts: {
     if (opts.signal.aborted) {
       return;
     }
-    if (result.text.length === 0) {
-      return;
-    }
-    await opts.channels.send("telegram", {
-      sessionId: opts.sessionId,
-      text: result.text,
-      signal: opts.signal,
-    });
+    void result;
   } catch (err) {
     if (isAbort(opts.signal, err)) {
       return;
