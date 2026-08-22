@@ -194,4 +194,25 @@ describe("Session", () => {
     session.append({ type: "turn/end", turnId: "t1", status: "ok" });
     expect(session.isWaiting("t1")).toBe(false);
   });
+
+  it("isWaiting for guard ask until guard response", () => {
+    const session = new Session("s-guard");
+    session.append({ type: "turn/start", turnId: "t1" });
+    session.append({ type: "tool/call", callId: "c1", name: "shell", args: {} });
+    session.append({
+      type: "guard/ask",
+      turnId: "t1",
+      callId: "c1",
+      tool: "shell",
+      remainingCalls: [],
+    });
+    expect(session.isWaiting("t1")).toBe(true);
+    session.append({
+      type: "guard/response",
+      turnId: "t1",
+      callId: "c1",
+      decision: "allow",
+    });
+    expect(session.isWaiting("t1")).toBe(false);
+  });
 });

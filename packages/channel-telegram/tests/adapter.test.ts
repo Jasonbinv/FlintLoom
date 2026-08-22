@@ -21,6 +21,9 @@ describe("createTelegramAdapter", () => {
       async continueTurn() {
         throw new Error("continueTurn");
       },
+      async continueGuardTurn() {
+        throw new Error("continueGuardTurn");
+      },
     };
     ctx.provide("loop", loop);
     const adapter = createTelegramAdapter(ctx);

@@ -13,6 +13,19 @@ export type WorkbenchEvent =
   | { type: "model/error"; kind: string; message: string }
   | { type: "guard/decision"; tool: string; decision: "allow" | "deny" | "ask" }
   | {
+      type: "guard/ask";
+      turnId: string;
+      callId: string;
+      tool: string;
+      remainingCalls: { id: string; name: string; args: unknown }[];
+    }
+  | {
+      type: "guard/response";
+      turnId: string;
+      callId: string;
+      decision: "allow" | "deny";
+    }
+  | {
       type: "a2ui/surface";
       turnId: string;
       surfaceId: string;

@@ -14,6 +14,13 @@ export class Session {
   }
 
   isWaiting(turnId: string): boolean {
+    if (this.#isA2uiWaiting(turnId)) {
+      return true;
+    }
+    return this.#isGuardWaiting(turnId);
+  }
+
+  #isA2uiWaiting(turnId: string): boolean {
     let started = false;
     let ended = false;
     let lastSurfaceWait: boolean | undefined;
@@ -46,6 +53,35 @@ export class Session {
       return false;
     }
     return true;
+  }
+
+  #isGuardWaiting(turnId: string): boolean {
+    let started = false;
+    let ended = false;
+    const pending = new Map<string, string>();
+
+    for (const event of this.#events) {
+      if (event.type === "turn/start" && event.turnId === turnId) {
+        started = true;
+        ended = false;
+        pending.clear();
+      } else if (event.type === "turn/end" && event.turnId === turnId) {
+        if (started) {
+          ended = true;
+        }
+      } else if (started && !ended && "turnId" in event && event.turnId === turnId) {
+        if (event.type === "guard/ask") {
+          pending.set(event.callId, event.tool);
+        } else if (event.type === "guard/response") {
+          pending.delete(event.callId);
+        }
+      }
+    }
+
+    if (!started || ended) {
+      return false;
+    }
+    return pending.size > 0;
   }
 
   deriveMessages(): ChatMessage[] {

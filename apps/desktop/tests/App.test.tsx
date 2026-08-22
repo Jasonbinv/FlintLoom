@@ -62,6 +62,21 @@ const SURFACE_SSE =
     messages: confirmMessages(),
   })}\n\n` + `data: {"type":"end","status":"awaiting_action"}\n\n`;
 
+const GUARD_SSE =
+  `data: {"type":"turn/start","turnId":"t-guard"}\n\n` +
+  `data: ${JSON.stringify({
+    type: "guard/ask",
+    turnId: "t-guard",
+    callId: "call-touch",
+    tool: "touch",
+    remainingCalls: [],
+  })}\n\n` + `data: {"type":"end","status":"awaiting_action"}\n\n`;
+
+const GUARD_ALLOW_SSE =
+  `data: {"type":"tool/result","callId":"call-touch","name":"touch","text":"ok"}\n\n` +
+  `data: {"type":"assistant/message","text":"done"}\n\n` +
+  `data: {"type":"end","status":"ok"}\n\n`;
+
 let root: Root | undefined;
 let container: HTMLDivElement | undefined;
 
@@ -76,6 +91,7 @@ function installFetch(opts: {
   session?: Response | Error;
   turn?: Response | Error;
   actions?: Response | Error;
+  guard?: Response | Error;
   cancel?: Response | Error;
   files?: Response | Error;
   preview?: Response | Error;
@@ -177,6 +193,16 @@ function installFetch(opts: {
       return (
         opts.actions ??
         new Response(ACTIONS_SSE, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        })
+      );
+    }
+    if (url.includes("/guard")) {
+      if (opts.guard instanceof Error) throw opts.guard;
+      return (
+        opts.guard ??
+        new Response(GUARD_ALLOW_SSE, {
           status: 200,
           headers: { "Content-Type": "text/event-stream" },
         })
@@ -815,6 +841,133 @@ describe("App", () => {
       );
     });
     expect(actionCalls).toHaveLength(1);
+  });
+
+  it("renders guard ask with tool name only and disables send", async () => {
+    installFetch({
+      turn: new Response(GUARD_SSE, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    });
+    await mountApp();
+    await typeAndSend("run tool");
+    await waitForText("touch");
+    expect(document.body.textContent).toContain("允许执行工具");
+    expect(document.body.textContent).not.toContain("call-touch");
+    const sendButton = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "发送",
+    );
+    expect(sendButton?.disabled).toBe(true);
+    const allowButton = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "允许",
+    );
+    expect(allowButton).toBeTruthy();
+    const denyButton = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "拒绝",
+    );
+    expect(denyButton).toBeTruthy();
+  });
+
+  it("posts allow to /guard with callId", async () => {
+    installFetch({
+      turn: new Response(GUARD_SSE, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    });
+    await mountApp();
+    await typeAndSend("run tool");
+    await waitForText("允许");
+    const allowButton = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "允许",
+    );
+    if (!allowButton) throw new Error("no allow button");
+    await act(async () => {
+      allowButton.click();
+    });
+    await waitForText("done");
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const guardCall = fetchMock.mock.calls.find(([input, init]) => {
+      const url = requestUrl(input as RequestInfo | URL);
+      return (
+        url.includes("/guard") &&
+        (init as RequestInit | undefined)?.method === "POST"
+      );
+    });
+    expect(guardCall).toBeTruthy();
+    const body = JSON.parse(String((guardCall![1] as RequestInit).body)) as {
+      callId: string;
+      decision: string;
+    };
+    expect(body.callId).toBe("call-touch");
+    expect(body.decision).toBe("allow");
+  });
+
+  it("posts deny to /guard when reject clicked", async () => {
+    installFetch({
+      turn: new Response(GUARD_SSE, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+      guard: new Response(
+        `data: {"type":"tool/result","callId":"call-touch","name":"touch","text":"guard denied: touch"}\n\n` +
+          `data: {"type":"end","status":"ok"}\n\n`,
+        {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        },
+      ),
+    });
+    await mountApp();
+    await typeAndSend("run tool");
+    await waitForText("拒绝");
+    const denyButton = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "拒绝",
+    );
+    if (!denyButton) throw new Error("no deny button");
+    await act(async () => {
+      denyButton.click();
+    });
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const guardCall = fetchMock.mock.calls.find(([input, init]) => {
+      const url = requestUrl(input as RequestInfo | URL);
+      return (
+        url.includes("/guard") &&
+        (init as RequestInit | undefined)?.method === "POST"
+      );
+    });
+    expect(guardCall).toBeTruthy();
+    const body = JSON.parse(String((guardCall![1] as RequestInit).body)) as {
+      decision: string;
+    };
+    expect(body.decision).toBe("deny");
+  });
+
+  it("restores guard waiting state from session reload", async () => {
+    installFetch({
+      session: new Response(
+        JSON.stringify({
+          events: [
+            { type: "turn/start", turnId: "t-guard" },
+            {
+              type: "guard/ask",
+              turnId: "t-guard",
+              callId: "call-touch",
+              tool: "touch",
+              remainingCalls: [],
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    await waitForText("touch");
+    const sendButton = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "发送",
+    );
+    expect(sendButton?.disabled).toBe(true);
   });
 
   it("button click posts the current picker value in data", async () => {

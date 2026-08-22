@@ -8,6 +8,19 @@ export type SessionEvent =
   | { type: "tool/result"; callId: string; name: string; text: string }
   | { type: "model/error"; kind: string; message: string }
   | { type: "guard/decision"; tool: string; decision: "allow" | "deny" | "ask" }
+  | {
+      type: "guard/ask";
+      turnId: string;
+      callId: string;
+      tool: string;
+      remainingCalls: { id: string; name: string; args: unknown }[];
+    }
+  | {
+      type: "guard/response";
+      turnId: string;
+      callId: string;
+      decision: "allow" | "deny";
+    }
   | { type: "a2ui/surface"; turnId: string; surfaceId: string; messages: unknown[]; wait: boolean }
   | { type: "a2ui/action"; turnId: string; surfaceId: string; name: string; context?: unknown; data?: unknown };
 

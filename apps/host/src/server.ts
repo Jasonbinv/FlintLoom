@@ -8,6 +8,7 @@ import type { ModelRegistry } from "@flintloom/models";
 import type { Session, SessionEvent, SessionStore } from "@flintloom/session";
 import { WorkspaceEscapeError } from "@flintloom/tools";
 import { cancelWaitingTurn, handleTurnActions, sessionHasWaitingTurn } from "./a2ui.ts";
+import { handleTurnGuard } from "./guard.ts";
 import {
   listWorkspaceFiles,
   normalizeRelPath,
@@ -348,6 +349,29 @@ async function handleRequest(
       url,
       workspaceRoot: opts.workspaceRoot,
       ctx: opts.runtime.ctx,
+    })
+  ) {
+    return;
+  }
+
+  if (
+    await handleTurnGuard(req, res, {
+      pathname,
+      ctx: opts.runtime.ctx,
+      workspaceRoot: opts.workspaceRoot,
+      turns: opts.turns,
+      busy: opts.busy,
+      streamLoopResult: (sseReq, sseRes, session, work, turnId) =>
+        streamLoopResult(
+          sseReq,
+          sseRes,
+          session,
+          opts.controllers,
+          opts.turns,
+          work,
+          turnId,
+        ),
+      controllers: opts.controllers,
     })
   ) {
     return;

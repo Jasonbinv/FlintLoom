@@ -57,6 +57,20 @@ export async function postTurnAction(
   );
 }
 
+export async function postTurnGuard(
+  turnId: string,
+  body: { callId: string; decision: "allow" | "deny" },
+  onEvent: (event: WorkbenchEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  await postSse(
+    `/v1/turns/${encodeURIComponent(turnId)}/guard`,
+    body,
+    onEvent,
+    signal,
+  );
+}
+
 async function postSse(
   url: string,
   body: unknown,

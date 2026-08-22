@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { A2uiSurface } from "./A2uiSurface.tsx";
-import { cancelTurn, fetchModels, fetchSession, postTurn, postTurnAction } from "./api.ts";
+import { cancelTurn, fetchModels, fetchSession, postTurn, postTurnAction, postTurnGuard } from "./api.ts";
 import { FilePane } from "./FilePane.tsx";
 import { insertPath } from "./files.ts";
 import type { WorkbenchEvent } from "./types.ts";
@@ -14,7 +14,8 @@ type Bubble =
   | { id: string; kind: "tool-call"; name: string; argsText: string }
   | { id: string; kind: "tool-result"; text: string }
   | { id: string; kind: "error"; message: string }
-  | { id: string; kind: "a2ui"; surfaceId: string; messages: unknown[]; turnId: string };
+  | { id: string; kind: "a2ui"; surfaceId: string; messages: unknown[]; turnId: string }
+  | { id: string; kind: "guard-ask"; tool: string; callId: string; turnId: string };
 
 function sessionId(): string {
   let id = sessionStorage.getItem(SESSION_KEY);
@@ -53,6 +54,14 @@ function bubbleFromHistory(event: WorkbenchEvent, id: string): Bubble | undefine
         messages: event.messages,
         turnId: event.turnId,
       };
+    case "guard/ask":
+      return {
+        id,
+        kind: "guard-ask",
+        tool: event.tool,
+        callId: event.callId,
+        turnId: event.turnId,
+      };
     default:
       return undefined;
   }
@@ -63,6 +72,7 @@ function waitingTurnId(events: WorkbenchEvent[]): string | undefined {
   let ended = false;
   let lastSurfaceWait = false;
   let actionAfterSurface = false;
+  let pendingGuardAsk: { turnId: string; callId: string } | undefined;
 
   for (const event of events) {
     if (event.type === "turn/start") {
@@ -70,8 +80,10 @@ function waitingTurnId(events: WorkbenchEvent[]): string | undefined {
       ended = false;
       lastSurfaceWait = false;
       actionAfterSurface = false;
+      pendingGuardAsk = undefined;
     } else if (event.type === "turn/end") {
       ended = true;
+      pendingGuardAsk = undefined;
     } else if (event.type === "end") {
       if (event.status !== "awaiting_action") ended = true;
     } else if (event.type === "a2ui/surface") {
@@ -80,9 +92,18 @@ function waitingTurnId(events: WorkbenchEvent[]): string | undefined {
       actionAfterSurface = false;
     } else if (event.type === "a2ui/action") {
       actionAfterSurface = true;
+    } else if (event.type === "guard/ask") {
+      turnId = event.turnId;
+      pendingGuardAsk = { turnId: event.turnId, callId: event.callId };
+    } else if (
+      event.type === "guard/response" &&
+      pendingGuardAsk?.callId === event.callId
+    ) {
+      pendingGuardAsk = undefined;
     }
   }
 
+  if (!ended && pendingGuardAsk) return pendingGuardAsk.turnId;
   if (!ended && lastSurfaceWait && !actionAfterSurface) return turnId;
   return undefined;
 }
@@ -148,6 +169,9 @@ export function App() {
     if (event.type === "a2ui/surface") {
       turnIdRef.current = event.turnId;
     }
+    if (event.type === "guard/ask") {
+      turnIdRef.current = event.turnId;
+    }
     const bubble = bubbleFromHistory(event, allocId());
     if (bubble) setBubbles((prev) => [...prev, bubble]);
   }
@@ -204,6 +228,20 @@ export function App() {
     cancelWantedRef.current = false;
     try {
       await postTurnAction(turnId, { surfaceId, name, data }, handleEvent);
+    } finally {
+      submittingActionRef.current = false;
+      setSending(false);
+    }
+  }
+
+  async function submitGuard(callId: string, decision: "allow" | "deny") {
+    const turnId = turnIdRef.current;
+    if (!turnId || submittingActionRef.current) return;
+    submittingActionRef.current = true;
+    setSending(true);
+    cancelWantedRef.current = false;
+    try {
+      await postTurnGuard(turnId, { callId, decision }, handleEvent);
     } finally {
       submittingActionRef.current = false;
       setSending(false);
@@ -267,6 +305,39 @@ export function App() {
                       void submitAction(bubble.surfaceId, name, data);
                     }}
                   />
+                )}
+                {bubble.kind === "guard-ask" && (
+                  <div className="guard-ask">
+                    <p className="guard-ask-prompt">
+                      允许执行工具 <strong>{bubble.tool}</strong>？
+                    </p>
+                    <div className="guard-ask-actions">
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        disabled={
+                          !waitingAction ||
+                          sending ||
+                          bubble.turnId !== turnIdRef.current
+                        }
+                        onClick={() => void submitGuard(bubble.callId, "allow")}
+                      >
+                        允许
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ghost"
+                        disabled={
+                          !waitingAction ||
+                          sending ||
+                          bubble.turnId !== turnIdRef.current
+                        }
+                        onClick={() => void submitGuard(bubble.callId, "deny")}
+                      >
+                        拒绝
+                      </button>
+                    </div>
+                  </div>
                 )}
               </div>
             ))}

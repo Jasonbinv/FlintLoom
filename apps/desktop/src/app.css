@@ -266,6 +266,23 @@ body,
   padding: 0.75rem 0.9rem;
 }
 
+.bubble.guard-ask {
+  align-self: flex-start;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  padding: 0.75rem 0.9rem;
+}
+
+.guard-ask-prompt {
+  margin: 0;
+}
+
+.guard-ask-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
 .a2ui-column {
   display: flex;
   flex-direction: column;
