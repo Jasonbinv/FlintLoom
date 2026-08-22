@@ -36,7 +36,13 @@
 - 桌面：composer「语音」按钮（`MediaRecorder` → `/v1/asr` → 填入输入框）；`asr.configured` 控制显示
 - Telegram：`message.voice` → `getFile` 下载 ogg → `resolveAsr().transcribe` → 现有 `channels.inbound` 文本路径
 
+## 21. T2V 异步任务轮询
+
+- DashScope 文生视频返回 `task_id` 时：`GET /api/v1/tasks/{task_id}` 轮询至 `SUCCEEDED` / `FAILED`
+- 默认间隔 15s、最长等待 10 分钟；`signal` 取消即中止
+- `SUCCEEDED` 后从 `output.video_url` 下载 MP4；`video_generate` 工具无需改动
+
 ## 非目标
 
 - ACP v2、Streamable HTTP、fs/terminal 客户端能力、permission 弹窗
-- omni 消费者、T2V 异步轮询
+- omni 消费者

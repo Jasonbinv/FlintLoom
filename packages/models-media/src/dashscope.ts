@@ -15,7 +15,14 @@ export type DashscopeMediaOptions = {
   origin: string;
   apiKey: string;
   fetchImpl?: typeof fetch;
+  /** Poll interval for async T2V tasks (default 15s). */
+  t2vPollIntervalMs?: number;
+  /** Max wait for async T2V tasks (default 10 min). */
+  t2vMaxWaitMs?: number;
 };
+
+const DEFAULT_T2V_POLL_INTERVAL_MS = 15_000;
+const DEFAULT_T2V_MAX_WAIT_MS = 600_000;
 
 const MULTIMODAL_PATH =
   "/api/v1/services/aigc/multimodal-generation/generation";
@@ -32,6 +39,83 @@ export function dashscopeOrigin(baseUrl: string): string {
   } catch {
     return "https://dashscope.aliyuncs.com";
   }
+}
+
+async function dashscopeGet(
+  opts: DashscopeMediaOptions,
+  path: string,
+  signal: AbortSignal,
+): Promise<Record<string, unknown>> {
+  const res = await mediaFetch(opts)(`${opts.origin}${path}`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${opts.apiKey}`,
+    },
+    signal,
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}: ${text.slice(0, 240)}`);
+  }
+  const parsed: unknown = JSON.parse(text);
+  if (parsed === null || typeof parsed !== "object") {
+    throw new Error("bad json");
+  }
+  return parsed as Record<string, unknown>;
+}
+
+async function sleepMs(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) {
+    throw new DOMException("aborted", "AbortError");
+  }
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(resolve, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException("aborted", "AbortError"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+async function pollDashscopeT2vTask(
+  opts: DashscopeMediaOptions,
+  taskId: string,
+  signal: AbortSignal,
+): Promise<string> {
+  const pollInterval = opts.t2vPollIntervalMs ?? DEFAULT_T2V_POLL_INTERVAL_MS;
+  const maxWait = opts.t2vMaxWaitMs ?? DEFAULT_T2V_MAX_WAIT_MS;
+  const deadline = Date.now() + maxWait;
+  while (Date.now() < deadline) {
+    const json = await dashscopeGet(opts, `/api/v1/tasks/${taskId}`, signal);
+    const output = json.output;
+    if (output === null || typeof output !== "object") {
+      throw new Error("no output");
+    }
+    const rec = output as Record<string, unknown>;
+    const status = rec.task_status;
+    if (status === "SUCCEEDED") {
+      const url = rec.video_url;
+      if (typeof url === "string" && url.length > 0) {
+        return url;
+      }
+      throw new Error("no video_url");
+    }
+    if (status === "FAILED") {
+      const message =
+        typeof rec.message === "string"
+          ? rec.message
+          : typeof rec.code === "string"
+            ? rec.code
+            : "failed";
+      throw new Error(`t2v failed: ${message}`);
+    }
+    if (status === "UNKNOWN") {
+      throw new Error("t2v task unknown");
+    }
+    await sleepMs(pollInterval, signal);
+  }
+  throw new Error("t2v poll timeout");
 }
 
 async function dashscopeJson(
@@ -240,7 +324,12 @@ export function createDashscopeT2v(
       }
       const taskId = (output as { task_id?: unknown }).task_id;
       if (typeof taskId === "string" && taskId.length > 0) {
-        throw new Error("t2v async task not supported yet");
+        const url = await pollDashscopeT2vTask(opts, taskId, signal);
+        const media = await downloadUrl(opts, url, signal);
+        return {
+          bytes: media.bytes,
+          mimeType: media.mimeType.includes("video") ? media.mimeType : "video/mp4",
+        };
       }
       const url = firstMediaUrl(output as Record<string, unknown>);
       if (url === undefined) {
