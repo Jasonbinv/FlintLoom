@@ -184,7 +184,7 @@ export function createDocGenerateTool(): ToolDefinition {
   return {
     name: "doc_generate",
     description:
-      "Write a workspace markdown file to md, html, docx, pdf, xlsx, or pptx. Pass source and out; format is the out extension. Write the markdown with fs first. Do not use this to parse binaries.",
+      "Write a workspace markdown or document JSON file to md, html, docx, pdf, xlsx, or pptx. Pass source and out; format is the out extension. Markdown with fs, or JSON with { blocks: [...] } (same block types as generate IR) or { headers, rows } for a single table. Do not use this to parse binaries.",
     parameters: {
       type: "object",
       properties: {

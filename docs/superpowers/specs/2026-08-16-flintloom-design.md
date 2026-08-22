@@ -216,7 +216,7 @@ v1 内置通道：desktop、cli、webhook、telegram。ACP 作为同一接口上
 | `doc_parse` | pdf / docx / pptx / xlsx / html / md → 结构化 markdown |
 | `doc_ingest` | 解析后写入个人知识库 |
 | `doc_convert` | 可 parse 的六种源 → md / html / docx / pdf / xlsx / pptx，成功 JSON 带固定 `loss`（见 [转换设计](2026-08-18-flintloom-docforge-convert-design.md)） |
-| `doc_generate` | 工作区 markdown → md / html / docx / pdf（见 [生成设计](2026-08-17-flintloom-docforge-generate-design.md)）。从结构化数据生成仍留后续 |
+| `doc_generate` | 工作区 markdown 或 document JSON → md / html / docx / pdf / xlsx / pptx（见 [生成设计](2026-08-17-flintloom-docforge-generate-design.md) 与 [JSON 生成设计](2026-08-22-flintloom-docforge-generate-json-design.md)） |
 | `doc_edit` | 工作区 markdown 一次精确唯一替换并原地覆盖（见 [编辑设计](2026-08-18-flintloom-docforge-edit-design.md)）。pdf/docx 仍先 convert |
 | `doc_compare` | 两份文档 parse 成 markdown 后行级 unified diff，成功 JSON 不写盘（见 [对比设计](2026-08-19-flintloom-docforge-compare-design.md)） |
 | `doc_summarize` | 基于 parse 结果 + 内层 chat；摘要 JSON 写入 log，全文不塞进下一次 prompt（见 [摘要设计](2026-08-19-flintloom-docforge-summarize-design.md)） |
@@ -297,5 +297,7 @@ v1 内置通道：desktop、cli、webhook、telegram。ACP 作为同一接口上
 10. A2UI Infographic（见 [Infographic 组件设计](2026-08-22-flintloom-a2ui-infographic-design.md)）— 复用 `renderSvg` 与预览 API。
 11. DocForge xlsx / pptx 写出（见 [xlsx/pptx 写出设计](2026-08-22-flintloom-docforge-xlsx-pptx-write-design.md)）— `doc_generate` / `doc_convert` 支持 `.xlsx` / `.pptx` 输出。
 12. `channels.send`（见 [channels.send 设计](2026-08-22-flintloom-channels-send-design.md)）— 登记表出站；Telegram poller 经 `send` 回包。
+13. DocForge JSON 结构化生成（见 [JSON 生成设计](2026-08-22-flintloom-docforge-generate-json-design.md)）— `doc_generate` 接受 `.json` `blocks` 源。
+14. 薄 Electron 桌面壳（见 [Electron 设计](2026-08-22-flintloom-desktop-electron-design.md)）— `pnpm desktop:app` 原生窗口；`pnpm desktop` 仍为浏览器。
 
 第 2–7 刀在同一份总 spec 上继续拆计划。新 Loom 包必须带 `apply`，禁止再往 `createRuntime` 里堆 `register`。

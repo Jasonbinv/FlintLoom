@@ -1,0 +1,9 @@
+{
+  "name": "@flintloom/electron-shell",
+  "private": true,
+  "type": "module",
+  "main": "main.mjs",
+  "dependencies": {
+    "electron": "^35.7.5"
+  }
+}

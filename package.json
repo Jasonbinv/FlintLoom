@@ -7,7 +7,8 @@
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "flint": "tsx apps/cli/src/bin.ts",
-    "desktop": "tsx scripts/desktop-dev.ts"
+    "desktop": "tsx scripts/desktop-dev.ts",
+    "desktop:app": "tsx scripts/desktop-electron.ts"
   },
   "engines": {
     "node": ">=22"

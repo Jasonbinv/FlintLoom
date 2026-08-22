@@ -83,6 +83,18 @@ it("xlsx and pptx round-trip Hello through parse", async () => {
   expect(await parse(pptxPath)).toContain("Hello");
 });
 
+it("json blocks source writes xlsx with Hello", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "flintloom-gen-json-"));
+  const source = join(dir, "doc.json");
+  writeFileSync(
+    source,
+    readFileSync(join(dirname(fileURLToPath(import.meta.url)), "fixtures/hello.document.json")),
+  );
+  const out = join(dir, "out.xlsx");
+  await generateDocument(source, out);
+  expect(await parse(out)).toContain("Hello");
+});
+
 it("missing fontPath is unreadable and leaves out unchanged", async () => {
   await expect(
     buildDocument("pdf", "# Hello", { fontPath: join(tmpdir(), "no-such-font.otf") }),
