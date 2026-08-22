@@ -36,15 +36,15 @@ describe("createWebhookAdapter", () => {
     expect(result).toEqual({ turnId: "t1", status: "ok", text: "hello" });
   });
 
-  it("apply registers webhook and stop unregisters", () => {
+  it("apply registers webhook and stop unregisters", async () => {
     const ctx = new Context();
-    ctx.plugin(sessionPlugin);
+    await ctx.plugin(sessionPlugin);
     ctx.provide("loop", {
       runTurn: async () => ({ turnId: "t", status: "ok" as const }),
       continueTurn: async () => ({ turnId: "t", status: "ok" as const }),
     });
-    ctx.plugin(channelPlugin);
-    const stop = ctx.plugin(webhookPlugin);
+    await ctx.plugin(channelPlugin);
+    const stop = await ctx.plugin(webhookPlugin);
     const channels = ctx.require<ChannelRegistry>("channels");
     expect(channels.has("webhook")).toBe(true);
     stop();

@@ -38,7 +38,7 @@ describe("applyConfig", () => {
     );
 
     expect(ctx.require("b")).toBe(true);
-    expect(seen[0]).toEqual({ fromYml: 1, apiKey: "k" });
+    expect(seen[0]).toEqual({ fromYml: 1, apiKey: "k", id: "a" });
     stop();
     expect(() => ctx.require("a")).toThrow(/a/);
   });
@@ -90,6 +90,44 @@ describe("applyConfig", () => {
       ),
     ).rejects.toThrow(/boom/);
     expect(() => ctx.require("a")).toThrow(/a/);
+  });
+
+  it("异步 apply 成功后工具已登记；失败则回滚", async () => {
+    const ctx = new Context();
+    const mods: Record<string, FlintPlugin> = {
+      async: {
+        name: "async",
+        async apply(c) {
+          c.provide("async.ok", true);
+          await Promise.resolve();
+        },
+      },
+      asyncFail: {
+        name: "async-fail",
+        async apply(c) {
+          c.provide("async-fail.k", 1);
+          throw new Error("async-boom");
+        },
+      },
+    };
+
+    const stop = await applyConfig(
+      ctx,
+      { plugins: [{ id: "async", name: "pkg-async" }] },
+      { importFn: async () => mods.async },
+    );
+    expect(ctx.require("async.ok")).toBe(true);
+    stop();
+
+    const ctx2 = new Context();
+    await expect(
+      applyConfig(
+        ctx2,
+        { plugins: [{ id: "fail", name: "pkg-async-fail" }] },
+        { importFn: async () => mods.asyncFail },
+      ),
+    ).rejects.toThrow(/async-boom/);
+    expect(() => ctx2.require("async-fail.k")).toThrow(/async-fail\.k/);
   });
 
   it("默认 importFn 从绝对路径目录加载 apply", async () => {

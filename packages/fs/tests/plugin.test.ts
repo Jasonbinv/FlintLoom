@@ -18,7 +18,7 @@ describe("fs plugin", () => {
     const ctx = new Context();
     ctx.plugin(modelsPlugin);
     ctx.plugin(toolsPlugin);
-    const stop = ctx.plugin(plugin);
+    const stop = await ctx.plugin(plugin);
     const tools = ctx.require<ToolRegistry>("tools");
     stop();
     expect(tools.schemas().map((s) => s.name)).not.toContain("fs");

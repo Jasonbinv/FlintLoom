@@ -54,8 +54,12 @@ export async function applyConfig(
       seen.add(row.id);
       const mod = await importFn(row.name);
       const plugin = unwrapPlugin(mod, row.name);
-      const merged = { ...(row.config ?? {}), ...(runtime[row.id] ?? {}) };
-      stops.push(ctx.plugin(plugin, merged));
+      const merged = {
+        ...(row.config ?? {}),
+        ...(runtime[row.id] ?? {}),
+        id: row.id,
+      };
+      stops.push(await ctx.plugin(plugin, merged));
     }
   } catch (err) {
     rollback();

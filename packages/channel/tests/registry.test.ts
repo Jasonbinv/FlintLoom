@@ -16,7 +16,7 @@ const input: ChannelInbound = {
 describe("channels registry", () => {
   it("plugin provides channels; register inbound dispose clears has", async () => {
     const ctx = new Context();
-    const stop = ctx.plugin(channelPlugin);
+    const stop = await ctx.plugin(channelPlugin);
     const channels = ctx.require<ChannelRegistry>("channels");
     const unregister = channels.register("webhook", {
       async inbound(next) {

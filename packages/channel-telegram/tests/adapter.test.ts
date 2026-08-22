@@ -36,15 +36,15 @@ describe("createTelegramAdapter", () => {
     expect(result).toEqual({ turnId: "t1", status: "ok", text: "hello" });
   });
 
-  it("apply registers telegram and stop unregisters", () => {
+  it("apply registers telegram and stop unregisters", async () => {
     const ctx = new Context();
-    ctx.plugin(sessionPlugin);
+    await ctx.plugin(sessionPlugin);
     ctx.provide("loop", {
       runTurn: async () => ({ turnId: "t", status: "ok" as const }),
       continueTurn: async () => ({ turnId: "t", status: "ok" as const }),
     });
-    ctx.plugin(channelPlugin);
-    const stop = ctx.plugin(telegramPlugin, {
+    await ctx.plugin(channelPlugin);
+    const stop = await ctx.plugin(telegramPlugin, {
       token: "tok",
       allowedChatIds: [1],
     });

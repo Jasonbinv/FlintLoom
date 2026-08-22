@@ -11,9 +11,9 @@ describe("skill plugin", () => {
   it("registers skill and dispose removes it", async () => {
     const homeDir = mkdtempSync(join(tmpdir(), "flintloom-skill-plug-"));
     const ctx = new Context();
-    ctx.plugin(modelsPlugin);
-    ctx.plugin(toolsPlugin);
-    const stop = ctx.plugin(plugin, { homeDir });
+    await ctx.plugin(modelsPlugin);
+    await ctx.plugin(toolsPlugin);
+    const stop = await ctx.plugin(plugin, { homeDir });
     const tools = ctx.require<ToolRegistry>("tools");
     expect(tools.schemas().map((s) => s.name)).toContain("skill");
     stop();

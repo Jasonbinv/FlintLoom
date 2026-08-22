@@ -27,13 +27,13 @@ describe("docforge plugin", () => {
     expect(names).toContain("doc_summarize");
   });
 
-  it("registers doc_generate and drops it on stop", () => {
+  it("registers doc_generate and drops it on stop", async () => {
     const dbPath = join(mkdtempSync(join(tmpdir(), "flintloom-docforge-kb-")), "k.sqlite");
     const ctx = new Context();
     ctx.plugin(modelsPlugin);
     ctx.plugin(toolsPlugin);
     ctx.plugin(knowledgePlugin, { dbPath });
-    const stop = ctx.plugin(plugin);
+    const stop = await ctx.plugin(plugin);
     const names = ctx.require<ToolRegistry>("tools").schemas().map((s) => s.name);
     expect(names).toContain("doc_generate");
     stop();
@@ -42,13 +42,13 @@ describe("docforge plugin", () => {
     );
   });
 
-  it("registers doc_convert and drops it on stop", () => {
+  it("registers doc_convert and drops it on stop", async () => {
     const dbPath = join(mkdtempSync(join(tmpdir(), "flintloom-docforge-kb-")), "k.sqlite");
     const ctx = new Context();
     ctx.plugin(modelsPlugin);
     ctx.plugin(toolsPlugin);
     ctx.plugin(knowledgePlugin, { dbPath });
-    const stop = ctx.plugin(plugin);
+    const stop = await ctx.plugin(plugin);
     const names = ctx.require<ToolRegistry>("tools").schemas().map((s) => s.name);
     expect(names).toContain("doc_convert");
     stop();
@@ -57,13 +57,13 @@ describe("docforge plugin", () => {
     );
   });
 
-  it("registers doc_edit and drops it on stop", () => {
+  it("registers doc_edit and drops it on stop", async () => {
     const dbPath = join(mkdtempSync(join(tmpdir(), "flintloom-docforge-kb-")), "k.sqlite");
     const ctx = new Context();
     ctx.plugin(modelsPlugin);
     ctx.plugin(toolsPlugin);
     ctx.plugin(knowledgePlugin, { dbPath });
-    const stop = ctx.plugin(plugin);
+    const stop = await ctx.plugin(plugin);
     const names = ctx.require<ToolRegistry>("tools").schemas().map((s) => s.name);
     expect(names).toContain("doc_edit");
     stop();
@@ -72,13 +72,13 @@ describe("docforge plugin", () => {
     );
   });
 
-  it("registers doc_compare and drops it on stop", () => {
+  it("registers doc_compare and drops it on stop", async () => {
     const dbPath = join(mkdtempSync(join(tmpdir(), "flintloom-docforge-kb-")), "k.sqlite");
     const ctx = new Context();
     ctx.plugin(modelsPlugin);
     ctx.plugin(toolsPlugin);
     ctx.plugin(knowledgePlugin, { dbPath });
-    const stop = ctx.plugin(plugin);
+    const stop = await ctx.plugin(plugin);
     const names = ctx.require<ToolRegistry>("tools").schemas().map((s) => s.name);
     expect(names).toContain("doc_compare");
     stop();
@@ -94,13 +94,13 @@ describe("docforge plugin", () => {
     expect(() => ctx.plugin(plugin)).toThrow(/knowledge/);
   });
 
-  it("registers doc_summarize and drops it on stop", () => {
+  it("registers doc_summarize and drops it on stop", async () => {
     const dbPath = join(mkdtempSync(join(tmpdir(), "flintloom-docforge-kb-")), "k.sqlite");
     const ctx = new Context();
     ctx.plugin(modelsPlugin);
     ctx.plugin(toolsPlugin);
     ctx.plugin(knowledgePlugin, { dbPath });
-    const stop = ctx.plugin(plugin);
+    const stop = await ctx.plugin(plugin);
     const names = ctx.require<ToolRegistry>("tools").schemas().map((s) => s.name);
     expect(names).toContain("doc_summarize");
     stop();
