@@ -41,6 +41,28 @@ describe("startHost", () => {
     expect(body.some((row) => row.kind === "chat")).toBe(true);
   });
 
+  it("rejects /v1/plugins without a token and returns loaded plugins with auth", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-plugins-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-plugins-home-"));
+    writeAssembly(workspaceRoot);
+
+    const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+    close = host.close;
+
+    const unauth = await fetch(`${host.url}/v1/plugins`);
+    expect(unauth.status).toBe(401);
+
+    const token = loadOrCreateToken(homeDir);
+    const auth = await fetch(`${host.url}/v1/plugins`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(auth.status).toBe(200);
+    const body = (await auth.json()) as { id: string; name: string; status: string }[];
+    expect(body.length).toBeGreaterThan(0);
+    expect(body.every((row) => row.status === "loaded")).toBe(true);
+    expect(body.some((row) => row.id === "loop")).toBe(true);
+  });
+
   it("rejects start when flintloom.yml exists but is invalid", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-badyml-"));
     const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));

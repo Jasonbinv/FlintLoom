@@ -17,7 +17,17 @@ import {
 import { handleKnowledgeRequest } from "./knowledge.ts";
 import { loadOrCreateToken, readCredentials } from "./token.ts";
 
-export type Runtime = { ctx: Context; stop: () => void };
+export type PluginSnapshot = {
+  id: string;
+  name: string;
+  status: "loaded";
+};
+
+export type Runtime = {
+  ctx: Context;
+  stop: () => void;
+  plugins: PluginSnapshot[];
+};
 
 function readDotEnv(filePath: string): Record<string, string> {
   if (!existsSync(filePath)) {
@@ -116,7 +126,12 @@ export async function createRuntime(
     runtimeConfigById,
     workspaceRoot,
   });
-  return { ctx, stop };
+  const plugins: PluginSnapshot[] = config.plugins.map((row) => ({
+    id: row.id,
+    name: row.name,
+    status: "loaded",
+  }));
+  return { ctx, stop, plugins };
 }
 
 function formatHostError(
@@ -402,6 +417,11 @@ async function handleRequest(
 
   if (req.method === "GET" && pathname === "/v1/models") {
     sendJson(res, 200, opts.runtime.ctx.require<ModelRegistry>("models").snapshot());
+    return;
+  }
+
+  if (req.method === "GET" && pathname === "/v1/plugins") {
+    sendJson(res, 200, opts.runtime.plugins);
     return;
   }
 

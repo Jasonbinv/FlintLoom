@@ -2,11 +2,15 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { A2uiSurface } from "./A2uiSurface.tsx";
 import { cancelTurn, fetchModels, fetchSession, postTurn, postTurnAction, postTurnGuard } from "./api.ts";
 import { FilePane } from "./FilePane.tsx";
+import { ModelsPane } from "./ModelsPane.tsx";
+import { PluginsPane } from "./PluginsPane.tsx";
 import { insertPath } from "./files.ts";
 import type { WorkbenchEvent } from "./types.ts";
 import "./app.css";
 
 const SESSION_KEY = "flintloom.sessionId";
+
+type Page = "chat" | "plugins" | "models";
 
 type Bubble =
   | { id: string; kind: "user"; text: string }
@@ -121,6 +125,7 @@ export function App() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [waitingAction, setWaitingAction] = useState(false);
+  const [page, setPage] = useState<Page>("chat");
 
   const allocId = () => String(++nextId.current);
 
@@ -271,6 +276,29 @@ export function App() {
     <div className="workbench">
       <header className="topbar">
         <h1>FlintLoom</h1>
+        <nav className="topbar-nav" aria-label="Workbench">
+          <button
+            type="button"
+            className={page === "chat" ? "active" : undefined}
+            onClick={() => setPage("chat")}
+          >
+            Chat
+          </button>
+          <button
+            type="button"
+            className={page === "plugins" ? "active" : undefined}
+            onClick={() => setPage("plugins")}
+          >
+            Plugins
+          </button>
+          <button
+            type="button"
+            className={page === "models" ? "active" : undefined}
+            onClick={() => setPage("models")}
+          >
+            Models
+          </button>
+        </nav>
         {hostDown ? (
           <span className="status-pill down">host 未连接</span>
         ) : chatConfigured === false ? (
@@ -279,6 +307,7 @@ export function App() {
           <span className="status-pill ok">chat 已配置</span>
         ) : null}
       </header>
+      {page === "chat" ? (
       <div className="workbench-body">
         <div className="chat-column">
           <main className="log">
@@ -369,6 +398,14 @@ export function App() {
           onInsertPath={(p) => setInput((cur) => insertPath(cur, p))}
         />
       </div>
+      ) : (
+        <main className="settings-pane">
+          <h2 className="settings-title">
+            {page === "plugins" ? "Plugins" : "Models"}
+          </h2>
+          {page === "plugins" ? <PluginsPane /> : <ModelsPane />}
+        </main>
+      )}
     </div>
   );
 }

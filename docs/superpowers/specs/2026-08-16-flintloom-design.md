@@ -291,6 +291,7 @@ v1 内置通道：desktop、cli、webhook、telegram。ACP 作为同一接口上
 4. Webhook 通道（见 [webhook 通道设计](2026-08-20-flintloom-channel-webhook-design.md)）+ Telegram 通道（见 [Telegram 通道设计](2026-08-20-flintloom-channel-telegram-design.md)）+ `flint plugin add`（见 [安装器设计](2026-08-21-flintloom-plugin-add-design.md)）。
 5. Skill（见 [Skill 设计](2026-08-22-flintloom-skill-design.md)）— 本地目录 + `skill` 工具，不改 `runTurn`。
 6. MCP（见 [MCP 设计](2026-08-22-flintloom-mcp-design.md)）— stdio + tools，一行一个 server，工具名 `mcp__<id>__<name>`。`mcp-servers.yml` 自动加载见 [MCP 使用说明](../mcp-servers.md)。
-7. Guard ask（见 [Guard ask 设计](2026-08-22-flintloom-guard-ask-design.md)）— host 上 `gate` 为 `ask` 时暂停，工作台允许/拒绝后续跑。桌面插件/模型页、A2UI table/chart 仍留后续。
+7. Guard ask（见 [Guard ask 设计](2026-08-22-flintloom-guard-ask-design.md)）— host 上 `gate` 为 `ask` 时暂停，工作台允许/拒绝后续跑。
+8. 桌面插件/模型页（见 [插件与模型页设计](2026-08-22-flintloom-desktop-plugins-models-design.md)）— `GET /v1/plugins`、只读 Plugins/Models 顶栏。A2UI table/chart 仍留后续。
 
 第 2–7 刀在同一份总 spec 上继续拆计划。新 Loom 包必须带 `apply`，禁止再往 `createRuntime` 里堆 `register`。

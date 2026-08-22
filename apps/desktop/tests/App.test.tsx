@@ -88,6 +88,7 @@ function requestUrl(input: RequestInfo | URL): string {
 
 function installFetch(opts: {
   models?: Response | Error;
+  plugins?: Response | Error;
   session?: Response | Error;
   turn?: Response | Error;
   actions?: Response | Error;
@@ -172,12 +173,21 @@ function installFetch(opts: {
     }
     if (url.includes("/v1/models")) {
       if (opts.models instanceof Error) throw opts.models;
-      return (
-        opts.models ??
-        new Response(JSON.stringify([{ kind: "chat", configured: false }]), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        })
+      if (opts.models) return opts.models.clone();
+      return new Response(JSON.stringify([{ kind: "chat", configured: false }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (url.includes("/v1/plugins")) {
+      if (opts.plugins instanceof Error) throw opts.plugins;
+      if (opts.plugins) return opts.plugins.clone();
+      return new Response(
+        JSON.stringify([
+          { id: "loop", name: "@flintloom/loop", status: "loaded" },
+          { id: "tools", name: "@flintloom/tools", status: "loaded" },
+        ]),
+        { status: 200, headers: { "Content-Type": "application/json" } },
       );
     }
     if (url.includes("/v1/sessions/")) {
@@ -1276,5 +1286,45 @@ describe("App", () => {
       (b) => b.textContent === "取消",
     );
     expect(cancel?.classList.contains("btn-ghost")).toBe(true);
+  });
+
+  it("shows plugin list on Plugins page", async () => {
+    installFetch();
+    await mountApp();
+    const pluginsTab = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "Plugins",
+    );
+    if (!pluginsTab) throw new Error("no Plugins tab");
+    await act(async () => {
+      pluginsTab.click();
+    });
+    await waitForText("@flintloom/loop");
+    expect(document.body.textContent).toContain("loop");
+    expect(document.body.textContent).toContain("loaded");
+    expect(document.querySelector("textarea")).toBeNull();
+  });
+
+  it("shows model kinds on Models page", async () => {
+    installFetch({
+      models: new Response(
+        JSON.stringify([
+          { kind: "chat", configured: true, defaultId: "default" },
+          { kind: "asr", configured: false, defaultId: null },
+        ]),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    const modelsTab = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "Models",
+    );
+    if (!modelsTab) throw new Error("no Models tab");
+    await act(async () => {
+      modelsTab.click();
+    });
+    await waitForText("asr");
+    expect(document.body.textContent).toContain("default");
+    expect(document.body.textContent).toContain("flintloom.yml");
+    expect(document.querySelector(".settings-table")).toBeTruthy();
   });
 });

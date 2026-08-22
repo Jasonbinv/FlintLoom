@@ -9,10 +9,22 @@ const UNREACHABLE: WorkbenchEvent = {
 
 export async function fetchModels(
   signal?: AbortSignal,
-): Promise<{ kind: string; configured: boolean }[]> {
+): Promise<{ kind: string; configured: boolean; defaultId: string | null }[]> {
   const res = await fetch("/v1/models", { signal });
   if (!res.ok) throw new Error("host unreachable");
-  return (await res.json()) as { kind: string; configured: boolean }[];
+  return (await res.json()) as {
+    kind: string;
+    configured: boolean;
+    defaultId: string | null;
+  }[];
+}
+
+export async function fetchPlugins(
+  signal?: AbortSignal,
+): Promise<{ id: string; name: string; status: "loaded" }[]> {
+  const res = await fetch("/v1/plugins", { signal });
+  if (!res.ok) throw new Error("host unreachable");
+  return (await res.json()) as { id: string; name: string; status: "loaded" }[];
 }
 
 export async function fetchSession(
