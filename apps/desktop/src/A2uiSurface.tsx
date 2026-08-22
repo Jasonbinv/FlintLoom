@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
+import { chartSvg, type ChartKind } from "./a2ui-chart.tsx";
 
 type A2uiSurfaceProps = {
   messages: unknown[];
@@ -15,6 +16,12 @@ type Comp = {
   value?: unknown;
   action?: unknown;
   options?: unknown;
+  data?: unknown;
+  headers?: unknown;
+  rows?: unknown;
+  labels?: unknown;
+  values?: unknown;
+  kind?: unknown;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -147,6 +154,65 @@ function seedModel(messages: unknown[], map: Map<string, Comp>): unknown {
   return model;
 }
 
+function resolveTable(comp: Comp, model: unknown): { headers: string[]; rows: string[][] } | undefined {
+  const path = bindingPath(comp.data);
+  if (path) {
+    const value = getAtPath(model, path);
+    if (!isRecord(value)) return undefined;
+    const headers = value.headers;
+    const rows = value.rows;
+    if (
+      !Array.isArray(headers) ||
+      !headers.every((h) => typeof h === "string") ||
+      !Array.isArray(rows) ||
+      !rows.every((row) => Array.isArray(row) && row.every((c) => typeof c === "string"))
+    ) {
+      return undefined;
+    }
+    return { headers, rows: rows as string[][] };
+  }
+  if (Array.isArray(comp.headers) && Array.isArray(comp.rows)) {
+    const headers = comp.headers.filter((h): h is string => typeof h === "string");
+    const rows = comp.rows
+      .filter((row): row is unknown[] => Array.isArray(row))
+      .map((row) => row.filter((c): c is string => typeof c === "string"));
+    if (headers.length === 0) return undefined;
+    return { headers, rows };
+  }
+  return undefined;
+}
+
+function resolveChart(comp: Comp, model: unknown): { labels: string[]; values: number[]; kind: ChartKind } | undefined {
+  const kind: ChartKind =
+    comp.kind === "line" ? "line" : comp.kind === "bar" ? "bar" : "bar";
+  const path = bindingPath(comp.data);
+  if (path) {
+    const value = getAtPath(model, path);
+    if (!isRecord(value)) return undefined;
+    const labels = value.labels;
+    const values = value.values;
+    if (
+      !Array.isArray(labels) ||
+      !labels.every((l) => typeof l === "string") ||
+      !Array.isArray(values) ||
+      values.length !== labels.length ||
+      !values.every((v) => typeof v === "number" && Number.isFinite(v))
+    ) {
+      return undefined;
+    }
+    return { labels, values, kind };
+  }
+  if (Array.isArray(comp.labels) && Array.isArray(comp.values)) {
+    const labels = comp.labels.filter((l): l is string => typeof l === "string");
+    const values = comp.values.filter(
+      (v): v is number => typeof v === "number" && Number.isFinite(v),
+    );
+    if (labels.length === 0 || values.length !== labels.length) return undefined;
+    return { labels, values, kind };
+  }
+  return undefined;
+}
+
 function walkReachable(map: Map<string, Comp>): Comp[] {
   const out: Comp[] = [];
   const seen = new Set<string>();
@@ -214,6 +280,42 @@ function renderComp(
       return <span>{boundText(comp.text, model)}</span>;
     case "Markdown":
       return <pre>{boundText(comp.text, model)}</pre>;
+    case "DataTable": {
+      const table = resolveTable(comp, model);
+      if (!table) return null;
+      return (
+        <table className="a2ui-table">
+          <thead>
+            <tr>
+              {table.headers.map((h, idx) => (
+                <th key={idx}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {table.rows.map((row, rowIdx) => (
+              <tr key={rowIdx}>
+                {row.map((cell, cellIdx) => (
+                  <td key={cellIdx}>{cell}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      );
+    }
+    case "Chart": {
+      const chart = resolveChart(comp, model);
+      if (!chart) return null;
+      return (
+        <div
+          className="a2ui-chart"
+          dangerouslySetInnerHTML={{
+            __html: chartSvg(chart.labels, chart.values, chart.kind),
+          }}
+        />
+      );
+    }
     case "Button": {
       const name = actionName(comp);
       const childId = typeof comp.child === "string" ? comp.child : undefined;

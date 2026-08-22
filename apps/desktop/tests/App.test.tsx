@@ -1327,4 +1327,60 @@ describe("App", () => {
     expect(document.body.textContent).toContain("flintloom.yml");
     expect(document.querySelector(".settings-table")).toBeTruthy();
   });
+
+  it("renders a2ui DataTable and Chart without pausing turn", async () => {
+    const messages = [
+      {
+        version: "v0.9" as const,
+        createSurface: { surfaceId: "main", catalogId: "flintloom:a2ui:core" },
+      },
+      {
+        version: "v0.9" as const,
+        updateComponents: {
+          surfaceId: "main",
+          components: [
+            { id: "root", component: "Column", children: ["tbl", "chart"] },
+            {
+              id: "tbl",
+              component: "DataTable",
+              headers: ["item", "count"],
+              rows: [["apple", "3"]],
+            },
+            {
+              id: "chart",
+              component: "Chart",
+              kind: "bar",
+              labels: ["Q1", "Q2"],
+              values: [2, 5],
+            },
+          ],
+        },
+      },
+    ];
+    const sse =
+      `data: {"type":"turn/start","turnId":"t-show"}\n\n` +
+      `data: ${JSON.stringify({
+        type: "a2ui/surface",
+        turnId: "t-show",
+        surfaceId: "main",
+        wait: false,
+        messages,
+      })}\n\n` +
+      `data: {"type":"assistant/message","text":"shown"}\n\n` +
+      `data: {"type":"end","status":"ok"}\n\n`;
+    installFetch({
+      turn: new Response(sse, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    });
+    await mountApp();
+    await typeAndSend("show data");
+    await waitForText("apple");
+    expect(document.querySelector(".a2ui-table")).toBeTruthy();
+    expect(document.querySelector(".a2ui-chart-svg")).toBeTruthy();
+    expect(
+      Array.from(document.querySelectorAll("button")).some((b) => b.textContent === "取消"),
+    ).toBe(false);
+  });
 });

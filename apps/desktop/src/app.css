@@ -460,3 +460,30 @@ body,
   opacity: 0.45;
   cursor: not-allowed;
 }
+
+.a2ui-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.a2ui-table th,
+.a2ui-table td {
+  border: 1px solid var(--line);
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+}
+
+.a2ui-table th {
+  background: var(--bg-panel);
+  color: var(--text-muted);
+}
+
+.a2ui-chart {
+  max-width: 100%;
+}
+
+.a2ui-chart-svg {
+  display: block;
+  max-width: 100%;
+}
