@@ -10,6 +10,7 @@ import type { Session, SessionEvent, SessionStore } from "@flintloom/session";
 import { WorkspaceEscapeError } from "@flintloom/tools";
 import { cancelWaitingTurn, handleTurnActions, sessionHasWaitingTurn } from "./a2ui.ts";
 import { handleTurnGuard } from "./guard.ts";
+import { handleSettingsRequest } from "./settings.ts";
 import {
   listWorkspaceFiles,
   normalizeRelPath,
@@ -20,7 +21,7 @@ import { ASR_MAX_BYTES, readBodyBytes, transcribeAudio } from "./asr.ts";
 import { synthesizeSpeech } from "./tts.ts";
 import { parseTurnBody } from "./turn-body.ts";
 import { loadOrCreateToken, readCredentials } from "./token.ts";
-import { readCredentialsStore, type CredentialSource, type CredentialsStore } from "./credentials.ts";
+import { readCredentialsStore, type CredentialsStore, resolveLayeredString, isLocalLlmBaseUrl } from "./credentials.ts";
 
 export type PluginSnapshot = {
   id: string;
@@ -70,25 +71,6 @@ function firstNonEmpty(...values: (string | undefined)[]): string | undefined {
   return undefined;
 }
 
-function resolveLayeredString(
-  envKey: string,
-  fileEnv: Record<string, string>,
-  credValue: string | undefined,
-): { value: string | undefined; source: CredentialSource } {
-  const fromProcess = process.env[envKey];
-  if (typeof fromProcess === "string" && fromProcess.length > 0) {
-    return { value: fromProcess, source: "env" };
-  }
-  const fromFile = fileEnv[envKey];
-  if (typeof fromFile === "string" && fromFile.length > 0) {
-    return { value: fromFile, source: "env" };
-  }
-  if (typeof credValue === "string" && credValue.length > 0) {
-    return { value: credValue, source: "credentials" };
-  }
-  return { value: undefined, source: "none" };
-}
-
 function parseTelegramChatIds(raw: string | undefined): number[] | undefined {
   if (raw === undefined || raw.length === 0) {
     return undefined;
@@ -106,15 +88,6 @@ function parseTelegramChatIds(raw: string | undefined): number[] | undefined {
     ids.push(n);
   }
   return ids.length > 0 ? ids : undefined;
-}
-
-function isLocalLlmBaseUrl(baseUrl: string): boolean {
-  try {
-    const host = new URL(baseUrl).hostname;
-    return host === "127.0.0.1" || host === "localhost" || host === "::1";
-  } catch {
-    return false;
-  }
 }
 
 function resolveTelegramOverlay(
@@ -472,17 +445,36 @@ async function handleRequest(
   opts: {
     token: string;
     workspaceRoot: string;
-    runtime: Runtime;
+    homeDir: string;
+    port: number;
+    runtimeRef: { current: Runtime };
     controllers: Map<string, AbortController>;
     turns: Map<string, Session>;
     busy: Set<string>;
+    reloadRuntime: () => Promise<void>;
   },
 ): Promise<void> {
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
   const pathname = url.pathname;
+  const runtime = opts.runtimeRef.current;
+  const busy = opts.busy;
 
   if (pathname.startsWith("/v1/") && !isAuthorized(req, opts.token)) {
     send(res, 401);
+    return;
+  }
+
+  if (
+    await handleSettingsRequest(req, res, {
+      pathname,
+      method: req.method ?? "GET",
+      homeDir: opts.homeDir,
+      workspaceRoot: opts.workspaceRoot,
+      port: opts.port,
+      busy: opts.busy,
+      reloadRuntime: opts.reloadRuntime,
+    })
+  ) {
     return;
   }
 
@@ -491,7 +483,7 @@ async function handleRequest(
       pathname,
       url,
       workspaceRoot: opts.workspaceRoot,
-      ctx: opts.runtime.ctx,
+      ctx: runtime.ctx,
     })
   ) {
     return;
@@ -500,7 +492,7 @@ async function handleRequest(
   if (
     await handleTurnGuard(req, res, {
       pathname,
-      ctx: opts.runtime.ctx,
+      ctx: runtime.ctx,
       workspaceRoot: opts.workspaceRoot,
       turns: opts.turns,
       busy: opts.busy,
@@ -523,7 +515,7 @@ async function handleRequest(
   if (
     await handleTurnActions(req, res, {
       pathname,
-      ctx: opts.runtime.ctx,
+      ctx: runtime.ctx,
       workspaceRoot: opts.workspaceRoot,
       turns: opts.turns,
       busy: opts.busy,
@@ -544,7 +536,7 @@ async function handleRequest(
   }
 
   if (req.method === "GET" && pathname === "/v1/models") {
-    sendJson(res, 200, opts.runtime.ctx.require<ModelRegistry>("models").snapshot());
+    sendJson(res, 200, runtime.ctx.require<ModelRegistry>("models").snapshot());
     return;
   }
 
@@ -562,7 +554,7 @@ async function handleRequest(
     const mimeType = typeof mimeRaw === "string" ? mimeRaw : "application/octet-stream";
     try {
       const text = await transcribeAudio(
-        opts.runtime.ctx,
+        runtime.ctx,
         bytes,
         mimeType,
         new AbortController().signal,
@@ -600,7 +592,7 @@ async function handleRequest(
     }
     try {
       const media = await synthesizeSpeech(
-        opts.runtime.ctx,
+        runtime.ctx,
         text,
         new AbortController().signal,
       );
@@ -618,7 +610,7 @@ async function handleRequest(
   }
 
   if (req.method === "GET" && pathname === "/v1/plugins") {
-    sendJson(res, 200, opts.runtime.plugins);
+    sendJson(res, 200, runtime.plugins);
     return;
   }
 
@@ -670,7 +662,7 @@ async function handleRequest(
 
   const sessionMatch = /^\/v1\/sessions\/([^/]+)$/.exec(pathname);
   if (req.method === "GET" && sessionMatch) {
-    const session = opts.runtime.ctx
+    const session = runtime.ctx
       .require<SessionStore>("sessions")
       .get(decodeURIComponent(sessionMatch[1]!));
     if (session === undefined) {
@@ -708,7 +700,7 @@ async function handleRequest(
       return;
     }
 
-    const session = opts.runtime.ctx
+    const session = runtime.ctx
       .require<SessionStore>("sessions")
       .getOrCreate(body.sessionId);
 
@@ -719,8 +711,8 @@ async function handleRequest(
     opts.busy.add(session.id);
     try {
       await streamLoopResult(req, res, session, opts.controllers, opts.turns, ({ signal, onEvent }) =>
-        opts.runtime.ctx.require<LoopService>("loop").runTurn({
-          ctx: opts.runtime.ctx,
+        runtime.ctx.require<LoopService>("loop").runTurn({
+          ctx: runtime.ctx,
           session,
           text: body.text,
           images: body.images,
@@ -738,7 +730,7 @@ async function handleRequest(
 
   if (req.method === "POST" && pathname === "/v1/hooks") {
     const raw = await readBody(req);
-    const channels = opts.runtime.ctx.get<ChannelRegistry>("channels");
+    const channels = runtime.ctx.get<ChannelRegistry>("channels");
     if (channels === undefined || !channels.has("webhook")) {
       send(res, 404);
       return;
@@ -749,7 +741,7 @@ async function handleRequest(
       return;
     }
 
-    const session = opts.runtime.ctx
+    const session = runtime.ctx
       .require<SessionStore>("sessions")
       .getOrCreate(body.sessionId);
 
@@ -797,21 +789,37 @@ export async function startHost(opts: {
   port?: number;
 }): Promise<{ url: string; close: () => Promise<void>; runtime: Runtime }> {
   const token = loadOrCreateToken(opts.homeDir);
-  const runtime = await createRuntime(opts.workspaceRoot, opts.homeDir, {
-    pollChannels: true,
-  });
-  const busy = runtime.ctx.require<Set<string>>("turnBusy");
+  const runtimeRef = {
+    current: await createRuntime(opts.workspaceRoot, opts.homeDir, {
+      pollChannels: true,
+    }),
+  };
+  const busyRef = {
+    current: runtimeRef.current.ctx.require<Set<string>>("turnBusy"),
+  };
   const controllers = new Map<string, AbortController>();
   const turns = new Map<string, Session>();
+  let listenPort = opts.port ?? 7331;
+
+  const reloadRuntime = async (): Promise<void> => {
+    runtimeRef.current.stop();
+    runtimeRef.current = await createRuntime(opts.workspaceRoot, opts.homeDir, {
+      pollChannels: true,
+    });
+    busyRef.current = runtimeRef.current.ctx.require<Set<string>>("turnBusy");
+  };
 
   const server = createServer((req, res) => {
     void handleRequest(req, res, {
       token,
       workspaceRoot: opts.workspaceRoot,
-      runtime,
+      homeDir: opts.homeDir,
+      port: listenPort,
+      runtimeRef,
       controllers,
       turns,
-      busy,
+      busy: busyRef.current,
+      reloadRuntime,
     }).catch((err: unknown) => {
       if (!res.destroyed && !res.writableEnded && !res.headersSent) {
         res.writeHead(500, { "Content-Type": "text/plain" });
@@ -840,18 +848,19 @@ export async function startHost(opts: {
   if (address === null || typeof address === "string") {
     throw new Error("expected TCP listen address");
   }
+  listenPort = address.port;
 
   return {
     url: `http://127.0.0.1:${address.port}`,
     close: () =>
       new Promise<void>((resolve, reject) => {
         server.closeAllConnections();
-        runtime.stop();
+        runtimeRef.current.stop();
         server.close((err) => {
           if (err) reject(err);
           else resolve();
         });
       }),
-    runtime,
+    runtime: runtimeRef.current,
   };
 }

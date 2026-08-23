@@ -617,6 +617,81 @@ describe("startHost", () => {
     }
   });
 
+  it("GET /v1/settings/credentials returns masked slots", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-settings-get-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
+    writeAssembly(workspaceRoot);
+    mkdirSync(join(homeDir, ".flintloom"), { recursive: true });
+    writeFileSync(
+      join(homeDir, ".flintloom", "credentials"),
+      JSON.stringify({
+        hostToken: "tok-settings-get",
+        providers: { media: { apiKey: "sk-abcdefghijklmnop" } },
+      }),
+    );
+    const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+    const res = await fetch(`${host.url}/v1/settings/credentials`, {
+      headers: { Authorization: "Bearer tok-settings-get" },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { slots: { id: string; maskedKey?: string }[] };
+    const media = body.slots.find((s) => s.id === "media");
+    expect(media?.maskedKey).toBe("sk-a…mnop");
+    expect(JSON.stringify(body)).not.toContain("sk-abcdefghijklmnop");
+    await host.close();
+  });
+
+  it("PUT media and reload configures asr", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-settings-put-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
+    writeAssembly(workspaceRoot);
+    const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+    const store = JSON.parse(
+      readFileSync(join(homeDir, ".flintloom", "credentials"), "utf8"),
+    ) as { hostToken: string };
+    const put = await fetch(`${host.url}/v1/settings/credentials/media`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${store.hostToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        apiKey: "sk-cloud",
+        baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      }),
+    });
+    expect(put.status).toBe(200);
+    const reload = await fetch(`${host.url}/v1/settings/reload`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${store.hostToken}` },
+    });
+    expect(reload.status).toBe(200);
+    const models = await fetch(`${host.url}/v1/models`, {
+      headers: { Authorization: `Bearer ${store.hostToken}` },
+    });
+    const snap = (await models.json()) as { kind: string; configured: boolean }[];
+    expect(snap.find((r) => r.kind === "asr")?.configured).toBe(true);
+    await host.close();
+  });
+
+  it("POST /v1/settings/reload returns 409 when busy", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-settings-busy-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
+    writeAssembly(workspaceRoot);
+    const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+    const store = JSON.parse(
+      readFileSync(join(homeDir, ".flintloom", "credentials"), "utf8"),
+    ) as { hostToken: string };
+    host.runtime.ctx.require<Set<string>>("turnBusy").add("session-busy");
+    const reload = await fetch(`${host.url}/v1/settings/reload`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${store.hostToken}` },
+    });
+    expect(reload.status).toBe(409);
+    expect(await reload.text()).toContain("busy");
+    await host.close();
+  });
+
   it("returns 500 when runTurn throws before SSE headers", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-ws-"));
     const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));

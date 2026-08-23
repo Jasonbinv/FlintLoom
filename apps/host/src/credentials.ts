@@ -53,3 +53,31 @@ export function maskSecret(value: string): string {
   }
   return `${value.slice(0, 4)}…${value.slice(-4)}`;
 }
+
+export function resolveLayeredString(
+  envKey: string,
+  fileEnv: Record<string, string>,
+  credValue: string | undefined,
+): { value: string | undefined; source: CredentialSource } {
+  const fromProcess = process.env[envKey];
+  if (typeof fromProcess === "string" && fromProcess.length > 0) {
+    return { value: fromProcess, source: "env" };
+  }
+  const fromFile = fileEnv[envKey];
+  if (typeof fromFile === "string" && fromFile.length > 0) {
+    return { value: fromFile, source: "env" };
+  }
+  if (typeof credValue === "string" && credValue.length > 0) {
+    return { value: credValue, source: "credentials" };
+  }
+  return { value: undefined, source: "none" };
+}
+
+export function isLocalLlmBaseUrl(baseUrl: string): boolean {
+  try {
+    const host = new URL(baseUrl).hostname;
+    return host === "127.0.0.1" || host === "localhost" || host === "::1";
+  } catch {
+    return false;
+  }
+}
