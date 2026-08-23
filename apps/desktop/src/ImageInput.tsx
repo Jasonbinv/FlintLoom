@@ -63,7 +63,7 @@ export function ImageInput(props: {
       />
       <button
         type="button"
-        className="btn-ghost"
+        className="composer-tool-btn"
         disabled={props.disabled}
         onClick={() => inputRef.current?.click()}
       >

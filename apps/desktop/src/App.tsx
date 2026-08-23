@@ -10,6 +10,15 @@ import { VoiceInput } from "./VoiceInput.tsx";
 import { TtsPlay } from "./TtsPlay.tsx";
 import { insertPath } from "./files.ts";
 import type { UserImage, WorkbenchEvent } from "./types.ts";
+import {
+  applyTheme,
+  loadTheme,
+  nextTheme,
+  saveTheme,
+  THEME_ICONS,
+  THEME_LABELS,
+  type Theme,
+} from "./theme.ts";
 import "./app.css";
 
 const SESSION_KEY = "flintloom.sessionId";
@@ -158,8 +167,40 @@ export function App() {
   const [sending, setSending] = useState(false);
   const [waitingAction, setWaitingAction] = useState(false);
   const [page, setPage] = useState<Page>("chat");
+  const [filePaneCollapsed, setFilePaneCollapsed] = useState(false);
+  const [theme, setTheme] = useState<Theme>(() => loadTheme());
 
-  const allocId = () => String(++nextId.current);
+  function cycleTheme() {
+    const next = nextTheme(theme);
+    setTheme(next);
+    saveTheme(next);
+    applyTheme(next);
+  }
+
+  const taskTitle =
+    bubbles.find((b) => b.kind === "user" && b.text.trim().length > 0)?.text ??
+    "新对话";
+
+  const sessionHistory = bubbles
+    .filter((b): b is Extract<Bubble, { kind: "user" }> => b.kind === "user" && b.text.trim().length > 0)
+    .map((b) => ({
+      id: b.id,
+      title: b.text.trim().length > 48 ? `${b.text.trim().slice(0, 48)}…` : b.text.trim(),
+    }));
+
+  function startNewChat() {
+    const id = crypto.randomUUID();
+    sessionStorage.setItem(SESSION_KEY, id);
+    sid.current = id;
+    setBubbles([]);
+    setDraft("");
+    setInput("");
+    setPendingImages([]);
+    setWaitingAction(false);
+    setSending(false);
+    turnIdRef.current = undefined;
+    setPage("chat");
+  }
 
   function handleEvent(event: WorkbenchEvent) {
     if (event.type === "user/message") return;
@@ -230,6 +271,10 @@ export function App() {
       })
       .catch(() => setHostDown(true));
   }
+
+  useEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -335,66 +380,110 @@ export function App() {
     }
   }
 
+  const navItems: { id: Page; label: string; icon: string }[] = [
+    { id: "chat", label: "对话", icon: "💬" },
+    { id: "plugins", label: "插件", icon: "🧩" },
+    { id: "models", label: "模型", icon: "🤖" },
+    { id: "settings", label: "设置", icon: "⚙️" },
+  ];
+
+  const allocId = () => String(++nextId.current);
+
   return (
     <div className="workbench">
-      <header className="topbar">
-        <h1>FlintLoom</h1>
-        <nav className="topbar-nav" aria-label="Workbench">
-          <button
-            type="button"
-            className={page === "chat" ? "active" : undefined}
-            onClick={() => setPage("chat")}
-          >
-            Chat
-          </button>
-          <button
-            type="button"
-            className={page === "plugins" ? "active" : undefined}
-            onClick={() => setPage("plugins")}
-          >
-            Plugins
-          </button>
-          <button
-            type="button"
-            className={page === "models" ? "active" : undefined}
-            onClick={() => setPage("models")}
-          >
-            Models
-          </button>
-          <button
-            type="button"
-            className={page === "settings" ? "active" : undefined}
-            onClick={() => setPage("settings")}
-          >
-            Settings
-          </button>
-        </nav>
-        {hostDown ? (
-          <span className="status-pill down">host 未连接</span>
-        ) : (
-          <div className="topbar-status">
-            {chatConfigured === false ? (
-              <span className="status-pill warn">chat 未配置</span>
-            ) : chatConfigured ? (
-              <span className="status-pill ok">chat 已配置</span>
-            ) : null}
-            {guardConfigured === false ? (
-              <span className="status-pill warn">guard 未配置</span>
-            ) : guardConfigured ? (
-              <span className="status-pill ok">guard 已配置</span>
-            ) : null}
+      <aside className="sidebar">
+        <div className="sidebar-brand">
+          <div className="sidebar-logo" aria-hidden>FL</div>
+          <div>
+            <h1>FlintLoom</h1>
+            <p className="sidebar-brand-sub">Agent Workbench</p>
           </div>
-        )}
-      </header>
+        </div>
+        {page === "chat" ? (
+          <div className="sidebar-actions">
+            <button type="button" className="btn-new-chat" onClick={startNewChat}>
+              ＋ 新建对话
+            </button>
+          </div>
+        ) : null}
+        <nav className="sidebar-nav" aria-label="Workbench">
+          {navItems.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={page === item.id ? "active" : undefined}
+              onClick={() => setPage(item.id)}
+            >
+              <span className="nav-icon" aria-hidden>{item.icon}</span>
+              {item.label}
+            </button>
+          ))}
+        </nav>
+        {page === "chat" && sessionHistory.length > 0 ? (
+          <div className="sidebar-history">
+            <p className="sidebar-section-label">任务</p>
+            <ul className="sidebar-history-list">
+              {sessionHistory.map((item) => (
+                <li key={item.id}>
+                  <span className="sidebar-history-item">{item.title}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        <div className="sidebar-status">
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={cycleTheme}
+            title={`当前：${THEME_LABELS[theme]}，点击切换`}
+            aria-label={`切换色调，当前${THEME_LABELS[theme]}`}
+          >
+            <span className="theme-toggle-icon" aria-hidden>{THEME_ICONS[theme]}</span>
+            <span className="theme-toggle-label">{THEME_LABELS[theme]}</span>
+          </button>
+          {hostDown ? (
+            <span className="status-pill down">host 未连接</span>
+          ) : (
+            <>
+              {chatConfigured === false ? (
+                <span className="status-pill warn">chat 未配置</span>
+              ) : chatConfigured ? (
+                <span className="status-pill ok">chat 已配置</span>
+              ) : null}
+              {guardConfigured === false ? (
+                <span className="status-pill warn">guard 未配置</span>
+              ) : guardConfigured ? (
+                <span className="status-pill ok">guard 已配置</span>
+              ) : null}
+            </>
+          )}
+        </div>
+      </aside>
+      <div className="main-content">
       {page === "chat" ? (
       <div className="workbench-body">
         <div className="chat-column">
+          <header className="chat-header">
+            <h2 className="chat-title">{taskTitle}</h2>
+            <div className="chat-header-actions">
+              {sending ? <span className="chat-status">思考中…</span> : null}
+              {waitingAction ? <span className="chat-status">等待操作</span> : null}
+            </div>
+          </header>
           <main className="log">
             {bubbles.length === 0 && !draft ? (
-              <p className="log-empty">向工作区说一句话</p>
+              <div className="log-empty">
+                <p className="log-empty-title">今天我能帮你做什么？</p>
+                <p className="log-empty-hint">向工作区说一句话，开始你的任务</p>
+              </div>
             ) : null}
             {bubbles.map((bubble) => (
-              <div key={bubble.id} className={`bubble ${bubble.kind}`}>
+              <div key={bubble.id} className={`message-turn message-${bubble.kind}`}>
+                {bubble.kind !== "user" ? (
+                  <div className="message-avatar assistant" aria-hidden>AI</div>
+                ) : null}
+                <div className={`bubble ${bubble.kind}`}>
                 {bubble.kind === "user" && (
                   <div className="user-message">
                     {bubble.images?.map((image, index) => (
@@ -475,72 +564,91 @@ export function App() {
                     {bubble.summary ? <p>{bubble.summary}</p> : null}
                   </div>
                 )}
+                </div>
+                {bubble.kind === "user" ? (
+                  <div className="message-avatar user" aria-hidden>我</div>
+                ) : null}
               </div>
             ))}
-            {draft ? <div className="bubble assistant draft">{draft}</div> : null}
-          </main>
-          <footer className="composer">
-            {pendingImages.length > 0 ? (
-              <div className="composer-images" aria-label="待发送图片">
-                {pendingImages.map((image, index) => (
-                  <img
-                    key={index}
-                    className="composer-image-thumb"
-                    alt=""
-                    src={`data:${image.mime};base64,${image.data}`}
-                  />
-                ))}
-                <button
-                  type="button"
-                  className="btn-ghost"
-                  onClick={() => setPendingImages([])}
-                >
-                  清除图片
-                </button>
+            {draft ? (
+              <div className="message-turn message-assistant">
+                <div className="message-avatar assistant" aria-hidden>AI</div>
+                <div className="bubble assistant draft">{draft}</div>
               </div>
             ) : null}
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={onKeyDown}
-              rows={3}
-            />
-            {asrConfigured ? (
-              <VoiceInput
-                disabled={sending || waitingAction}
-                onText={(text) =>
-                  setInput((current) =>
-                    current.trim().length > 0 ? `${current.trim()} ${text}` : text,
-                  )
-                }
+          </main>
+          <footer className="composer">
+            <div className="composer-box">
+              {pendingImages.length > 0 ? (
+                <div className="composer-images" aria-label="待发送图片">
+                  {pendingImages.map((image, index) => (
+                    <img
+                      key={index}
+                      className="composer-image-thumb"
+                      alt=""
+                      src={`data:${image.mime};base64,${image.data}`}
+                    />
+                  ))}
+                  <button
+                    type="button"
+                    className="composer-tool-btn"
+                    onClick={() => setPendingImages([])}
+                  >
+                    清除
+                  </button>
+                </div>
+              ) : null}
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={onKeyDown}
+                rows={2}
+                placeholder="今天我能帮你做什么？"
               />
-            ) : null}
-            {omniConfigured ? (
-              <ImageInput
-                disabled={sending || waitingAction}
-                onImages={(images) =>
-                  setPendingImages((current) => [...current, ...images].slice(0, 4))
-                }
-              />
-            ) : null}
-            <button
-              type="button"
-              className="btn-primary"
-              disabled={
-                sending || waitingAction || (!input.trim() && pendingImages.length === 0)
-              }
-              onClick={() => void send()}
-            >
-              发送
-            </button>
-            {waitingAction || sending ? (
-              <button type="button" className="btn-ghost" onClick={() => void onCancel()}>
-                取消
-              </button>
-            ) : null}
+              <div className="composer-toolbar">
+                <div className="composer-tools">
+                  {omniConfigured ? (
+                    <ImageInput
+                      disabled={sending || waitingAction}
+                      onImages={(images) =>
+                        setPendingImages((current) => [...current, ...images].slice(0, 4))
+                      }
+                    />
+                  ) : null}
+                  {asrConfigured ? (
+                    <VoiceInput
+                      disabled={sending || waitingAction}
+                      onText={(text) =>
+                        setInput((current) =>
+                          current.trim().length > 0 ? `${current.trim()} ${text}` : text,
+                        )
+                      }
+                    />
+                  ) : null}
+                  {waitingAction || sending ? (
+                    <button type="button" className="composer-tool-btn" onClick={() => void onCancel()}>
+                      取消
+                    </button>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  className="btn-send"
+                  disabled={
+                    sending || waitingAction || (!input.trim() && pendingImages.length === 0)
+                  }
+                  onClick={() => void send()}
+                  title="发送"
+                >
+                  ↑
+                </button>
+              </div>
+            </div>
           </footer>
         </div>
         <FilePane
+          collapsed={filePaneCollapsed}
+          onToggleCollapse={() => setFilePaneCollapsed((v) => !v)}
           onInsertPath={(p) => setInput((cur) => insertPath(cur, p))}
         />
       </div>
@@ -548,10 +656,10 @@ export function App() {
         <main className="settings-pane">
           <h2 className="settings-title">
             {page === "plugins"
-              ? "Plugins"
+              ? "插件"
               : page === "models"
-                ? "Models"
-                : "Settings"}
+                ? "模型"
+                : "设置"}
           </h2>
           {page === "plugins" ? (
             <PluginsPane />
@@ -562,6 +670,7 @@ export function App() {
           )}
         </main>
       )}
+      </div>
     </div>
   );
 }

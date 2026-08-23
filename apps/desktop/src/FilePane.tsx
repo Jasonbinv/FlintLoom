@@ -5,13 +5,16 @@ import {
   fetchPreview,
   type FileEntry,
 } from "./files.ts";
+import { FileIcon } from "./FileIcon.tsx";
 import { KnowledgePane } from "./KnowledgePane.tsx";
 
 type Props = {
   onInsertPath: (path: string) => void;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 };
 
-export function FilePane({ onInsertPath }: Props) {
+export function FilePane({ onInsertPath, collapsed, onToggleCollapse }: Props) {
   const [tab, setTab] = useState<"files" | "knowledge">("files");
   const [selectedFile, setSelectedFile] = useState<string>();
   const [rootEntries, setRootEntries] = useState<FileEntry[]>([]);
@@ -105,12 +108,14 @@ export function FilePane({ onInsertPath }: Props) {
       if (entry.type === "dir") {
         const isOpen = expanded.has(path);
         return (
-          <div key={path} className="file-node" style={{ paddingLeft: depth * 12 }}>
+          <div key={path} className="file-node" style={{ paddingLeft: depth * 14 }}>
             <button type="button" onClick={() => void toggleDir(path)}>
-              {entry.name}
+              <span className="file-chevron">{isOpen ? "▾" : "▸"}</span>
+              <FileIcon name={entry.name} isDir />
+              <span className="file-label">{entry.name}</span>
             </button>
             {isOpen && dirErrors.has(path) ? (
-              <div style={{ paddingLeft: 12 }}>host unreachable</div>
+              <div className="file-tree-error">host unreachable</div>
             ) : null}
             {isOpen && children[path]
               ? renderEntries(children[path], path, depth + 1)
@@ -119,42 +124,71 @@ export function FilePane({ onInsertPath }: Props) {
         );
       }
       return (
-        <div key={path} className="file-node" style={{ paddingLeft: depth * 12 }}>
+        <div key={path} className="file-node" style={{ paddingLeft: depth * 14 }}>
           <button
             type="button"
             className={selectedFile === path ? "selected" : undefined}
             onClick={() => void openFile(path)}
           >
-            {entry.name}
+            <FileIcon name={entry.name} />
+            <span className="file-label">{entry.name}</span>
           </button>
         </div>
       );
     });
   }
 
+  if (collapsed) {
+    return (
+      <aside className="file-pane file-pane--collapsed">
+        <button
+          type="button"
+          className="file-pane-expand"
+          title="展开工作空间文件"
+          onClick={onToggleCollapse}
+        >
+          ◧
+        </button>
+      </aside>
+    );
+  }
+
   return (
     <aside className="file-pane">
+      <header className="file-pane-header">
+        <h3 className="file-pane-title">工作空间文件</h3>
+        {onToggleCollapse ? (
+          <button
+            type="button"
+            className="icon-btn"
+            title="收起面板"
+            onClick={onToggleCollapse}
+          >
+            ◨
+          </button>
+        ) : null}
+      </header>
       <div className="side-tabs">
         <button
           type="button"
           className={tab === "files" ? "active" : undefined}
           onClick={() => setTab("files")}
         >
-          Files
+          文件
         </button>
         <button
           type="button"
           className={tab === "knowledge" ? "active" : undefined}
           onClick={() => setTab("knowledge")}
         >
-          Knowledge
+          知识库
         </button>
       </div>
       {tab === "files" ? (
         <>
           <div className="file-tree">
             {treeError ? (
-              <div>host unreachable</div>
+              <div className="file-tree-error">host unreachable</div>
             ) : (
               renderEntries(rootEntries, ".", 0)
             )}

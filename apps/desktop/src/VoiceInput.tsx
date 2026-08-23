@@ -47,7 +47,7 @@ export function VoiceInput(props: {
   return (
     <button
       type="button"
-      className="btn-ghost"
+      className="composer-tool-btn"
       disabled={props.disabled || recording}
       onClick={() => void toggle()}
     >

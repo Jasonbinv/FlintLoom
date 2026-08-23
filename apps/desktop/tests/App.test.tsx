@@ -318,13 +318,24 @@ async function typeAndSend(text: string) {
     proto?.set?.call(textarea, text);
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  const button = Array.from(document.querySelectorAll("button")).find(
-    (b) => b.textContent === "发送",
-  );
+  const button = document.querySelector(".btn-send");
   if (!button) throw new Error("no send button");
   await act(async () => {
     button.click();
   });
+}
+
+function findNavTab(label: string): HTMLButtonElement | undefined {
+  return Array.from(document.querySelectorAll(".sidebar-nav button")).find((b) =>
+    b.textContent?.includes(label),
+  ) as HTMLButtonElement | undefined;
+}
+
+function findFileTreeButton(name: string): HTMLButtonElement | undefined {
+  const label = Array.from(document.querySelectorAll(".file-label")).find(
+    (el) => el.textContent === name,
+  );
+  return label?.closest("button") as HTMLButtonElement | undefined;
 }
 
 beforeEach(() => {
@@ -439,9 +450,7 @@ describe("App", () => {
     expect(container!.textContent).toContain("README.md");
     expect(container!.textContent).toContain("Hello");
 
-    const fileButton = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "README.md",
-    );
+    const fileButton = findFileTreeButton("README.md");
     if (!fileButton) throw new Error("no README.md button");
     await act(async () => {
       fileButton.click();
@@ -477,9 +486,7 @@ describe("App", () => {
     });
     await mountApp();
     await waitForText("flow.infographic.json");
-    const fileButton = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "flow.infographic.json",
-    );
+    const fileButton = findFileTreeButton("flow.infographic.json");
     if (!fileButton) throw new Error("no infographic button");
     await act(async () => {
       fileButton.click();
@@ -540,9 +547,7 @@ describe("App", () => {
     await waitForText("README.md");
     await waitForText("docs");
 
-    const docsButton = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "docs",
-    );
+    const docsButton = findFileTreeButton("docs");
     if (!docsButton) throw new Error("no docs button");
     await act(async () => {
       docsButton.click();
@@ -552,15 +557,15 @@ describe("App", () => {
     expect(document.body.textContent).toContain("docs");
   });
 
-  it("shows Files and Knowledge tabs with Files default", async () => {
+  it("shows 文件 and 知识库 tabs with 文件 default", async () => {
     installFetch();
     await mountApp();
     await waitForText("README.md");
     const filesTab = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "Files",
+      (b) => b.textContent === "文件",
     );
     const knowledgeTab = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "Knowledge",
+      (b) => b.textContent === "知识库",
     );
     expect(filesTab).toBeTruthy();
     expect(knowledgeTab).toBeTruthy();
@@ -572,9 +577,9 @@ describe("App", () => {
     await mountApp();
     await waitForText("README.md");
     const knowledgeTab = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "Knowledge",
+      (b) => b.textContent === "知识库",
     );
-    if (!knowledgeTab) throw new Error("no Knowledge tab");
+    if (!knowledgeTab) throw new Error("no 知识库 tab");
     await act(async () => {
       knowledgeTab.click();
     });
@@ -592,10 +597,10 @@ describe("App", () => {
     await waitForText("README.md");
 
     const knowledgeTab = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "Knowledge",
+      (b) => b.textContent === "知识库",
     );
     const filesTab = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "Files",
+      (b) => b.textContent === "文件",
     );
     if (!knowledgeTab || !filesTab) throw new Error("missing tabs");
 
@@ -609,9 +614,7 @@ describe("App", () => {
     });
     await waitForText("README.md");
 
-    const fileButton = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "README.md",
-    );
+    const fileButton = findFileTreeButton("README.md");
     if (!fileButton) throw new Error("no README.md button");
     await act(async () => {
       fileButton.click();
@@ -651,18 +654,16 @@ describe("App", () => {
     await mountApp();
     await waitForText("README.md");
 
-    const fileButton = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "README.md",
-    );
+    const fileButton = findFileTreeButton("README.md");
     if (!fileButton) throw new Error("no README.md button");
     await act(async () => {
       fileButton.click();
     });
 
     const knowledgeTab = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "Knowledge",
+      (b) => b.textContent === "知识库",
     );
-    if (!knowledgeTab) throw new Error("no Knowledge tab");
+    if (!knowledgeTab) throw new Error("no 知识库 tab");
     await act(async () => {
       knowledgeTab.click();
     });
@@ -716,9 +717,9 @@ describe("App", () => {
     await mountApp();
     await waitForText("README.md");
     const knowledgeTab = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "Knowledge",
+      (b) => b.textContent === "知识库",
     );
-    if (!knowledgeTab) throw new Error("no Knowledge tab");
+    if (!knowledgeTab) throw new Error("no 知识库 tab");
     await act(async () => {
       knowledgeTab.click();
     });
@@ -798,9 +799,7 @@ describe("App", () => {
     await waitForText("README.md");
     await waitForText("notes.txt");
 
-    const notesButton = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "notes.txt",
-    );
+    const notesButton = findFileTreeButton("notes.txt");
     if (!notesButton) throw new Error("no notes.txt button");
     await act(async () => {
       notesButton.click();
@@ -830,9 +829,7 @@ describe("App", () => {
       (b) => b.textContent === "OK",
     );
     expect(okButton).toBeTruthy();
-    const sendButton = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "发送",
-    );
+    const sendButton = document.querySelector(".btn-send") as HTMLButtonElement | null;
     expect(sendButton).toBeTruthy();
     expect(sendButton!.disabled).toBe(true);
     const cancelButton = Array.from(document.querySelectorAll("button")).find(
@@ -918,9 +915,7 @@ describe("App", () => {
     await waitForText("touch");
     expect(document.body.textContent).toContain("允许执行工具");
     expect(document.body.textContent).not.toContain("call-touch");
-    const sendButton = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "发送",
-    );
+    const sendButton = document.querySelector(".btn-send") as HTMLButtonElement | null;
     expect(sendButton?.disabled).toBe(true);
     const allowButton = Array.from(document.querySelectorAll("button")).find(
       (b) => b.textContent === "允许",
@@ -1027,9 +1022,7 @@ describe("App", () => {
     });
     await mountApp();
     await waitForText("touch");
-    const sendButton = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "发送",
-    );
+    const sendButton = document.querySelector(".btn-send") as HTMLButtonElement | null;
     expect(sendButton?.disabled).toBe(true);
   });
 
@@ -1234,9 +1227,7 @@ describe("App", () => {
       proto?.set?.call(textarea, "next");
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    const sendButton = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "发送",
-    );
+    const sendButton = document.querySelector(".btn-send") as HTMLButtonElement | null;
     expect(sendButton?.disabled).toBe(true);
     const cancelButton = Array.from(document.querySelectorAll("button")).find(
       (b) => b.textContent === "取消",
@@ -1252,10 +1243,10 @@ describe("App", () => {
   it("shows empty log copy as a paragraph", async () => {
     installFetch();
     await mountApp();
-    await waitForText("向工作区说一句话");
+    await waitForText("今天我能帮你做什么？");
     const empty = document.querySelector(".log-empty");
     expect(empty).toBeTruthy();
-    expect(empty?.tagName).toBe("P");
+    expect(empty?.tagName).toBe("DIV");
   });
 
   it("hides empty log copy after session hydrate", async () => {
@@ -1272,7 +1263,7 @@ describe("App", () => {
     });
     await mountApp();
     await waitForText("past user");
-    expect(document.body.textContent).not.toContain("向工作区说一句话");
+    expect(document.body.textContent).not.toContain("今天我能帮你做什么？");
     expect(document.querySelector(".log-empty")).toBeNull();
   });
 
@@ -1299,7 +1290,7 @@ describe("App", () => {
     );
   });
 
-  it("renders guard pill in topbar when guard is configured", async () => {
+  it("renders guard pill in sidebar when guard is configured", async () => {
     installFetch({
       models: new Response(
         JSON.stringify([
@@ -1311,8 +1302,32 @@ describe("App", () => {
     });
     await mountApp();
     await waitForText("guard 已配置");
-    const pills = Array.from(document.querySelectorAll(".topbar-status .status-pill.ok"));
+    const pills = Array.from(document.querySelectorAll(".sidebar-status .status-pill.ok"));
     expect(pills.some((pill) => pill.textContent === "guard 已配置")).toBe(true);
+  });
+
+  it("cycles theme on toggle button click", async () => {
+    localStorage.setItem("flintloom.theme", "light");
+    await mountApp();
+    const toggle = document.querySelector(".theme-toggle") as HTMLButtonElement;
+    expect(toggle).toBeTruthy();
+    expect(document.documentElement.getAttribute("data-theme")).toBe("light");
+    expect(toggle.textContent).toContain("浅色");
+    await act(async () => {
+      toggle.click();
+    });
+    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+    expect(localStorage.getItem("flintloom.theme")).toBe("dark");
+    expect(toggle.textContent).toContain("深色");
+    await act(async () => {
+      toggle.click();
+    });
+    expect(document.documentElement.getAttribute("data-theme")).toBe("warm");
+    expect(toggle.textContent).toContain("暖色");
+    await act(async () => {
+      toggle.click();
+    });
+    expect(document.documentElement.getAttribute("data-theme")).toBe("light");
   });
 
   it("renders down pill when models fetch fails", async () => {
@@ -1340,12 +1355,8 @@ describe("App", () => {
     await mountApp();
     await waitForText("README.md");
     await waitForText("docs");
-    const readme = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "README.md",
-    );
-    const docs = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "docs",
-    );
+    const readme = findFileTreeButton("README.md");
+    const docs = findFileTreeButton("docs");
     if (!readme || !docs) throw new Error("missing tree buttons");
     expect(readme.classList.contains("selected")).toBe(false);
     await act(async () => {
@@ -1367,16 +1378,14 @@ describe("App", () => {
       }),
     });
     await mountApp();
-    const send = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "发送",
-    );
-    expect(send?.classList.contains("btn-primary")).toBe(true);
+    const send = document.querySelector(".btn-send");
+    expect(send?.classList.contains("btn-send")).toBe(true);
     await typeAndSend("hi");
     await waitForText("OK");
     const cancel = Array.from(document.querySelectorAll("button")).find(
       (b) => b.textContent === "取消",
     );
-    expect(cancel?.classList.contains("btn-ghost")).toBe(true);
+    expect(cancel?.classList.contains("composer-tool-btn")).toBe(true);
   });
 
   it("shows plugin list on Plugins page", async () => {
@@ -1390,10 +1399,8 @@ describe("App", () => {
       ),
     });
     await mountApp();
-    const pluginsTab = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "Plugins",
-    );
-    if (!pluginsTab) throw new Error("no Plugins tab");
+    const pluginsTab = findNavTab("插件");
+    if (!pluginsTab) throw new Error("no 插件 tab");
     await act(async () => {
       pluginsTab.click();
     });
@@ -1416,10 +1423,8 @@ describe("App", () => {
       ),
     });
     await mountApp();
-    const modelsTab = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "Models",
-    );
-    if (!modelsTab) throw new Error("no Models tab");
+    const modelsTab = findNavTab("模型");
+    if (!modelsTab) throw new Error("no 模型 tab");
     await act(async () => {
       modelsTab.click();
     });
@@ -1440,10 +1445,8 @@ describe("App", () => {
       ),
     });
     await mountApp();
-    const modelsTab = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "Models",
-    );
-    if (!modelsTab) throw new Error("no Models tab");
+    const modelsTab = findNavTab("模型");
+    if (!modelsTab) throw new Error("no 模型 tab");
     await act(async () => {
       modelsTab.click();
     });
@@ -1462,10 +1465,8 @@ describe("App", () => {
       ),
     });
     await mountApp();
-    const modelsTab = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "Models",
-    );
-    if (!modelsTab) throw new Error("no Models tab");
+    const modelsTab = findNavTab("模型");
+    if (!modelsTab) throw new Error("no 模型 tab");
     await act(async () => {
       modelsTab.click();
     });
@@ -1486,10 +1487,8 @@ describe("App", () => {
       ),
     });
     await mountApp();
-    const modelsTab = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "Models",
-    );
-    if (!modelsTab) throw new Error("no Models tab");
+    const modelsTab = findNavTab("模型");
+    if (!modelsTab) throw new Error("no 模型 tab");
     await act(async () => {
       modelsTab.click();
     });
@@ -1501,10 +1500,8 @@ describe("App", () => {
   it("renders Settings page with credential slots", async () => {
     installFetch();
     await mountApp();
-    const settingsTab = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "Settings",
-    );
-    if (!settingsTab) throw new Error("no Settings tab");
+    const settingsTab = findNavTab("设置");
+    if (!settingsTab) throw new Error("no 设置 tab");
     await act(async () => {
       settingsTab.click();
     });
@@ -1518,18 +1515,16 @@ describe("App", () => {
   it("Models page links to Settings", async () => {
     installFetch();
     await mountApp();
-    const modelsTab = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "Models",
-    );
-    if (!modelsTab) throw new Error("no Models tab");
+    const modelsTab = findNavTab("模型");
+    if (!modelsTab) throw new Error("no 模型 tab");
     await act(async () => {
       modelsTab.click();
     });
     await waitForText("flintloom.yml");
     const settingsLink = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "Settings" && b.classList.contains("linkish"),
+      (b) => b.textContent === "设置" && b.classList.contains("linkish"),
     );
-    if (!settingsLink) throw new Error("no Settings link on Models page");
+    if (!settingsLink) throw new Error("no 设置 link on Models page");
     await act(async () => {
       settingsLink.click();
     });
