@@ -187,8 +187,12 @@ function installFetch(opts: {
     }
     if (url.includes("/v1/settings/workspace")) {
       if (init?.method === "POST") {
+        const body = JSON.parse((init.body as string) ?? "{}") as {
+          workspaceRoot?: string;
+        };
+        const workspaceRoot = body.workspaceRoot ?? "C:/workspace/new";
         return new Response(
-          JSON.stringify({ workspaceRoot: "C:/workspace/new", ok: true }),
+          JSON.stringify({ workspaceRoot, ok: true }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
@@ -2038,5 +2042,41 @@ describe("App", () => {
     await waitForText("reply B");
     expect(document.body.textContent).not.toContain("reply A");
     expect(second.classList.contains("active")).toBe(true);
+  });
+
+  it("switches workspace from recent list without prompt", async () => {
+    localStorage.setItem(
+      "flintloom.workspace.recent",
+      JSON.stringify([
+        { path: "C:/workspace/current", updatedAt: 2 },
+        { path: "C:/workspace/other", updatedAt: 1 },
+      ]),
+    );
+    installFetch();
+    await mountApp();
+    await waitForText("最近");
+    const recentBtn = Array.from(
+      document.querySelectorAll(".workspace-recent-item"),
+    ).find((el) => el.textContent?.includes("other")) as HTMLButtonElement;
+    expect(recentBtn).toBeTruthy();
+    await act(async () => {
+      recentBtn.click();
+    });
+    await waitForText("工作区已切换");
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const switchCall = fetchMock.mock.calls.find(
+      (c) =>
+        String(c[0]).includes("/v1/settings/workspace") &&
+        (c[1] as RequestInit | undefined)?.method === "POST",
+    );
+    expect(switchCall).toBeTruthy();
+    const body = JSON.parse((switchCall![1] as RequestInit).body as string) as {
+      workspaceRoot: string;
+    };
+    expect(body.workspaceRoot).toBe("C:/workspace/other");
+    const recent = JSON.parse(
+      localStorage.getItem("flintloom.workspace.recent") ?? "[]",
+    ) as { path: string }[];
+    expect(recent[0]?.path).toBe("C:/workspace/other");
   });
 });

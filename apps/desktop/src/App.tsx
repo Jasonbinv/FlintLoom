@@ -27,6 +27,11 @@ import {
   type SessionEntry,
 } from "./sessionList.ts";
 import { MessageFileCards } from "./MessageFileCards.tsx";
+import {
+  addRecentWorkspace,
+  loadRecentWorkspaces,
+  type RecentWorkspace,
+} from "./workspaceRecent.ts";
 import { formatWorkspaceLabel, pickWorkspaceFolder } from "./workspacePicker.ts";
 import "./app.css";
 
@@ -183,6 +188,9 @@ export function App() {
   const [workspaceRoot, setWorkspaceRoot] = useState<string | undefined>();
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
   const [workspaceMessage, setWorkspaceMessage] = useState<string | undefined>();
+  const [recentWorkspaces, setRecentWorkspaces] = useState<RecentWorkspace[]>(() =>
+    loadRecentWorkspaces(),
+  );
   const [theme, setTheme] = useState<Theme>(() => loadTheme());
   const [sessions, setSessions] = useState<SessionEntry[]>(() => loadSessions());
 
@@ -279,14 +287,13 @@ export function App() {
     }
   }
 
-  async function chooseWorkspace() {
-    const picked = await pickWorkspaceFolder();
-    if (!picked) return;
+  async function switchWorkspace(picked: string) {
     setWorkspaceBusy(true);
     setWorkspaceMessage(undefined);
     try {
       const next = await setWorkspace(picked);
       setWorkspaceRoot(next);
+      setRecentWorkspaces((prev) => addRecentWorkspace(next, prev));
       setFilePaneKey((key) => key + 1);
       startNewChat();
       refreshModelStatus();
@@ -303,6 +310,12 @@ export function App() {
     } finally {
       setWorkspaceBusy(false);
     }
+  }
+
+  async function chooseWorkspace() {
+    const picked = await pickWorkspaceFolder();
+    if (!picked) return;
+    await switchWorkspace(picked);
   }
 
   function handleEvent(event: WorkbenchEvent) {
@@ -384,6 +397,9 @@ export function App() {
     void fetchWorkspace(ac.signal)
       .then((workspace) => {
         setWorkspaceRoot(workspace.workspaceRoot);
+        setRecentWorkspaces((prev) =>
+          addRecentWorkspace(workspace.workspaceRoot, prev),
+        );
       })
       .catch(() => {
         // host may be down; workspace label stays empty
@@ -537,6 +553,30 @@ export function App() {
             <p className="workspace-path" title={workspaceRoot}>
               {formatWorkspaceLabel(workspaceRoot)}
             </p>
+          ) : null}
+          {recentWorkspaces.length > 0 ? (
+            <div className="workspace-recent">
+              <p className="workspace-recent-label">最近</p>
+              <ul className="workspace-recent-list">
+                {recentWorkspaces.map((item) => (
+                  <li key={item.path}>
+                    <button
+                      type="button"
+                      className={`workspace-recent-item${
+                        workspaceRoot === item.path ? " active" : ""
+                      }`}
+                      title={item.path}
+                      disabled={
+                        workspaceBusy || hostDown || workspaceRoot === item.path
+                      }
+                      onClick={() => void switchWorkspace(item.path)}
+                    >
+                      {formatWorkspaceLabel(item.path)}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
           ) : null}
           {workspaceMessage ? (
             <p className="workspace-message">{workspaceMessage}</p>
