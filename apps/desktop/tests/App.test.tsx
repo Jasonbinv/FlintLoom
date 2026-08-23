@@ -1525,6 +1525,37 @@ describe("App", () => {
     expect(document.body.textContent).toContain("omni 已配置");
   });
 
+  it("shows image button when omni is configured", async () => {
+    installFetch({
+      models: new Response(
+        JSON.stringify([
+          { kind: "chat", configured: true, defaultId: "default" },
+          { kind: "omni", configured: true, defaultId: "default" },
+        ]),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    await waitForText("图片");
+    expect(
+      Array.from(document.querySelectorAll("button")).some((btn) => btn.textContent === "图片"),
+    ).toBe(true);
+  });
+
+  it("hides image button when omni is not configured", async () => {
+    installFetch({
+      models: new Response(
+        JSON.stringify([{ kind: "chat", configured: true, defaultId: "default" }]),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    await waitForText("chat 已配置");
+    expect(
+      Array.from(document.querySelectorAll("button")).some((btn) => btn.textContent === "图片"),
+    ).toBe(false);
+  });
+
   it("shows embedding and rerank pills on Models page", async () => {
     installFetch({
       models: new Response(

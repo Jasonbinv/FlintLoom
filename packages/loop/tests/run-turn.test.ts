@@ -351,6 +351,43 @@ describe("runTurn", () => {
     });
   });
 
+  it("logs user/message with images for multimodal turns", async () => {
+    const fakeChat: ChatProvider = {
+      async *stream() {
+        yield { type: "text", text: "seen-image" };
+      },
+    };
+    const ctx = boot();
+    ctx.require<ModelRegistry>("models").registerChat("fake", fakeChat);
+    ctx.require<ModelRegistry>("models").setDefault("chat", "fake");
+    const session = new Session("s-images");
+    const result = await runTurn({
+      ctx,
+      session,
+      text: "what is this",
+      images: [{ mime: "image/png", data: "abc" }],
+      workspaceRoot: process.cwd(),
+      channel: "host",
+      signal: new AbortController().signal,
+    });
+    expect(result.status).toBe("ok");
+    expect(session.events().find((e) => e.type === "user/message")).toEqual({
+      type: "user/message",
+      text: "what is this",
+      images: [{ mime: "image/png", data: "abc" }],
+    });
+    expect(session.deriveMessages()).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "what is this" },
+          { type: "image", mime: "image/png", data: "abc" },
+        ],
+      },
+      { role: "assistant", content: "seen-image" },
+    ]);
+  });
+
   it("uses chat provider when omni is not configured", async () => {
     let chatCalled = false;
     const fakeChat: ChatProvider = {
