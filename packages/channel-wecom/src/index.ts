@@ -4,4 +4,8 @@ export { handleWecomCallback } from "./callback.ts";
 export { createWecomAdapter, wecomSessionId } from "./adapter.ts";
 export { resetWecomTokenCache } from "./api.ts";
 export { parseWecomInboundXml } from "./xml.ts";
-export { verifyWecomSignature, decryptWecomEcho } from "./crypto.ts";
+export {
+  verifyWecomSignature,
+  decryptWecomEcho,
+  encryptWecomMessage,
+} from "./crypto.ts";

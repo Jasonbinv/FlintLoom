@@ -1,4 +1,4 @@
-import { createDecipheriv, createHash } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 
 function sha1Signature(
   token: string,
@@ -18,6 +18,11 @@ function pkcs7Unpad(buffer: Buffer): Buffer {
   return buffer.subarray(0, buffer.length - pad);
 }
 
+function pkcs7Pad(buffer: Buffer, blockSize = 32): Buffer {
+  const pad = blockSize - (buffer.length % blockSize);
+  return Buffer.concat([buffer, Buffer.alloc(pad, pad)]);
+}
+
 function aesKey(encodingAesKey: string): Buffer {
   return Buffer.from(`${encodingAesKey}=`, "base64");
 }
@@ -30,6 +35,25 @@ export function verifyWecomSignature(
   msgSignature: string,
 ): boolean {
   return sha1Signature(token, timestamp, nonce, encrypt) === msgSignature;
+}
+
+export function encryptWecomMessage(
+  encodingAesKey: string,
+  corpId: string,
+  message: string,
+  random = randomBytes(16),
+): string {
+  const key = aesKey(encodingAesKey);
+  const iv = key.subarray(0, 16);
+  const msgBuf = Buffer.from(message, "utf8");
+  const corpBuf = Buffer.from(corpId, "utf8");
+  const lenBuf = Buffer.alloc(4);
+  lenBuf.writeUInt32BE(msgBuf.length, 0);
+  const plain = Buffer.concat([random, lenBuf, msgBuf, corpBuf]);
+  const cipher = createCipheriv("aes-256-cbc", key, iv);
+  cipher.setAutoPadding(false);
+  const encrypted = Buffer.concat([cipher.update(pkcs7Pad(plain)), cipher.final()]);
+  return encrypted.toString("base64");
 }
 
 export function decryptWecomMessage(
