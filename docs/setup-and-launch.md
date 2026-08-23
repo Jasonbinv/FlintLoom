@@ -292,6 +292,12 @@ pnpm flint --workspace /path/to/project "你好"
 
 # 安装本地插件到工作区 flintloom.yml
 pnpm flint plugin add ../my-plugin --id my-plugin
+
+# 写入 ~/.flintloom/credentials（与设置页等价；host 需 reload 或重启后生效）
+pnpm flint config get
+pnpm flint config get chat
+pnpm flint config set chat apiKey sk-your-key
+pnpm flint config set telegram allowedChatIds 123456789
 ```
 
 CLI 会读取工作区的 `.env` 与 `flintloom.yml`，与桌面共用同一套 Host 逻辑（CLI 路径不经过 Vite 代理）。

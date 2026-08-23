@@ -6,6 +6,7 @@ import {
 import type { LoopService } from "@flintloom/loop";
 import type { SessionStore } from "@flintloom/session";
 import { parseCliArgv } from "./argv.ts";
+import { runConfigGet, runConfigSet } from "./config-run.ts";
 import { formatCliOutput } from "./output.ts";
 import { runAcpStdio } from "@flintloom/channel-acp";
 
@@ -28,6 +29,40 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
     const message = err instanceof Error ? err.message : String(err);
     deps.stderr.write(message + "\n");
     return 1;
+  }
+
+  if (command.kind === "config-get") {
+    try {
+      deps.stdout.write(
+        runConfigGet({
+          homeDir: deps.homedir(),
+          workspace: command.workspace,
+          slotId: command.slotId,
+        }),
+      );
+      return 0;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      deps.stderr.write(message + "\n");
+      return 1;
+    }
+  }
+
+  if (command.kind === "config-set") {
+    try {
+      runConfigSet({
+        homeDir: deps.homedir(),
+        slotId: command.slotId,
+        field: command.field,
+        value: command.value,
+      });
+      deps.stdout.write(`ok ${command.slotId}.${command.field}\n`);
+      return 0;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      deps.stderr.write(message + "\n");
+      return 1;
+    }
   }
 
   if (command.kind === "plugin-add") {

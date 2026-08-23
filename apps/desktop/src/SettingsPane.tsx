@@ -389,6 +389,14 @@ export function SettingsPane({ onSaved }: Props) {
             <p className="settings-hint">{webhook.hint}</p>
           </div>
         ) : null}
+        <div className="settings-card settings-card-readonly">
+          <h4>个人微信桥接</h4>
+          <p className="settings-card-hint">
+            独立进程 <code>pnpm wechat-bridge</code> 将个人微信消息转发到上方 Webhook（方案 1，有封号风险）。
+            默认 HTTP 入站：<code>http://127.0.0.1:7340/v1/inbound</code>。详见{" "}
+            <code>docs/wechat-bridge.md</code>。
+          </p>
+        </div>
       </section>
       <section className="settings-section">
         <h3 className="settings-section-title">插件安装</h3>
