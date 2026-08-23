@@ -72,6 +72,7 @@ export type CredentialSlotSnapshot = {
   source: string;
   baseUrl?: string;
   model?: string;
+  appId?: string;
   allowedChatIds?: string;
   maskedKey?: string;
 };

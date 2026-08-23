@@ -17,6 +17,15 @@ importers:
       '@flintloom/channel-acp':
         specifier: workspace:*
         version: link:packages/channel-acp
+      '@flintloom/channel-discord':
+        specifier: workspace:*
+        version: link:packages/channel-discord
+      '@flintloom/channel-feishu':
+        specifier: workspace:*
+        version: link:packages/channel-feishu
+      '@flintloom/channel-slack':
+        specifier: workspace:*
+        version: link:packages/channel-slack
       '@flintloom/channel-telegram':
         specifier: workspace:*
         version: link:packages/channel-telegram
@@ -199,6 +208,51 @@ importers:
 
   packages/channel-acp:
     dependencies:
+      '@flintloom/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      '@flintloom/loop':
+        specifier: workspace:*
+        version: link:../loop
+      '@flintloom/session':
+        specifier: workspace:*
+        version: link:../session
+
+  packages/channel-discord:
+    dependencies:
+      '@flintloom/channel':
+        specifier: workspace:*
+        version: link:../channel
+      '@flintloom/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      '@flintloom/loop':
+        specifier: workspace:*
+        version: link:../loop
+      '@flintloom/session':
+        specifier: workspace:*
+        version: link:../session
+
+  packages/channel-feishu:
+    dependencies:
+      '@flintloom/channel':
+        specifier: workspace:*
+        version: link:../channel
+      '@flintloom/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      '@flintloom/loop':
+        specifier: workspace:*
+        version: link:../loop
+      '@flintloom/session':
+        specifier: workspace:*
+        version: link:../session
+
+  packages/channel-slack:
+    dependencies:
+      '@flintloom/channel':
+        specifier: workspace:*
+        version: link:../channel
       '@flintloom/kernel':
         specifier: workspace:*
         version: link:../kernel

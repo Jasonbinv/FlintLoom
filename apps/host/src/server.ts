@@ -117,6 +117,113 @@ function resolveTelegramOverlay(
   return { token, allowedChatIds };
 }
 
+function parseAllowedStringIds(
+  raw: string | undefined,
+  pattern: RegExp,
+): string[] | undefined {
+  if (raw === undefined || raw.length === 0) {
+    return undefined;
+  }
+  const ids: string[] = [];
+  for (const part of raw.split(",")) {
+    const trimmed = part.trim();
+    if (trimmed.length === 0) {
+      continue;
+    }
+    if (!pattern.test(trimmed)) {
+      return undefined;
+    }
+    ids.push(trimmed);
+  }
+  return ids.length > 0 ? ids : undefined;
+}
+
+function resolveDiscordOverlay(
+  fileEnv: Record<string, string>,
+  credStore: CredentialsStore,
+): { token: string; allowedChannelIds: string[] } | undefined {
+  const credDiscord = credStore.channels?.discord;
+  const token = resolveLayeredString(
+    "FLINTLOOM_DISCORD_TOKEN",
+    fileEnv,
+    credDiscord?.token,
+  ).value;
+  if (token === undefined) {
+    return undefined;
+  }
+  const allowedChannelIds = parseAllowedStringIds(
+    resolveLayeredString(
+      "FLINTLOOM_DISCORD_CHANNEL_IDS",
+      fileEnv,
+      credDiscord?.allowedChannelIds,
+    ).value,
+    /^\d+$/,
+  );
+  if (allowedChannelIds === undefined) {
+    return undefined;
+  }
+  return { token, allowedChannelIds };
+}
+
+function resolveSlackOverlay(
+  fileEnv: Record<string, string>,
+  credStore: CredentialsStore,
+): { token: string; allowedChannelIds: string[] } | undefined {
+  const credSlack = credStore.channels?.slack;
+  const token = resolveLayeredString(
+    "FLINTLOOM_SLACK_TOKEN",
+    fileEnv,
+    credSlack?.token,
+  ).value;
+  if (token === undefined) {
+    return undefined;
+  }
+  const allowedChannelIds = parseAllowedStringIds(
+    resolveLayeredString(
+      "FLINTLOOM_SLACK_CHANNEL_IDS",
+      fileEnv,
+      credSlack?.allowedChannelIds,
+    ).value,
+    /^[CG][A-Z0-9]+$/,
+  );
+  if (allowedChannelIds === undefined) {
+    return undefined;
+  }
+  return { token, allowedChannelIds };
+}
+
+function resolveFeishuOverlay(
+  fileEnv: Record<string, string>,
+  credStore: CredentialsStore,
+): { appId: string; appSecret: string; allowedChatIds: string[] } | undefined {
+  const credFeishu = credStore.channels?.feishu;
+  const appId = resolveLayeredString(
+    "FLINTLOOM_FEISHU_APP_ID",
+    fileEnv,
+    credFeishu?.appId,
+  ).value;
+  const appSecret = resolveLayeredString(
+    "FLINTLOOM_FEISHU_APP_SECRET",
+    fileEnv,
+    credFeishu?.appSecret,
+  ).value;
+  if (appId === undefined || appSecret === undefined) {
+    return undefined;
+  }
+  const allowedChatIds = parseAllowedStringIds(
+    resolveLayeredString(
+      "FLINTLOOM_FEISHU_CHAT_IDS",
+      fileEnv,
+      credFeishu?.allowedChatIds,
+    ).value,
+    /^oc_[\w-]+$/,
+  );
+  if (allowedChatIds === undefined) {
+    return undefined;
+  }
+  return { appId, appSecret, allowedChatIds };
+}
+
 export async function createRuntime(
   workspaceRoot: string,
   homeDir: string,
@@ -236,6 +343,24 @@ export async function createRuntime(
       workspaceRoot,
       poll: true,
       ...(telegram ?? {}),
+    };
+    const discord = resolveDiscordOverlay(fileEnv, credStore);
+    runtimeConfigById["channel-discord"] = {
+      workspaceRoot,
+      poll: true,
+      ...(discord ?? {}),
+    };
+    const slack = resolveSlackOverlay(fileEnv, credStore);
+    runtimeConfigById["channel-slack"] = {
+      workspaceRoot,
+      poll: true,
+      ...(slack ?? {}),
+    };
+    const feishu = resolveFeishuOverlay(fileEnv, credStore);
+    runtimeConfigById["channel-feishu"] = {
+      workspaceRoot,
+      poll: true,
+      ...(feishu ?? {}),
     };
   }
 

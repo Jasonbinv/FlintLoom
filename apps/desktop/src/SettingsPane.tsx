@@ -6,15 +6,18 @@ import {
   type CredentialSlotSnapshot,
 } from "./api.ts";
 
+const CHANNEL_SLOT_IDS = new Set(["telegram", "discord", "slack", "feishu"]);
+
 type SlotForm = {
   apiKey: string;
   baseUrl: string;
   model: string;
+  appId: string;
   allowedChatIds: string;
 };
 
 function emptyForm(): SlotForm {
-  return { apiKey: "", baseUrl: "", model: "", allowedChatIds: "" };
+  return { apiKey: "", baseUrl: "", model: "", appId: "", allowedChatIds: "" };
 }
 
 function sourceLabel(source: string): string {
@@ -28,8 +31,22 @@ function slotFormFromSnapshot(slot: CredentialSlotSnapshot): SlotForm {
     apiKey: "",
     baseUrl: slot.baseUrl ?? "",
     model: slot.model ?? "",
+    appId: slot.appId ?? "",
     allowedChatIds: slot.allowedChatIds ?? "",
   };
+}
+
+function channelIdsPlaceholder(slotId: string): string {
+  if (slotId === "telegram") return "123456789,-1001234567890";
+  if (slotId === "discord") return "123456789012345678";
+  if (slotId === "slack") return "C01234567,G01234567";
+  return "oc_abc123,oc_def456";
+}
+
+function channelIdsLabel(slotId: string): string {
+  if (slotId === "feishu") return "Allowed chat IDs";
+  if (slotId === "telegram") return "Allowed chat IDs";
+  return "Allowed channel IDs";
 }
 
 type Props = {
@@ -83,8 +100,11 @@ export function SettingsPane({ onSaved }: Props) {
         body.model = form.model.trim();
       }
     }
-    if (slotId === "telegram" && form.allowedChatIds.trim().length > 0) {
+    if (CHANNEL_SLOT_IDS.has(slotId) && form.allowedChatIds.trim().length > 0) {
       body.allowedChatIds = form.allowedChatIds.trim();
+    }
+    if (slotId === "feishu" && form.appId.trim().length > 0) {
+      body.appId = form.appId.trim();
     }
     setSaving(slotId);
     setMessage(undefined);
@@ -132,8 +152,8 @@ export function SettingsPane({ onSaved }: Props) {
     return <p className="settings-empty">加载中…</p>;
   }
 
-  const providerSlots = slots.filter((s) => s.id !== "telegram");
-  const telegramSlot = slots.find((s) => s.id === "telegram");
+  const providerSlots = slots.filter((s) => !CHANNEL_SLOT_IDS.has(s.id));
+  const channelSlots = slots.filter((s) => CHANNEL_SLOT_IDS.has(s.id));
 
   return (
     <div className="settings-pane-inner">
@@ -238,77 +258,93 @@ export function SettingsPane({ onSaved }: Props) {
       </section>
       <section className="settings-section">
         <h3 className="settings-section-title">Channels</h3>
-        {telegramSlot ? (
-          <div className="settings-card">
-            <div className="settings-card-head">
-              <h4>{telegramSlot.label}</h4>
-              <span className={`settings-source-pill ${telegramSlot.source}`}>
-                {sourceLabel(telegramSlot.source)}
-              </span>
-              {telegramSlot.maskedKey ? (
-                <span className="settings-masked-key">{telegramSlot.maskedKey}</span>
+        {channelSlots.map((slot) => {
+          const form = forms[slot.id] ?? emptyForm();
+          const tokenLabel = slot.id === "feishu" ? "App Secret" : "Bot Token";
+          return (
+            <div key={slot.id} className="settings-card">
+              <div className="settings-card-head">
+                <h4>{slot.label}</h4>
+                <span className={`settings-source-pill ${slot.source}`}>
+                  {sourceLabel(slot.source)}
+                </span>
+                {slot.maskedKey ? (
+                  <span className="settings-masked-key">{slot.maskedKey}</span>
+                ) : null}
+              </div>
+              {slot.id === "feishu" ? (
+                <div className="settings-form-row">
+                  <label>
+                    App ID
+                    <input
+                      type="text"
+                      value={form.appId}
+                      placeholder={slot.appId ?? "留空则不修改"}
+                      onChange={(e) =>
+                        setForms((prev) => ({
+                          ...prev,
+                          [slot.id]: { ...form, appId: e.target.value },
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
               ) : null}
-            </div>
-            <div className="settings-form-row">
-              <label>
-                Bot Token
-                <input
-                  type="password"
-                  value={forms.telegram?.apiKey ?? ""}
-                  placeholder={telegramSlot.maskedKey ?? "留空则不修改"}
-                  onChange={(e) =>
-                    setForms((prev) => ({
-                      ...prev,
-                      telegram: {
-                        ...(prev.telegram ?? emptyForm()),
-                        apiKey: e.target.value,
-                      },
-                    }))
-                  }
-                />
-              </label>
-            </div>
-            <div className="settings-form-row">
-              <label>
-                Allowed chat IDs
-                <input
-                  type="text"
-                  value={forms.telegram?.allowedChatIds ?? ""}
-                  placeholder="123456789,-1001234567890"
-                  onChange={(e) =>
-                    setForms((prev) => ({
-                      ...prev,
-                      telegram: {
-                        ...(prev.telegram ?? emptyForm()),
-                        allowedChatIds: e.target.value,
-                      },
-                    }))
-                  }
-                />
-              </label>
-            </div>
-            <div className="settings-card-actions">
-              <button
-                type="button"
-                className="btn-primary"
-                disabled={saving === "telegram"}
-                onClick={() => void saveSlot("telegram")}
-              >
-                保存
-              </button>
-              {telegramSlot.maskedKey ? (
+              <div className="settings-form-row">
+                <label>
+                  {tokenLabel}
+                  <input
+                    type="password"
+                    value={form.apiKey}
+                    placeholder={slot.maskedKey ?? "留空则不修改"}
+                    onChange={(e) =>
+                      setForms((prev) => ({
+                        ...prev,
+                        [slot.id]: { ...form, apiKey: e.target.value },
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+              <div className="settings-form-row">
+                <label>
+                  {channelIdsLabel(slot.id)}
+                  <input
+                    type="text"
+                    value={form.allowedChatIds}
+                    placeholder={channelIdsPlaceholder(slot.id)}
+                    onChange={(e) =>
+                      setForms((prev) => ({
+                        ...prev,
+                        [slot.id]: { ...form, allowedChatIds: e.target.value },
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+              <div className="settings-card-actions">
                 <button
                   type="button"
-                  className="btn-ghost settings-clear-key"
-                  disabled={saving === "telegram"}
-                  onClick={() => void clearKey("telegram")}
+                  className="btn-primary"
+                  disabled={saving === slot.id}
+                  onClick={() => void saveSlot(slot.id)}
                 >
-                  清除密钥
+                  保存
                 </button>
-              ) : null}
+                {slot.maskedKey ? (
+                  <button
+                    type="button"
+                    className="btn-ghost settings-clear-key"
+                    disabled={saving === slot.id}
+                    onClick={() => void clearKey(slot.id)}
+                  >
+                    清除密钥
+                  </button>
+                ) : null}
+              </div>
             </div>
-          </div>
-        ) : null}
+          );
+        })}
         {webhook ? (
           <div className="settings-card settings-card-readonly">
             <h4>Webhook</h4>

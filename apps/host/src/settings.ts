@@ -16,7 +16,15 @@ import {
   writePersistedWorkspace,
 } from "./workspace.ts";
 
-const SLOT_IDS: CredentialSlotId[] = ["chat", "media", "guard", "telegram"];
+const SLOT_IDS: CredentialSlotId[] = [
+  "chat",
+  "media",
+  "guard",
+  "telegram",
+  "discord",
+  "slack",
+  "feishu",
+];
 
 export type CredentialSlotSnapshot = {
   id: CredentialSlotId;
@@ -25,6 +33,7 @@ export type CredentialSlotSnapshot = {
   source: CredentialSource;
   baseUrl?: string;
   model?: string;
+  appId?: string;
   allowedChatIds?: string;
   maskedKey?: string;
 };
@@ -83,6 +92,51 @@ function parseTelegramChatIds(raw: string | undefined): number[] | undefined {
     ids.push(n);
   }
   return ids.length > 0 ? ids : undefined;
+}
+
+function parseAllowedStringIds(
+  raw: string | undefined,
+  pattern: RegExp,
+): string[] | undefined {
+  if (raw === undefined || raw.length === 0) {
+    return undefined;
+  }
+  const ids: string[] = [];
+  for (const part of raw.split(",")) {
+    const trimmed = part.trim();
+    if (trimmed.length === 0) {
+      continue;
+    }
+    if (!pattern.test(trimmed)) {
+      return undefined;
+    }
+    ids.push(trimmed);
+  }
+  return ids.length > 0 ? ids : undefined;
+}
+
+function tokenChannelSlotSnapshot(
+  id: CredentialSlotId,
+  label: string,
+  tokenEnvKey: string,
+  idsEnvKey: string,
+  idsPattern: RegExp,
+  credChannel: Record<string, string> | undefined,
+  fileEnv: Record<string, string>,
+  idsField: "allowedChatIds" | "allowedChannelIds",
+): CredentialSlotSnapshot {
+  const tokenLayer = resolveLayeredString(tokenEnvKey, fileEnv, credChannel?.token);
+  const idsLayer = resolveLayeredString(idsEnvKey, fileEnv, credChannel?.[idsField]);
+  const ids = parseAllowedStringIds(idsLayer.value, idsPattern);
+  const configured = tokenLayer.value !== undefined && ids !== undefined;
+  return {
+    id,
+    label,
+    configured,
+    source: tokenLayer.source !== "none" ? tokenLayer.source : idsLayer.source,
+    allowedChatIds: idsLayer.value,
+    maskedKey: tokenLayer.value !== undefined ? maskSecret(tokenLayer.value) : undefined,
+  };
 }
 
 function chatSlotSnapshot(
@@ -235,6 +289,48 @@ function telegramSlotSnapshot(
   };
 }
 
+function feishuSlotSnapshot(
+  fileEnv: Record<string, string>,
+  credStore: ReturnType<typeof readCredentialsStore>,
+): CredentialSlotSnapshot {
+  const credFeishu = credStore.channels?.feishu;
+  const appIdLayer = resolveLayeredString(
+    "FLINTLOOM_FEISHU_APP_ID",
+    fileEnv,
+    credFeishu?.appId,
+  );
+  const secretLayer = resolveLayeredString(
+    "FLINTLOOM_FEISHU_APP_SECRET",
+    fileEnv,
+    credFeishu?.appSecret,
+  );
+  const chatIdsLayer = resolveLayeredString(
+    "FLINTLOOM_FEISHU_CHAT_IDS",
+    fileEnv,
+    credFeishu?.allowedChatIds,
+  );
+  const ids = parseAllowedStringIds(chatIdsLayer.value, /^oc_[\w-]+$/);
+  const configured =
+    appIdLayer.value !== undefined &&
+    secretLayer.value !== undefined &&
+    ids !== undefined;
+  return {
+    id: "feishu",
+    label: "飞书",
+    configured,
+    source:
+      secretLayer.source !== "none"
+        ? secretLayer.source
+        : appIdLayer.source !== "none"
+          ? appIdLayer.source
+          : chatIdsLayer.source,
+    appId: appIdLayer.value,
+    allowedChatIds: chatIdsLayer.value,
+    maskedKey:
+      secretLayer.value !== undefined ? maskSecret(secretLayer.value) : undefined,
+  };
+}
+
 export function buildCredentialsSnapshot(
   homeDir: string,
   workspaceRoot: string,
@@ -249,6 +345,27 @@ export function buildCredentialsSnapshot(
       mediaSlotSnapshot(fileEnv, credStore, chatSnap),
       guardSlotSnapshot(fileEnv, credStore, chatSnap),
       telegramSlotSnapshot(fileEnv, credStore),
+      tokenChannelSlotSnapshot(
+        "discord",
+        "Discord",
+        "FLINTLOOM_DISCORD_TOKEN",
+        "FLINTLOOM_DISCORD_CHANNEL_IDS",
+        /^\d+$/,
+        credStore.channels?.discord,
+        fileEnv,
+        "allowedChannelIds",
+      ),
+      tokenChannelSlotSnapshot(
+        "slack",
+        "Slack",
+        "FLINTLOOM_SLACK_TOKEN",
+        "FLINTLOOM_SLACK_CHANNEL_IDS",
+        /^[CG][A-Z0-9]+$/,
+        credStore.channels?.slack,
+        fileEnv,
+        "allowedChannelIds",
+      ),
+      feishuSlotSnapshot(fileEnv, credStore),
     ],
     webhook: {
       url: `http://127.0.0.1:${port}/v1/hooks`,
@@ -303,6 +420,73 @@ export function applyCredentialPatch(
       telegram.allowedChatIds = body.allowedChatIds;
     }
     channels.telegram = telegram;
+    writeCredentialsStore(homeDir, { ...store, hostToken, channels });
+    return;
+  }
+
+  if (slotId === "discord" || slotId === "slack") {
+    const channels = { ...store.channels };
+    const channel = { ...(channels[slotId] ?? {}) };
+    const pattern = slotId === "discord" ? /^\d+$/ : /^[CG][A-Z0-9]+$/;
+    if ("apiKey" in body) {
+      if (typeof body.apiKey !== "string") {
+        throw new Error("apiKey");
+      }
+      if (body.apiKey.length === 0) {
+        delete channel.token;
+      } else {
+        channel.token = body.apiKey;
+      }
+    }
+    if ("allowedChatIds" in body) {
+      if (typeof body.allowedChatIds !== "string") {
+        throw new Error("allowedChatIds");
+      }
+      const ids = parseAllowedStringIds(body.allowedChatIds, pattern);
+      if (ids === undefined) {
+        throw new Error("allowedChatIds");
+      }
+      channel.allowedChannelIds = body.allowedChatIds;
+    }
+    channels[slotId] = channel;
+    writeCredentialsStore(homeDir, { ...store, hostToken, channels });
+    return;
+  }
+
+  if (slotId === "feishu") {
+    const channels = { ...store.channels };
+    const feishu = { ...(channels.feishu ?? {}) };
+    if ("appId" in body) {
+      if (typeof body.appId !== "string") {
+        throw new Error("appId");
+      }
+      if (body.appId.length === 0) {
+        delete feishu.appId;
+      } else {
+        feishu.appId = body.appId;
+      }
+    }
+    if ("apiKey" in body) {
+      if (typeof body.apiKey !== "string") {
+        throw new Error("apiKey");
+      }
+      if (body.apiKey.length === 0) {
+        delete feishu.appSecret;
+      } else {
+        feishu.appSecret = body.apiKey;
+      }
+    }
+    if ("allowedChatIds" in body) {
+      if (typeof body.allowedChatIds !== "string") {
+        throw new Error("allowedChatIds");
+      }
+      const ids = parseAllowedStringIds(body.allowedChatIds, /^oc_[\w-]+$/);
+      if (ids === undefined) {
+        throw new Error("allowedChatIds");
+      }
+      feishu.allowedChatIds = body.allowedChatIds;
+    }
+    channels.feishu = feishu;
     writeCredentialsStore(homeDir, { ...store, hostToken, channels });
     return;
   }

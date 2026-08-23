@@ -1,0 +1,14 @@
+{
+  "name": "@flintloom/channel-discord",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@flintloom/channel": "workspace:*",
+    "@flintloom/kernel": "workspace:*",
+    "@flintloom/loop": "workspace:*",
+    "@flintloom/session": "workspace:*"
+  }
+}

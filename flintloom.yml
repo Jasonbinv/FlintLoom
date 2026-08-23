@@ -38,5 +38,11 @@ plugins:
     name: "@flintloom/channel-webhook"
   - id: channel-telegram
     name: "@flintloom/channel-telegram"
+  - id: channel-discord
+    name: "@flintloom/channel-discord"
+  - id: channel-slack
+    name: "@flintloom/channel-slack"
+  - id: channel-feishu
+    name: "@flintloom/channel-feishu"
   - id: channel-acp
     name: "@flintloom/channel-acp"
