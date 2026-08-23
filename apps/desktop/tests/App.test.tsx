@@ -352,6 +352,7 @@ function findFileTreeButton(name: string): HTMLButtonElement | undefined {
 
 beforeEach(() => {
   sessionStorage.clear();
+  localStorage.clear();
 });
 
 afterEach(() => {
@@ -1643,5 +1644,105 @@ describe("App", () => {
     await typeAndSend("show ig");
     await waitForText("HelloNode");
     expect(document.querySelector(".a2ui-infographic svg")).toBeTruthy();
+  });
+
+  it("adds sent message to sidebar session list", async () => {
+    installFetch({
+      turn: new Response(HELLO_SSE, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    });
+    await mountApp();
+    await typeAndSend("plan the sprint");
+    await waitForText("hello");
+    const item = Array.from(document.querySelectorAll(".sidebar-history-item")).find(
+      (el) => el.textContent === "plan the sprint",
+    );
+    expect(item).toBeTruthy();
+    expect(item?.classList.contains("active")).toBe(true);
+  });
+
+  it("renders file cards in assistant messages and opens preview on click", async () => {
+    const FILE_SSE =
+      `data: {"type":"assistant/message","text":"已生成 README.md，请查看。"}\n\n` +
+      `data: {"type":"end","status":"ok"}\n\n`;
+    installFetch({
+      turn: new Response(FILE_SSE, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    });
+    await mountApp();
+    await typeAndSend("write readme");
+    await waitForText("README.md");
+    const card = document.querySelector(".chat-file-card");
+    expect(card).toBeTruthy();
+    expect(card?.textContent).toContain("README.md");
+    await act(async () => {
+      card?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await waitForText("# Hello");
+    const preview = document.querySelector(".file-preview");
+    expect(preview?.textContent).toContain("# Hello");
+  });
+
+  it("switches between persisted sessions from sidebar", async () => {
+    const SESSION_A = "11111111-1111-1111-1111-111111111111";
+    const SESSION_B = "22222222-2222-2222-2222-222222222222";
+    sessionStorage.setItem("flintloom.sessionId", SESSION_A);
+    localStorage.setItem(
+      "flintloom.sessions",
+      JSON.stringify([
+        { id: SESSION_A, title: "First task", updatedAt: 1 },
+        { id: SESSION_B, title: "Second task", updatedAt: 2 },
+      ]),
+    );
+    installFetch({});
+    const baseFetch = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = requestUrl(input);
+        if (url.includes("/v1/sessions/")) {
+          if (url.includes(SESSION_A)) {
+            return new Response(
+              JSON.stringify({
+                events: [
+                  { type: "user/message", text: "First task" },
+                  { type: "assistant/message", text: "reply A" },
+                ],
+              }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            );
+          }
+          if (url.includes(SESSION_B)) {
+            return new Response(
+              JSON.stringify({
+                events: [
+                  { type: "user/message", text: "Second task" },
+                  { type: "assistant/message", text: "reply B" },
+                ],
+              }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            );
+          }
+          return new Response(null, { status: 404 });
+        }
+        return baseFetch(input, init);
+      }) as typeof fetch,
+    );
+    await mountApp();
+    await waitForText("reply A");
+    const second = Array.from(
+      document.querySelectorAll(".sidebar-history-item"),
+    ).find((el) => el.textContent === "Second task") as HTMLButtonElement;
+    expect(second).toBeTruthy();
+    await act(async () => {
+      second.click();
+    });
+    await waitForText("reply B");
+    expect(document.body.textContent).not.toContain("reply A");
+    expect(second.classList.contains("active")).toBe(true);
   });
 });

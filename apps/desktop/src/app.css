@@ -354,19 +354,34 @@ body,
 
 .sidebar-history-item {
   display: block;
+  width: 100%;
   padding: var(--space-2) var(--space-2);
   font-size: 0.8rem;
+  font-family: inherit;
+  text-align: left;
   color: var(--text-secondary);
+  background: transparent;
+  border: none;
   border-radius: var(--radius-sm);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  cursor: default;
+  cursor: pointer;
 }
 
-.sidebar-history-item:hover {
+.sidebar-history-item:hover:not(:disabled) {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+.sidebar-history-item.active {
+  background: color-mix(in srgb, var(--accent-primary) 10%, var(--bg-tertiary));
+  color: var(--accent-primary);
+}
+
+.sidebar-history-item:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .sidebar-status {
@@ -1118,6 +1133,81 @@ body,
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+}
+
+.assistant-text,
+.tool-result-row > span:first-child {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tool-result-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.message-file-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.chat-file-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  max-width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    background 0.15s ease;
+}
+
+.chat-file-card:hover {
+  border-color: color-mix(in srgb, var(--accent-primary) 40%, var(--border-subtle));
+  background: var(--bg-hover);
+  box-shadow: var(--shadow-sm);
+}
+
+.chat-file-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.chat-file-card-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-file-card-path {
+  font-size: 0.72rem;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-file-card-action {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  color: var(--accent-primary);
+  font-weight: 600;
 }
 
 .user-message {

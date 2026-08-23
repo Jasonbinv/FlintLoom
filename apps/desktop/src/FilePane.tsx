@@ -12,9 +12,17 @@ type Props = {
   onInsertPath: (path: string) => void;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
+  requestedPath?: string;
+  previewRequest?: number;
 };
 
-export function FilePane({ onInsertPath, collapsed, onToggleCollapse }: Props) {
+export function FilePane({
+  onInsertPath,
+  collapsed,
+  onToggleCollapse,
+  requestedPath,
+  previewRequest,
+}: Props) {
   const [tab, setTab] = useState<"files" | "knowledge">("files");
   const [selectedFile, setSelectedFile] = useState<string>();
   const [rootEntries, setRootEntries] = useState<FileEntry[]>([]);
@@ -96,11 +104,20 @@ export function FilePane({ onInsertPath, collapsed, onToggleCollapse }: Props) {
     }
   }
 
-  async function openFile(filePath: string) {
+  async function previewFile(filePath: string, insertIntoInput: boolean) {
     setSelectedFile(filePath);
-    onInsertPath(filePath);
+    if (insertIntoInput) onInsertPath(filePath);
     await startPreview(filePath);
   }
+
+  async function openFile(filePath: string) {
+    await previewFile(filePath, true);
+  }
+
+  useEffect(() => {
+    if (!requestedPath || previewRequest === undefined) return;
+    void previewFile(requestedPath, false);
+  }, [requestedPath, previewRequest]);
 
   function renderEntries(entries: FileEntry[], parent: string, depth: number) {
     return entries.map((entry) => {

@@ -19,6 +19,13 @@ import {
   THEME_LABELS,
   type Theme,
 } from "./theme.ts";
+import {
+  loadSessions,
+  titleFromBubbles,
+  upsertSession,
+  type SessionEntry,
+} from "./sessionList.ts";
+import { MessageFileCards } from "./MessageFileCards.tsx";
 import { formatWorkspaceLabel, pickWorkspaceFolder } from "./workspacePicker.ts";
 import "./app.css";
 
@@ -170,10 +177,19 @@ export function App() {
   const [page, setPage] = useState<Page>("chat");
   const [filePaneCollapsed, setFilePaneCollapsed] = useState(false);
   const [filePaneKey, setFilePaneKey] = useState(0);
+  const [previewPath, setPreviewPath] = useState<string>();
+  const [previewRequest, setPreviewRequest] = useState(0);
   const [workspaceRoot, setWorkspaceRoot] = useState<string | undefined>();
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
   const [workspaceMessage, setWorkspaceMessage] = useState<string | undefined>();
   const [theme, setTheme] = useState<Theme>(() => loadTheme());
+  const [sessions, setSessions] = useState<SessionEntry[]>(() => loadSessions());
+
+  function openFileFromChat(path: string) {
+    setFilePaneCollapsed(false);
+    setPreviewPath(path);
+    setPreviewRequest((count) => count + 1);
+  }
 
   function cycleTheme() {
     const next = nextTheme(theme);
@@ -186,14 +202,21 @@ export function App() {
     bubbles.find((b) => b.kind === "user" && b.text.trim().length > 0)?.text ??
     "新对话";
 
-  const sessionHistory = bubbles
-    .filter((b): b is Extract<Bubble, { kind: "user" }> => b.kind === "user" && b.text.trim().length > 0)
-    .map((b) => ({
-      id: b.id,
-      title: b.text.trim().length > 48 ? `${b.text.trim().slice(0, 48)}…` : b.text.trim(),
-    }));
+  function syncCurrentSession(bubbleList: Bubble[]) {
+    if (
+      !bubbleList.some(
+        (b) => b.kind === "user" && b.text.trim().length > 0,
+      )
+    ) {
+      return;
+    }
+    setSessions((prev) =>
+      upsertSession(prev, sid.current, titleFromBubbles(bubbleList)),
+    );
+  }
 
   function startNewChat() {
+    syncCurrentSession(bubbles);
     const id = crypto.randomUUID();
     sessionStorage.setItem(SESSION_KEY, id);
     sid.current = id;
@@ -205,6 +228,34 @@ export function App() {
     setSending(false);
     turnIdRef.current = undefined;
     setPage("chat");
+  }
+
+  async function switchSession(targetId: string) {
+    if (targetId === sid.current || sending || waitingAction) return;
+    syncCurrentSession(bubbles);
+    sid.current = targetId;
+    sessionStorage.setItem(SESSION_KEY, targetId);
+    setBubbles([]);
+    setDraft("");
+    setInput("");
+    setPendingImages([]);
+    setWaitingAction(false);
+    setSending(false);
+    turnIdRef.current = undefined;
+    setPage("chat");
+    const session = await fetchSession(targetId);
+    if (!session) return;
+    const loaded: Bubble[] = [];
+    for (const event of session.events) {
+      const bubble = bubbleFromHistory(event, allocId());
+      if (bubble) loaded.push(bubble);
+    }
+    setBubbles(loaded);
+    const waiting = waitingTurnId(session.events);
+    if (waiting) {
+      setWaitingAction(true);
+      turnIdRef.current = waiting;
+    }
   }
 
   async function chooseWorkspace() {
@@ -341,6 +392,15 @@ export function App() {
         if (bubble) loaded.push(bubble);
       }
       setBubbles(loaded);
+      if (
+        loaded.some(
+          (b) => b.kind === "user" && b.text.trim().length > 0,
+        )
+      ) {
+        setSessions((prev) =>
+          upsertSession(prev, sid.current, titleFromBubbles(loaded)),
+        );
+      }
       const waiting = waitingTurnId(session.events);
       if (waiting) {
         setWaitingAction(true);
@@ -356,10 +416,16 @@ export function App() {
     if ((!text && !images) || sending || waitingAction) return;
     setInput("");
     setPendingImages([]);
-    setBubbles((prev) => [
-      ...prev,
-      { id: allocId(), kind: "user", text, images },
-    ]);
+    setBubbles((prev) => {
+      const next: Bubble[] = [
+        ...prev,
+        { id: allocId(), kind: "user", text, images },
+      ];
+      setSessions((sessionsPrev) =>
+        upsertSession(sessionsPrev, sid.current, titleFromBubbles(next)),
+      );
+      return next;
+    });
     setSending(true);
     setDraft("");
     turnIdRef.current = undefined;
@@ -473,13 +539,25 @@ export function App() {
             </button>
           ))}
         </nav>
-        {page === "chat" && sessionHistory.length > 0 ? (
+        {page === "chat" && sessions.length > 0 ? (
           <div className="sidebar-history">
             <p className="sidebar-section-label">任务</p>
             <ul className="sidebar-history-list">
-              {sessionHistory.map((item) => (
+              {sessions.map((item) => (
                 <li key={item.id}>
-                  <span className="sidebar-history-item">{item.title}</span>
+                  <button
+                    type="button"
+                    className={
+                      item.id === sid.current
+                        ? "sidebar-history-item active"
+                        : "sidebar-history-item"
+                    }
+                    disabled={sending || waitingAction}
+                    onClick={() => void switchSession(item.id)}
+                    title={item.title}
+                  >
+                    {item.title}
+                  </button>
                 </li>
               ))}
             </ul>
@@ -553,14 +631,26 @@ export function App() {
                 )}
                 {bubble.kind === "assistant" && (
                   <div className="assistant-row">
-                    <span>{bubble.text}</span>
+                    <span className="assistant-text">{bubble.text}</span>
+                    <MessageFileCards
+                      text={bubble.text}
+                      onOpenFile={openFileFromChat}
+                    />
                     {ttsConfigured ? <TtsPlay text={bubble.text} /> : null}
                   </div>
                 )}
                 {bubble.kind === "error" && bubble.message}
                 {bubble.kind === "tool-call" &&
                   `${bubble.name} ${bubble.argsText}`}
-                {bubble.kind === "tool-result" && bubble.text}
+                {bubble.kind === "tool-result" && (
+                  <div className="tool-result-row">
+                    <span>{bubble.text}</span>
+                    <MessageFileCards
+                      text={bubble.text}
+                      onOpenFile={openFileFromChat}
+                    />
+                  </div>
+                )}
                 {bubble.kind === "a2ui" && (
                   <A2uiSurface
                     messages={bubble.messages}
@@ -705,6 +795,8 @@ export function App() {
           collapsed={filePaneCollapsed}
           onToggleCollapse={() => setFilePaneCollapsed((v) => !v)}
           onInsertPath={(p) => setInput((cur) => insertPath(cur, p))}
+          requestedPath={previewPath}
+          previewRequest={previewRequest}
         />
       </div>
       ) : (
