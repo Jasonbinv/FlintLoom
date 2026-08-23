@@ -133,6 +133,18 @@ describe("parseCliArgv", () => {
       field: "baseUrl",
       value: "http://127.0.0.1:8080/v1",
     });
+    expect(
+      parseCliArgv(
+        ["config", "set", "wecom", "agentId", "1000002"],
+        "/cwd",
+      ),
+    ).toEqual({
+      kind: "config-set",
+      workspace: "/cwd",
+      slotId: "wecom",
+      field: "agentId",
+      value: "1000002",
+    });
   });
 
   it("throws for bad config argv", () => {

@@ -17,6 +17,9 @@ const CONFIG_KEYS = new Set([
   "model",
   "allowedChatIds",
   "appId",
+  "agentId",
+  "callbackToken",
+  "encodingAesKey",
 ]);
 
 export type CliConfigGetCommand = {

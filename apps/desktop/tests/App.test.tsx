@@ -1564,6 +1564,48 @@ describe("App", () => {
     expect(document.querySelector("textarea")).toBeNull();
   });
 
+  it("renders WeCom channel fields on Settings page", async () => {
+    installFetch({
+      settings: new Response(
+        JSON.stringify({
+          slots: [
+            {
+              id: "chat",
+              label: "Chat / Omni",
+              configured: true,
+              source: "env",
+              maskedKey: "loca…cal",
+            },
+            {
+              id: "wecom",
+              label: "企业微信",
+              configured: true,
+              source: "credentials",
+              appId: "ww_test",
+              agentId: "1000002",
+              callbackUrl: "http://127.0.0.1:7331/v1/channels/wecom/callback",
+            },
+          ],
+          webhook: {
+            url: "http://127.0.0.1:7331/v1/hooks",
+            hint: "Bearer hostToken",
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    const settingsTab = findNavTab("设置");
+    if (!settingsTab) throw new Error("no 设置 tab");
+    await act(async () => {
+      settingsTab.click();
+    });
+    await waitForText("企业微信");
+    expect(document.body.textContent).toContain("Corp ID");
+    expect(document.body.textContent).toContain("Callback Token");
+    expect(document.body.textContent).toContain("/v1/channels/wecom/callback");
+  });
+
   it("installs plugin from Settings page", async () => {
     installFetch();
     await mountApp();

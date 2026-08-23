@@ -309,6 +309,10 @@ pnpm flint config get
 pnpm flint config get chat
 pnpm flint config set chat apiKey sk-your-key
 pnpm flint config set telegram allowedChatIds 123456789
+pnpm flint config set wecom appId ww_corp_id
+pnpm flint config set wecom apiKey corp_secret
+pnpm flint config set wecom agentId 1000002
+pnpm flint config set wecom callbackToken your_callback_token
 ```
 
 CLI 会读取工作区的 `.env` 与 `flintloom.yml`，与桌面共用同一套 Host 逻辑（CLI 路径不经过 Vite 代理）。
@@ -331,7 +335,7 @@ FlintLoom 作为 ACP Agent 通过 stdin/stdout 提供 JSON-RPC；`assistant/chun
 
 ### 9.3 图片与 omni 多模态
 
-在 `.env` 中配置 omni（`models-chat` 默认与 chat 共用模型，或单独 `omniModel`）后，工作台 composer 会出现「图片」按钮，可将 JPEG/PNG/GIF/WebP 随 `POST /v1/turns` 发送。session log 的 `user/message` 会带上 `images`，loop 用 `resolveOmni()` 投影为多模态 content。Telegram 图片消息在 omni 已配置时会下载最大尺寸并入站；未配置则忽略（与无 ASR 时忽略语音一致）。
+在 `.env` 中配置 omni（`models-chat` 默认与 chat 共用模型，或单独 `omniModel`）后，工作台 composer 会出现「图片」按钮，可将 JPEG/PNG/GIF/WebP 随 `POST /v1/turns` 发送。session log 的 `user/message` 会带上 `images`，loop 在 omni 已配置时优先调用 `resolveOmni()`（否则 `resolveChat()`）投影为多模态 content。Telegram 图片消息在 omni 已配置时会下载最大尺寸并入站；未配置则忽略（与无 ASR 时忽略语音一致）。
 
 ### 9.4 Guard 与 ACP 多模态
 

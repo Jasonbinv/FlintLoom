@@ -312,6 +312,80 @@ describe("runTurn", () => {
     expect(session.events().some((e) => e.type === "turn/end")).toBe(true);
   });
 
+  it("uses omni provider when omni kind is configured", async () => {
+    let chatCalled = false;
+    let omniCalled = false;
+    const fakeChat: ChatProvider = {
+      async *stream() {
+        chatCalled = true;
+        yield { type: "text", text: "from-chat" };
+      },
+    };
+    const fakeOmni: ChatProvider = {
+      async *stream() {
+        omniCalled = true;
+        yield { type: "text", text: "from-omni" };
+      },
+    };
+    const ctx = boot();
+    const models = ctx.require<ModelRegistry>("models");
+    models.registerChat("fake", fakeChat);
+    models.setDefault("chat", "fake");
+    models.registerOmni("omni", fakeOmni);
+    models.setDefault("omni", "omni");
+    const session = new Session("s-omni");
+    const result = await runTurn({
+      ctx,
+      session,
+      text: "hello",
+      workspaceRoot: process.cwd(),
+      channel: "host",
+      signal: new AbortController().signal,
+    });
+    expect(result.status).toBe("ok");
+    expect(omniCalled).toBe(true);
+    expect(chatCalled).toBe(false);
+    expect(session.events().find((e) => e.type === "assistant/message")).toEqual({
+      type: "assistant/message",
+      text: "from-omni",
+    });
+  });
+
+  it("uses chat provider when omni is not configured", async () => {
+    let chatCalled = false;
+    const fakeChat: ChatProvider = {
+      async *stream() {
+        chatCalled = true;
+        yield { type: "text", text: "from-chat" };
+      },
+    };
+    const fakeOmni: ChatProvider = {
+      async *stream() {
+        yield { type: "text", text: "from-omni" };
+      },
+    };
+    const ctx = boot();
+    const models = ctx.require<ModelRegistry>("models");
+    models.registerChat("fake", fakeChat);
+    models.setDefault("chat", "fake");
+    models.registerOmni("omni", fakeOmni);
+    const session = new Session("s-chat");
+    const result = await runTurn({
+      ctx,
+      session,
+      text: "hello",
+      workspaceRoot: process.cwd(),
+      channel: "host",
+      signal: new AbortController().signal,
+    });
+    expect(result.status).toBe("ok");
+    expect(chatCalled).toBe(true);
+    expect(session.events().find((e) => e.type === "assistant/message")).toEqual({
+      type: "assistant/message",
+      text: "from-chat",
+    });
+  });
+
   it("delivers when channel registry has deliver handler", async () => {
     const delivered: string[] = [];
     const fakeChat: ChatProvider = {
