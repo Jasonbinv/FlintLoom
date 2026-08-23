@@ -109,6 +109,8 @@ DeepSeek 等其它厂商可参考 `.env.example` 中的注释切换 `BASE_URL` �
 
 Webhook 入站复用 `hostToken`（`~/.flintloom/credentials`），地址见设置页或 `http://127.0.0.1:7331/v1/hooks`。
 
+个人微信可通过独立桥接 `pnpm wechat-bridge` 转发到 webhook，见 [wechat-bridge.md](./wechat-bridge.md)（有封号风险，建议小号 + HTTP 模式联调）。
+
 #### 通道环境变量（可选，也可在设置页填写）
 
 | 通道 | Token / 密钥 | 允许的 ID（逗号分隔） |

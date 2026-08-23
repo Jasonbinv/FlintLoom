@@ -8,7 +8,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "flint": "tsx apps/cli/src/bin.ts",
     "desktop": "tsx scripts/desktop-dev.ts",
-    "desktop:app": "tsx scripts/desktop-electron.ts"
+    "desktop:app": "tsx scripts/desktop-electron.ts",
+    "wechat-bridge": "tsx apps/wechat-bridge/src/bin.ts"
   },
   "engines": {
     "node": ">=22"
