@@ -30,7 +30,14 @@ cd FlintLoom
 pnpm install
 ```
 
-**工作区根目录**：你运行 `pnpm desktop`、`pnpm flint` 时所在的目录（`process.cwd()`）。Host 会把该目录当作 agent 工作区，并从这里读取 `flintloom.yml`、`.env`、`mcp-servers.yml`。
+**工作区根目录**：Agent 实际读写的项目目录，必须包含 `flintloom.yml`。Host 会从这里加载 `flintloom.yml`、`.env`、`mcp-servers.yml`。
+
+解析顺序：
+
+1. `~/.flintloom/workspace` 中持久化的路径（若有效）
+2. 否则为启动命令时的当前目录（`process.cwd()`）
+
+因此：首次 `pnpm desktop` 在哪个目录执行，默认工作区就是哪里；之后可在工作台侧栏 **「选择工作区」** 切换，路径会写入 `~/.flintloom/workspace` 并在下次启动时复用。CLI 仍可用 `pnpm flint --workspace <路径>` 临时指定。
 
 Electron 二进制安装在 `apps/electron` 子包中。若首次运行 `pnpm desktop:app` 报错找不到 Electron，可在根目录重试安装：
 
@@ -80,25 +87,38 @@ FLINTLOOM_CHAT_MODEL=qwen3.7-plus
 
 3. 优先级：**进程环境变量** 高于 `.env` 文件。
 
-4. 配置成功后，工作台顶栏会显示 **「chat 已配置」**；未配置时聊天不可用。
+4. 配置成功后，工作台**左侧状态区**会显示 **「chat 已配置」**；未配置时聊天不可用。
 
 DeepSeek 等其它厂商可参考 `.env.example` 中的注释切换 `BASE_URL` 与 `CHAT_MODEL`。
 
 本地 **llama-server**（`http://127.0.0.1:8080/v1`）仅 overlay 文本 chat；媒体 kind 与 guard 不会随本地 URL 显示「已配置」。可用 `FLINTLOOM_MEDIA_*` / `FLINTLOOM_GUARD_*` 单独挂云端能力。详见 [本地llama部署模型.md](./本地llama部署模型.md)。
 
-### 4.1 工作台 Settings（本机凭据）
+### 4.1 工作台设置（本机凭据与通道）
 
-顶栏 **Settings** 页可将 chat / media / guard / Telegram 写入 `~/.flintloom/credentials`（不修改工作区 `.env`）。保存后 host 会 `POST /v1/settings/reload` 重载 runtime（有对话进行中时会提示稍后再试）。
+侧栏 **「设置」** 页可将 chat / media / guard 以及 **Telegram / Discord / Slack / 飞书** 写入 `~/.flintloom/credentials`（不修改工作区 `.env`）。保存后 host 会 `POST /v1/settings/reload` 重载 runtime（有对话进行中时会提示稍后再试）。
 
 **优先级：** 进程环境变量 > 工作区 `.env` > `~/.flintloom/credentials`。若在 `.env` 已配置某 slot，生效值来自 `.env`；Models 页只读展示当前生效状态。
 
 | API | 说明 |
 |-----|------|
 | `GET /v1/settings/credentials` | 各 slot 脱敏快照（无完整密钥） |
-| `PUT /v1/settings/credentials/:slotId` | 写入 credentials（`chat` / `media` / `guard` / `telegram`） |
-| `POST /v1/settings/reload` | 重建 runtime（保持 Telegram 轮询） |
+| `PUT /v1/settings/credentials/:slotId` | 写入 credentials（`chat` / `media` / `guard` / `telegram` / `discord` / `slack` / `feishu`） |
+| `GET /v1/settings/workspace` | 当前工作区绝对路径 |
+| `POST /v1/settings/workspace` | 切换工作区（JSON `{ workspaceRoot }`；目录需含 `flintloom.yml`） |
+| `POST /v1/settings/reload` | 重建 runtime（保持通道轮询） |
 
-Webhook 入站复用 `hostToken`（`~/.flintloom/credentials`），地址见 Settings 页或 `http://127.0.0.1:7331/v1/hooks`。
+Webhook 入站复用 `hostToken`（`~/.flintloom/credentials`），地址见设置页或 `http://127.0.0.1:7331/v1/hooks`。
+
+#### 通道环境变量（可选，也可在设置页填写）
+
+| 通道 | Token / 密钥 | 允许的 ID（逗号分隔） |
+|------|----------------|------------------------|
+| Telegram | `FLINTLOOM_TELEGRAM_TOKEN` | `FLINTLOOM_TELEGRAM_CHAT_IDS` |
+| Discord | `FLINTLOOM_DISCORD_TOKEN` | `FLINTLOOM_DISCORD_CHANNEL_IDS` |
+| Slack | `FLINTLOOM_SLACK_TOKEN` | `FLINTLOOM_SLACK_CHANNEL_IDS` |
+| 飞书 | `FLINTLOOM_FEISHU_APP_ID` + `FLINTLOOM_FEISHU_APP_SECRET` | `FLINTLOOM_FEISHU_CHAT_IDS`（`oc_…`） |
+
+Host 在 `startHost` / `pnpm desktop` 且凭据齐全时会自动轮询入站；CLI 单轮 `pnpm flint` 不轮询。
 
 ---
 
@@ -157,6 +177,52 @@ pnpm desktop
 
 在浏览器打开上述地址。
 
+### 7.1 工作台布局（侧栏 + 对话 + 文件）
+
+当前 UI 为三栏结构：
+
+```text
+┌──────────────┬────────────────────────────┬─────────────────┐
+│  左侧边栏     │  中间：对话                 │  右侧：工作空间文件 │
+│              │                            │                 │
+│  FlintLoom   │  任务标题 + 消息流            │  文件树 / 知识库   │
+│  选择工作区   │  底部 composer 输入框         │  文件预览         │
+│  新建对话     │                            │                 │
+│  对话/插件/   │                            │                 │
+│  模型/设置    │                            │                 │
+│  任务历史     │                            │                 │
+│  主题 / 状态  │                            │                 │
+└──────────────┴────────────────────────────┴─────────────────┘
+```
+
+| 区域 | 功能 |
+|------|------|
+| **选择工作区** | 切换到含 `flintloom.yml` 的目录；Electron 下为系统文件夹对话框，浏览器下为路径输入提示 |
+| **新建对话** | 创建新 session，当前对话会保存到侧栏「任务」列表 |
+| **任务** | 点击历史任务可恢复该会话；列表保存在浏览器 `localStorage` |
+| **对话 / 插件 / 模型 / 设置** | 主功能区切换；模型页可跳转到设置 |
+| **主题** | 侧栏底部循环切换：浅色 → 深色 → 暖色 |
+| **状态** | `host 未连接`、`chat 已配置`、`guard 已配置` 等 pill |
+| **消息中的文件卡片** | 助手或工具结果提到工作区文件路径时，会显示可点击卡片，点击后在右侧预览（不写入输入框） |
+
+### 7.2 切换工作区
+
+1. 点击侧栏 **「📁 选择工作区」**。
+2. 选择（或输入）目标目录；该目录下必须有 `flintloom.yml`，否则提示无效工作区。
+3. 切换成功后会：清空当前对话、刷新右侧文件树、重载模型状态，并将路径写入 `~/.flintloom/workspace`。
+4. 若当前有对话进行中，会提示「有对话进行中，请稍后再切换」。
+
+也可在已运行 Host 时通过 API 切换：
+
+```bash
+curl -X POST http://127.0.0.1:7331/v1/settings/workspace \
+  -H "Authorization: Bearer <hostToken>" \
+  -H "Content-Type: application/json" \
+  -d "{\"workspaceRoot\":\"G:/path/to/your/project\"}"
+```
+
+`hostToken` 位于 `~/.flintloom/credentials` 的 `hostToken` 字段。
+
 **刷新页面**
 
 | 操作 | Windows |
@@ -179,6 +245,8 @@ pnpm desktop:app
 3. 使用独立用户数据目录：`%TEMP%\flintloom-electron`（减轻 Windows 缓存权限问题）
 
 Electron 加载地址由环境变量 `FLINT_DESKTOP_URL` 控制，默认 `http://127.0.0.1:5173`。
+
+侧栏 **「选择工作区」** 在 Electron 下会打开系统原生文件夹选择对话框（比浏览器模式的路径输入更方便）。
 
 ### 8.1 打开开发者工具
 
@@ -248,7 +316,7 @@ FlintLoom 作为 ACP Agent 通过 stdin/stdout 提供 JSON-RPC；`assistant/chun
 
 ### 9.4 Guard 与 ACP 多模态
 
-配置 API key 后 host 会自动 overlay `@flintloom/models-guard`（可用 `FLINTLOOM_GUARD_MODEL` 覆盖模型名）。工具执行成功后会写 `guard/steward` 事件（可疑结果带 summary），不自动禁用插件。工作台顶栏与 Models 页显示 `chat` / `guard` 是否已配置；Models 页另汇总 asr/tts/omni 等媒体 kind。`flint acp` 会将可疑 steward 附在对应 `tool_call_update` 上转发给 Client。根 `flintloom.yml` 已挂 `channel-telegram`；在 `.env` 配置 `FLINTLOOM_TELEGRAM_TOKEN` 与 `FLINTLOOM_TELEGRAM_CHAT_IDS` 后，`pnpm desktop` / `startHost` 会自动轮询 Telegram。Plugins 页说明 `mcp-servers.yml` 自动合并，MCP 行带 `mcp` 标签。`flint acp` 在 omni/asr 已配置时 `initialize` 会声明 image/audio/embeddedContext 能力；`session/prompt` 可带 image 块或 audio 块（音频经 ASR 转写）。
+配置 API key 后 host 会自动 overlay `@flintloom/models-guard`（可用 `FLINTLOOM_GUARD_MODEL` 覆盖模型名）。工具执行成功后会写 `guard/steward` 事件（可疑结果带 summary），不自动禁用插件。工作台侧栏与 Models 页显示 `chat` / `guard` 是否已配置；Models 页另汇总 asr/tts/omni 等媒体 kind。`flint acp` 会将可疑 steward 附在对应 `tool_call_update` 上转发给 Client。根 `flintloom.yml` 已挂 `channel-telegram` 及 Discord / Slack / 飞书插件行；在 `.env` 或设置页配置对应 token 与 channel/chat id 后，`pnpm desktop` / `startHost` 会自动轮询。Plugins 页说明 `mcp-servers.yml` 自动合并，MCP 行带 `mcp` 标签。`flint acp` 在 omni/asr 已配置时 `initialize` 会声明 image/audio/embeddedContext 能力；`session/prompt` 可带 image 块或 audio 块（音频经 ASR 转写）。
 
 ---
 
@@ -300,9 +368,15 @@ Get-NetTCPConnection -LocalPort 5173,7331 -ErrorAction SilentlyContinue |
 
 见第 2 节 `ELECTRON_MIRROR` 与 `install.js` 手动安装。
 
-### Chat 无法发送 / 顶栏未显示「chat 已配置」
+### Chat 无法发送 / 侧栏未显示「chat 已配置」
 
-检查工作区 `.env` 是否配置 `FLINTLOOM_API_KEY`、`FLINTLOOM_BASE_URL`、`FLINTLOOM_CHAT_MODEL`。
+检查**当前工作区**目录下的 `.env` 是否配置 `FLINTLOOM_API_KEY`、`FLINTLOOM_BASE_URL`、`FLINTLOOM_CHAT_MODEL`。若刚切换工作区，确认新目录也有 `.env` 或通过设置页配置了 credentials。
+
+### 切换工作区失败
+
+- 目标目录缺少 `flintloom.yml` → 不是有效 FlintLoom 工作区。
+- 对话进行中 → 等待当前轮次结束后再切换。
+- Host 未连接 → 侧栏显示 `host 未连接`，先确认 7331 端口正常。
 
 ### MCP 启动失败
 
