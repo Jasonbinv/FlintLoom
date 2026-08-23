@@ -86,6 +86,20 @@ DeepSeek 等其它厂商可参考 `.env.example` 中的注释切换 `BASE_URL` �
 
 本地 **llama-server**（`http://127.0.0.1:8080/v1`）仅 overlay 文本 chat；媒体 kind 与 guard 不会随本地 URL 显示「已配置」。可用 `FLINTLOOM_MEDIA_*` / `FLINTLOOM_GUARD_*` 单独挂云端能力。详见 [本地llama部署模型.md](./本地llama部署模型.md)。
 
+### 4.1 工作台 Settings（本机凭据）
+
+顶栏 **Settings** 页可将 chat / media / guard / Telegram 写入 `~/.flintloom/credentials`（不修改工作区 `.env`）。保存后 host 会 `POST /v1/settings/reload` 重载 runtime（有对话进行中时会提示稍后再试）。
+
+**优先级：** 进程环境变量 > 工作区 `.env` > `~/.flintloom/credentials`。若在 `.env` 已配置某 slot，生效值来自 `.env`；Models 页只读展示当前生效状态。
+
+| API | 说明 |
+|-----|------|
+| `GET /v1/settings/credentials` | 各 slot 脱敏快照（无完整密钥） |
+| `PUT /v1/settings/credentials/:slotId` | 写入 credentials（`chat` / `media` / `guard` / `telegram`） |
+| `POST /v1/settings/reload` | 重建 runtime（保持 Telegram 轮询） |
+
+Webhook 入站复用 `hostToken`（`~/.flintloom/credentials`），地址见 Settings 页或 `http://127.0.0.1:7331/v1/hooks`。
+
 ---
 
 ## 5. 插件与 MCP（可选）

@@ -17,7 +17,7 @@ function configuredPill(kind: string, configured: boolean) {
   );
 }
 
-export function ModelsPane() {
+export function ModelsPane({ onOpenSettings }: { onOpenSettings?: () => void }) {
   const [rows, setRows] = useState<ModelRow[] | undefined>();
   const [error, setError] = useState(false);
 
@@ -51,8 +51,9 @@ export function ModelsPane() {
   return (
     <div className="settings-pane-inner">
       <p className="settings-hint">
-        在工作区 <code>.env</code> 或 <code>~/.flintloom/credentials</code> 配置密钥；在{" "}
-        <code>flintloom.yml</code> 登记 provider 插件。本页只读，不展示密钥。
+        在 <button type="button" className="linkish" onClick={onOpenSettings}>Settings</button>{" "}
+        配置密钥（写入 <code>~/.flintloom/credentials</code>）；也可在工作区{" "}
+        <code>.env</code> 配置（优先级更高）。在 <code>flintloom.yml</code> 登记 provider 插件。本页只读，不展示密钥。
       </p>
       {guard !== undefined ? (
         <p className="models-kind-status">

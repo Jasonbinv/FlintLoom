@@ -556,7 +556,7 @@ export function App() {
           {page === "plugins" ? (
             <PluginsPane />
           ) : page === "models" ? (
-            <ModelsPane />
+            <ModelsPane onOpenSettings={() => setPage("settings")} />
           ) : (
             <SettingsPane onSaved={refreshModelStatus} />
           )}

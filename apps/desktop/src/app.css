@@ -190,6 +190,18 @@ body,
   font-size: 0.85rem;
 }
 
+.linkish {
+  border: none;
+  padding: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .settings-empty {
   margin: 0;
   color: var(--text-muted);

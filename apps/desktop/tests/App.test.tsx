@@ -1515,6 +1515,28 @@ describe("App", () => {
     expect(document.querySelector("textarea")).toBeNull();
   });
 
+  it("Models page links to Settings", async () => {
+    installFetch();
+    await mountApp();
+    const modelsTab = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "Models",
+    );
+    if (!modelsTab) throw new Error("no Models tab");
+    await act(async () => {
+      modelsTab.click();
+    });
+    await waitForText("flintloom.yml");
+    const settingsLink = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "Settings" && b.classList.contains("linkish"),
+    );
+    if (!settingsLink) throw new Error("no Settings link on Models page");
+    await act(async () => {
+      settingsLink.click();
+    });
+    await waitForText("Chat / Omni");
+    expect(document.body.textContent).toContain("Providers");
+  });
+
   it("renders a2ui DataTable and Chart without pausing turn", async () => {
     const messages = [
       {
