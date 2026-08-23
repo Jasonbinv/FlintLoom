@@ -7,7 +7,7 @@ type ModelRow = {
   configured: boolean;
 };
 
-const MEDIA_KINDS = ["asr", "tts", "omni", "t2i", "t2v"] as const;
+const MEDIA_KINDS = ["asr", "tts", "omni", "t2i", "t2v", "embedding", "rerank"] as const;
 
 function configuredPill(kind: string, configured: boolean) {
   return (
@@ -82,7 +82,9 @@ export function ModelsPane({ onOpenSettings }: { onOpenSettings?: () => void }) 
             ))}
           </span>
           <span className="models-kind-hint">
-            媒体 kind 由 <code>models-media</code> overlay；未配置时工作台隐藏语音/朗读/图片等入口。
+            媒体与知识库 kind 由 <code>models-media</code> overlay；配置{" "}
+            <code>embedding</code> 后入库与检索优先向量相似度，可选 <code>rerank</code>{" "}
+            重排；未配置时回退 FTS/LIKE。
           </span>
         </p>
       ) : null}

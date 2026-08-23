@@ -102,7 +102,7 @@ DeepSeek 等其它厂商可参考 `.env.example` 中的注释切换 `BASE_URL` �
 | API | 说明 |
 |-----|------|
 | `GET /v1/settings/credentials` | 各 slot 脱敏快照（无完整密钥） |
-| `PUT /v1/settings/credentials/:slotId` | 写入 credentials（`chat` / `media` / `guard` / `telegram` / `discord` / `slack` / `feishu`） |
+| `PUT /v1/settings/credentials/:slotId` | 写入 credentials（`chat` / `media` / `guard` / `telegram` / `discord` / `slack` / `feishu` / `wecom`） |
 | `GET /v1/settings/workspace` | 当前工作区绝对路径 |
 | `POST /v1/settings/workspace` | 切换工作区（JSON `{ workspaceRoot }`；目录需含 `flintloom.yml`） |
 | `POST /v1/settings/reload` | 重建 runtime（保持通道轮询） |
@@ -122,6 +122,16 @@ Webhook 入站复用 `hostToken`（`~/.flintloom/credentials`），地址见设�
 | 企业微信 | `FLINTLOOM_WECOM_CORP_ID` + `FLINTLOOM_WECOM_CORP_SECRET` + `FLINTLOOM_WECOM_AGENT_ID` + `FLINTLOOM_WECOM_CALLBACK_TOKEN` | `FLINTLOOM_WECOM_USER_IDS`；回调 `http://127.0.0.1:7331/v1/channels/wecom/callback`（需公网 HTTPS） |
 
 Host 在 `startHost` / `pnpm desktop` 且凭据齐全时会自动轮询入站（Telegram / Discord / Slack / 飞书）；企业微信通过官方回调入站。CLI 单轮 `pnpm flint` 不轮询。
+
+### 4.2 知识库向量检索（embedding / rerank）
+
+个人知识库默认用 SQLite FTS + LIKE 关键词检索。配置 **media** 凭据（`FLINTLOOM_MEDIA_API_KEY`，或在设置页 **Media** slot）后，`models-media` 会登记 `embedding` 与 `rerank` provider（DashScope 兼容 embeddings + 原生 rerank）：
+
+- **入库**（`doc_ingest` / Knowledge 页 Import）时写入文档向量
+- **`knowledge_search`** 优先按向量相似度排序；未配 `embedding` 时回退 FTS/LIKE
+- 可选 **rerank** 对 top 命中重排；接口形状不变
+
+Models 页会显示 `embedding` / `rerank` 配置状态。本地 llama 仅 overlay chat 时，仍可单独配置 `FLINTLOOM_MEDIA_*` 启用向量检索。
 
 ---
 

@@ -1525,6 +1525,28 @@ describe("App", () => {
     expect(document.body.textContent).toContain("omni 已配置");
   });
 
+  it("shows embedding and rerank pills on Models page", async () => {
+    installFetch({
+      models: new Response(
+        JSON.stringify([
+          { kind: "chat", configured: true, defaultId: "default" },
+          { kind: "embedding", configured: true, defaultId: "default" },
+          { kind: "rerank", configured: false, defaultId: null },
+        ]),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    const modelsTab = findNavTab("模型");
+    if (!modelsTab) throw new Error("no 模型 tab");
+    await act(async () => {
+      modelsTab.click();
+    });
+    await waitForText("embedding 已配置");
+    expect(document.body.textContent).toContain("rerank 未配置");
+    expect(document.body.textContent).toContain("向量相似度");
+  });
+
   it("renders Settings page with credential slots", async () => {
     installFetch();
     await mountApp();
