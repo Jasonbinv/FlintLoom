@@ -92,6 +92,34 @@
 - 根 `flintloom.yml` 增加 `models-guard` 行（host overlay 配 API key 后真正登记 guard）
 - 非目标：ACP 转发 steward、自动禁用工具
 
+## 30. ACP steward 转发 + Telegram 默认组装 + Models guard 状态
+
+- ACP：`guard/steward`（`suspicious` 或 `summary` 非空）→ `session/update` `tool_call_update` 附 steward 文本
+- 根 `flintloom.yml` 挂 `channel-telegram`；无 token 时插件 no-op；host overlay `FLINTLOOM_TELEGRAM_TOKEN` + `FLINTLOOM_TELEGRAM_CHAT_IDS`
+- Models 页：guard 配置 pill 与表格高亮
+
+## 31. 工作台顶栏 guard + Plugins MCP 标注
+
+- Chat 顶栏并列 `chat` / `guard` 配置 pill（与 Models 页一致）
+- Plugins 表：`name === "@flintloom/mcp"` 的行在 `id` 旁显示 `mcp` 标签（含 `mcp-servers.yml` 自动合并行）
+
+## 32. Models 媒体 kind + Plugins MCP 说明
+
+- Models 页：asr / tts / omni / t2i / t2v 配置 pill 与表格高亮
+- Plugins 页：`mcp-servers.yml` 自动合并说明文案
+- Host：`GET /v1/plugins` 列出 `mcp-servers.yml` 合并行
+
+## 33. 本地 llama overlay
+
+- `FLINTLOOM_BASE_URL` 为 `127.0.0.1` / `localhost` / `::1` 时，host 仅 overlay `models-chat`（含 omni）
+- 不 overlay `models-media` / `models-guard`，避免 DashScope 媒体 kind 误显示已配置
+
+## 34. 媒体 / guard 独立 env
+
+- `FLINTLOOM_MEDIA_API_KEY` + 可选 `FLINTLOOM_MEDIA_BASE_URL` → overlay `models-media`（未写 `BASE_URL` 时默认 DashScope compatible）
+- `FLINTLOOM_GUARD_API_KEY` + 可选 `FLINTLOOM_GUARD_BASE_URL` + `FLINTLOOM_GUARD_MODEL` → overlay `models-guard`
+- 与 slice 33 组合：本地 chat + 云端媒体 / guard 可并存
+
 ## 非目标
 
 - ACP v2、Streamable HTTP、fs/terminal 客户端能力

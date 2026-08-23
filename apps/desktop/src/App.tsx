@@ -146,6 +146,7 @@ export function App() {
   const submittingActionRef = useRef(false);
   const [hostDown, setHostDown] = useState(false);
   const [chatConfigured, setChatConfigured] = useState<boolean | undefined>();
+  const [guardConfigured, setGuardConfigured] = useState<boolean | undefined>();
   const [asrConfigured, setAsrConfigured] = useState(false);
   const [omniConfigured, setOmniConfigured] = useState(false);
   const [ttsConfigured, setTtsConfigured] = useState(false);
@@ -217,6 +218,8 @@ export function App() {
       .then((models) => {
         const chat = models.find((m) => m.kind === "chat");
         setChatConfigured(chat?.configured ?? false);
+        const guard = models.find((m) => m.kind === "guard");
+        setGuardConfigured(guard?.configured ?? false);
         const asr = models.find((m) => m.kind === "asr");
         setAsrConfigured(asr?.configured ?? false);
         const omni = models.find((m) => m.kind === "omni");
@@ -342,11 +345,20 @@ export function App() {
         </nav>
         {hostDown ? (
           <span className="status-pill down">host 未连接</span>
-        ) : chatConfigured === false ? (
-          <span className="status-pill warn">chat 未配置</span>
-        ) : chatConfigured ? (
-          <span className="status-pill ok">chat 已配置</span>
-        ) : null}
+        ) : (
+          <div className="topbar-status">
+            {chatConfigured === false ? (
+              <span className="status-pill warn">chat 未配置</span>
+            ) : chatConfigured ? (
+              <span className="status-pill ok">chat 已配置</span>
+            ) : null}
+            {guardConfigured === false ? (
+              <span className="status-pill warn">guard 未配置</span>
+            ) : guardConfigured ? (
+              <span className="status-pill ok">guard 已配置</span>
+            ) : null}
+          </div>
+        )}
       </header>
       {page === "chat" ? (
       <div className="workbench-body">

@@ -84,6 +84,8 @@ FLINTLOOM_CHAT_MODEL=qwen3.7-plus
 
 DeepSeek 等其它厂商可参考 `.env.example` 中的注释切换 `BASE_URL` 与 `CHAT_MODEL`。
 
+本地 **llama-server**（`http://127.0.0.1:8080/v1`）仅 overlay 文本 chat；媒体 kind 与 guard 不会随本地 URL 显示「已配置」。可用 `FLINTLOOM_MEDIA_*` / `FLINTLOOM_GUARD_*` 单独挂云端能力。详见 [本地llama部署模型.md](./本地llama部署模型.md)。
+
 ---
 
 ## 5. 插件与 MCP（可选）
@@ -232,7 +234,7 @@ FlintLoom 作为 ACP Agent 通过 stdin/stdout 提供 JSON-RPC；`assistant/chun
 
 ### 9.4 Guard 与 ACP 多模态
 
-配置 API key 后 host 会自动 overlay `@flintloom/models-guard`（可用 `FLINTLOOM_GUARD_MODEL` 覆盖模型名）。工具执行成功后会写 `guard/steward` 事件（可疑结果带 summary），不自动禁用插件。工作台对可疑 steward 显示提示气泡。`flint acp` 在 omni/asr 已配置时 `initialize` 会声明 image/audio/embeddedContext 能力；`session/prompt` 可带 image 块或 audio 块（音频经 ASR 转写）。
+配置 API key 后 host 会自动 overlay `@flintloom/models-guard`（可用 `FLINTLOOM_GUARD_MODEL` 覆盖模型名）。工具执行成功后会写 `guard/steward` 事件（可疑结果带 summary），不自动禁用插件。工作台顶栏与 Models 页显示 `chat` / `guard` 是否已配置；Models 页另汇总 asr/tts/omni 等媒体 kind。`flint acp` 会将可疑 steward 附在对应 `tool_call_update` 上转发给 Client。根 `flintloom.yml` 已挂 `channel-telegram`；在 `.env` 配置 `FLINTLOOM_TELEGRAM_TOKEN` 与 `FLINTLOOM_TELEGRAM_CHAT_IDS` 后，`pnpm desktop` / `startHost` 会自动轮询 Telegram。Plugins 页说明 `mcp-servers.yml` 自动合并，MCP 行带 `mcp` 标签。`flint acp` 在 omni/asr 已配置时 `initialize` 会声明 image/audio/embeddedContext 能力；`session/prompt` 可带 image 块或 audio 块（音频经 ASR 转写）。
 
 ---
 

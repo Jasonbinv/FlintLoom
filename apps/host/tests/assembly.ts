@@ -10,6 +10,8 @@ export const ASSEMBLY = `plugins:
     name: "@flintloom/session"
   - id: models-chat
     name: "@flintloom/models-chat"
+  - id: models-media
+    name: "@flintloom/models-media"
   - id: models-guard
     name: "@flintloom/models-guard"
   - id: fs

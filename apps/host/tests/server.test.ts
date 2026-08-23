@@ -301,6 +301,57 @@ describe("startHost", () => {
     }
   });
 
+  it("GET /v1/plugins lists mcp-servers.yml merged rows", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-mcp-plugins-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
+    const fixture = fileURLToPath(
+      new URL("../../../packages/mcp/fixtures/fake-mcp-server.mjs", import.meta.url),
+    );
+    writeFileSync(
+      join(workspaceRoot, "flintloom.yml"),
+      `plugins:
+  - id: models
+    name: "@flintloom/models"
+  - id: tools
+    name: "@flintloom/tools"
+`,
+    );
+    writeFileSync(
+      join(workspaceRoot, "mcp-servers.yml"),
+      `servers:
+  - id: fake
+    command: ${JSON.stringify(process.execPath)}
+    args: [${JSON.stringify(fixture)}]
+    env: [FAKE_TOKEN]
+`,
+    );
+    writeFileSync(join(workspaceRoot, ".env"), "FAKE_TOKEN=from-dotenv\n", "utf8");
+    const prev = process.env.FAKE_TOKEN;
+    delete process.env.FAKE_TOKEN;
+    try {
+      const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+      close = host.close;
+      const token = loadOrCreateToken(homeDir);
+      const res = await fetch(`${host.url}/v1/plugins`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { id: string; name: string; status: string }[];
+      const mcpRow = body.find((row) => row.id === "fake");
+      expect(mcpRow).toMatchObject({
+        id: "fake",
+        name: "@flintloom/mcp",
+        status: "loaded",
+      });
+    } finally {
+      if (prev === undefined) {
+        delete process.env.FAKE_TOKEN;
+      } else {
+        process.env.FAKE_TOKEN = prev;
+      }
+    }
+  });
+
   it("returns 500 text/plain with the error message and redacts the api key", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-ws-"));
     const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
@@ -419,6 +470,100 @@ describe("startHost", () => {
         delete process.env.FLINTLOOM_API_KEY;
       } else {
         process.env.FLINTLOOM_API_KEY = previousKey;
+      }
+    }
+  });
+
+  it("local LLM base URL overlays chat only, not media or guard", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-local-llm-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
+    writeAssembly(workspaceRoot);
+    writeFileSync(
+      join(workspaceRoot, ".env"),
+      [
+        "FLINTLOOM_BASE_URL=http://127.0.0.1:8080/v1",
+        "FLINTLOOM_API_KEY=local",
+        "FLINTLOOM_CHAT_MODEL=local-model",
+      ].join("\n"),
+    );
+
+    const previousKey = process.env.FLINTLOOM_API_KEY;
+    const previousUrl = process.env.FLINTLOOM_BASE_URL;
+    delete process.env.FLINTLOOM_API_KEY;
+    delete process.env.FLINTLOOM_BASE_URL;
+    try {
+      const { ctx, stop } = await createRuntime(workspaceRoot, homeDir);
+      const snap = ctx.require<ModelRegistry>("models").snapshot();
+      expect(snap.find((row) => row.kind === "chat")?.configured).toBe(true);
+      expect(snap.find((row) => row.kind === "asr")?.configured).toBe(false);
+      expect(snap.find((row) => row.kind === "guard")?.configured).toBe(false);
+      stop();
+    } finally {
+      if (previousKey === undefined) {
+        delete process.env.FLINTLOOM_API_KEY;
+      } else {
+        process.env.FLINTLOOM_API_KEY = previousKey;
+      }
+      if (previousUrl === undefined) {
+        delete process.env.FLINTLOOM_BASE_URL;
+      } else {
+        process.env.FLINTLOOM_BASE_URL = previousUrl;
+      }
+    }
+  });
+
+  it("local chat with FLINTLOOM_MEDIA_API_KEY overlays media from DashScope", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-hybrid-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
+    writeAssembly(workspaceRoot);
+    writeFileSync(
+      join(workspaceRoot, ".env"),
+      [
+        "FLINTLOOM_BASE_URL=http://127.0.0.1:8080/v1",
+        "FLINTLOOM_API_KEY=local",
+        "FLINTLOOM_CHAT_MODEL=local-model",
+        "FLINTLOOM_MEDIA_API_KEY=sk-cloud",
+        "FLINTLOOM_MEDIA_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1",
+      ].join("\n"),
+    );
+
+    const prev = {
+      key: process.env.FLINTLOOM_API_KEY,
+      url: process.env.FLINTLOOM_BASE_URL,
+      mediaKey: process.env.FLINTLOOM_MEDIA_API_KEY,
+      mediaUrl: process.env.FLINTLOOM_MEDIA_BASE_URL,
+    };
+    delete process.env.FLINTLOOM_API_KEY;
+    delete process.env.FLINTLOOM_BASE_URL;
+    delete process.env.FLINTLOOM_MEDIA_API_KEY;
+    delete process.env.FLINTLOOM_MEDIA_BASE_URL;
+    try {
+      const { ctx, stop } = await createRuntime(workspaceRoot, homeDir);
+      const snap = ctx.require<ModelRegistry>("models").snapshot();
+      expect(snap.find((row) => row.kind === "chat")?.configured).toBe(true);
+      expect(snap.find((row) => row.kind === "asr")?.configured).toBe(true);
+      expect(snap.find((row) => row.kind === "guard")?.configured).toBe(false);
+      stop();
+    } finally {
+      if (prev.key === undefined) {
+        delete process.env.FLINTLOOM_API_KEY;
+      } else {
+        process.env.FLINTLOOM_API_KEY = prev.key;
+      }
+      if (prev.url === undefined) {
+        delete process.env.FLINTLOOM_BASE_URL;
+      } else {
+        process.env.FLINTLOOM_BASE_URL = prev.url;
+      }
+      if (prev.mediaKey === undefined) {
+        delete process.env.FLINTLOOM_MEDIA_API_KEY;
+      } else {
+        process.env.FLINTLOOM_MEDIA_API_KEY = prev.mediaKey;
+      }
+      if (prev.mediaUrl === undefined) {
+        delete process.env.FLINTLOOM_MEDIA_BASE_URL;
+      } else {
+        process.env.FLINTLOOM_MEDIA_BASE_URL = prev.mediaUrl;
       }
     }
   });

@@ -7,6 +7,10 @@ import { startTelegramPoller } from "./poller.ts";
 const plugin: FlintPlugin = {
   name: "@flintloom/channel-telegram",
   apply(ctx: Context, config: Record<string, unknown>) {
+    const token = config.token;
+    if (typeof token !== "string" || token.length === 0) {
+      return;
+    }
     const channels = ctx.require<ChannelRegistry>("channels");
     ctx.require("sessions");
     ctx.require("loop");

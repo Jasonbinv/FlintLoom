@@ -33,7 +33,12 @@ export function PluginsPane() {
   }
 
   return (
-    <div className="settings-table-wrap">
+    <div className="settings-pane-inner">
+      <p className="settings-hint">
+        stdio MCP 可在工作区 <code>mcp-servers.yml</code> 声明，host 启动时自动合并；表中{" "}
+        <code>mcp</code> 标签表示来自 MCP 自动行。
+      </p>
+      <div className="settings-table-wrap">
       <table className="settings-table">
         <thead>
           <tr>
@@ -45,13 +50,19 @@ export function PluginsPane() {
         <tbody>
           {rows.map((row) => (
             <tr key={row.id}>
-              <td>{row.id}</td>
+              <td>
+                {row.id}
+                {row.name === "@flintloom/mcp" ? (
+                  <span className="plugin-tag mcp">mcp</span>
+                ) : null}
+              </td>
               <td className="mono">{row.name}</td>
               <td>{row.status}</td>
             </tr>
           ))}
         </tbody>
       </table>
+    </div>
     </div>
   );
 }

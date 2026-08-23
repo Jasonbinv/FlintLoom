@@ -89,8 +89,47 @@ describe("telegram host overlay", () => {
 
   it("default assembly yml does not include channel-telegram", () => {
     expect(ASSEMBLY).not.toMatch(/channel-telegram/);
+  });
+
+  it("root flintloom.yml includes channel-telegram plugin row", () => {
     const rootYml = readFileSync(join(here, "../../../flintloom.yml"), "utf8");
-    expect(rootYml).not.toMatch(/channel-telegram/);
+    expect(rootYml).toMatch(/channel-telegram/);
+  });
+
+  it("startHost overlays telegram token from workspace .env", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-tg-env-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-tg-env-home-"));
+    writeTelegramAssembly(workspaceRoot);
+    writeFileSync(
+      join(workspaceRoot, ".env"),
+      "FLINTLOOM_TELEGRAM_TOKEN=envtok\nFLINTLOOM_TELEGRAM_CHAT_IDS=456\n",
+    );
+    const urls: string[] = [];
+    globalThis.fetch = async (url, init) => {
+      const u = String(url);
+      urls.push(u);
+      if (u.includes("deleteWebhook")) {
+        return jsonOk(true);
+      }
+      if (u.includes("getUpdates")) {
+        await new Promise<void>((_resolve, reject) => {
+          const onAbort = () => reject(new DOMException("aborted", "AbortError"));
+          if (init?.signal?.aborted) {
+            onAbort();
+            return;
+          }
+          init?.signal?.addEventListener("abort", onAbort, { once: true });
+        });
+      }
+      return jsonOk([]);
+    };
+    const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+    close = host.close;
+    await vi.waitFor(() => {
+      expect(urls.some((u) => u.includes("botenvtok/"))).toBe(true);
+    });
+    await host.close();
+    close = undefined;
   });
 });
 
