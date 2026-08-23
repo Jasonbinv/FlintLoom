@@ -65,6 +65,28 @@ export async function fetchPlugins(
   return (await res.json()) as { id: string; name: string; status: "loaded" }[];
 }
 
+export async function installPlugin(
+  sourcePath: string,
+  id?: string,
+): Promise<{ id: string; dest: string }> {
+  const body: { sourcePath: string; id?: string } = { sourcePath };
+  if (id !== undefined && id.trim().length > 0) {
+    body.id = id.trim();
+  }
+  const res = await fetch("/v1/plugins/install", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (res.status === 409) throw new Error("busy");
+  if (res.status === 400) {
+    const text = (await res.text()).trim();
+    throw new Error(text.length > 0 ? text : "invalid");
+  }
+  if (!res.ok) throw new Error("install failed");
+  return (await res.json()) as { id: string; dest: string };
+}
+
 export type CredentialSlotSnapshot = {
   id: string;
   label: string;

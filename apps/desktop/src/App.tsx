@@ -21,6 +21,7 @@ import {
 } from "./theme.ts";
 import {
   loadSessions,
+  removeSession,
   titleFromBubbles,
   upsertSession,
   type SessionEntry,
@@ -217,17 +218,7 @@ export function App() {
 
   function startNewChat() {
     syncCurrentSession(bubbles);
-    const id = crypto.randomUUID();
-    sessionStorage.setItem(SESSION_KEY, id);
-    sid.current = id;
-    setBubbles([]);
-    setDraft("");
-    setInput("");
-    setPendingImages([]);
-    setWaitingAction(false);
-    setSending(false);
-    turnIdRef.current = undefined;
-    setPage("chat");
+    resetToNewSession();
   }
 
   async function switchSession(targetId: string) {
@@ -255,6 +246,36 @@ export function App() {
     if (waiting) {
       setWaitingAction(true);
       turnIdRef.current = waiting;
+    }
+  }
+
+  function resetToNewSession() {
+    const id = crypto.randomUUID();
+    sessionStorage.setItem(SESSION_KEY, id);
+    sid.current = id;
+    setBubbles([]);
+    setDraft("");
+    setInput("");
+    setPendingImages([]);
+    setWaitingAction(false);
+    setSending(false);
+    turnIdRef.current = undefined;
+    setPage("chat");
+  }
+
+  function deleteSession(targetId: string) {
+    if (sending || waitingAction) return;
+    let remaining: SessionEntry[] = [];
+    setSessions((prev) => {
+      remaining = removeSession(prev, targetId);
+      return remaining;
+    });
+    if (targetId !== sid.current) return;
+    const next = remaining[0];
+    if (next) {
+      void switchSession(next.id);
+    } else {
+      resetToNewSession();
     }
   }
 
@@ -544,7 +565,7 @@ export function App() {
             <p className="sidebar-section-label">任务</p>
             <ul className="sidebar-history-list">
               {sessions.map((item) => (
-                <li key={item.id}>
+                <li key={item.id} className="sidebar-history-row">
                   <button
                     type="button"
                     className={
@@ -557,6 +578,19 @@ export function App() {
                     title={item.title}
                   >
                     {item.title}
+                  </button>
+                  <button
+                    type="button"
+                    className="sidebar-history-delete"
+                    disabled={sending || waitingAction}
+                    aria-label={`删除任务 ${item.title}`}
+                    title="删除任务"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      deleteSession(item.id);
+                    }}
+                  >
+                    ×
                   </button>
                 </li>
               ))}

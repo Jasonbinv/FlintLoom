@@ -102,6 +102,7 @@ function installFetch(opts: {
   knowledge?: Response | Error;
   knowledgeSearch?: Response | Error;
   knowledgeImport?: Response | Error;
+  pluginInstall?: Response | Error;
 } = {}) {
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = requestUrl(input);
@@ -243,6 +244,20 @@ function installFetch(opts: {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
+    }
+    if (url.includes("/v1/plugins/install") && init?.method === "POST") {
+      if (opts.pluginInstall instanceof Error) throw opts.pluginInstall;
+      return (
+        opts.pluginInstall ??
+        new Response(
+          JSON.stringify({
+            ok: true,
+            id: "my-plugin",
+            dest: "C:/Users/me/.flintloom/plugins/my-plugin",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        )
+      );
     }
     if (url.includes("/v1/plugins")) {
       if (opts.plugins instanceof Error) throw opts.plugins;
@@ -1522,7 +1537,50 @@ describe("App", () => {
     expect(document.body.textContent).toContain("来自 .env");
     expect(document.body.textContent).toContain("loca…cal");
     expect(document.body.textContent).toContain("/v1/hooks");
+    expect(document.body.textContent).toContain("插件安装");
     expect(document.querySelector("textarea")).toBeNull();
+  });
+
+  it("installs plugin from Settings page", async () => {
+    installFetch();
+    await mountApp();
+    const settingsTab = findNavTab("设置");
+    if (!settingsTab) throw new Error("no 设置 tab");
+    await act(async () => {
+      settingsTab.click();
+    });
+    await waitForText("插件安装");
+    const pathInput = document.querySelector(
+      'input[placeholder="G:/path/to/my-plugin"]',
+    ) as HTMLInputElement | null;
+    if (!pathInput) throw new Error("no plugin path input");
+    await act(async () => {
+      const proto = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      );
+      proto?.set?.call(pathInput, "G:/plugins/demo");
+      pathInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const installBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "安装插件",
+    );
+    if (!installBtn) throw new Error("no 安装插件 button");
+    await act(async () => {
+      installBtn.click();
+    });
+    await waitForText("已安装插件 my-plugin 并重载 host");
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const installCall = fetchMock.mock.calls.find(
+      (c) =>
+        String(c[0]).includes("/v1/plugins/install") &&
+        (c[1] as RequestInit | undefined)?.method === "POST",
+    );
+    expect(installCall).toBeTruthy();
+    const body = JSON.parse((installCall![1] as RequestInit).body as string) as {
+      sourcePath: string;
+    };
+    expect(body.sourcePath).toBe("G:/plugins/demo");
   });
 
   it("Models page links to Settings", async () => {
@@ -1685,6 +1743,31 @@ describe("App", () => {
     await waitForText("# Hello");
     const preview = document.querySelector(".file-preview");
     expect(preview?.textContent).toContain("# Hello");
+  });
+
+  it("deletes a session from sidebar task list", async () => {
+    const SESSION_A = "11111111-1111-1111-1111-111111111111";
+    const SESSION_B = "22222222-2222-2222-2222-222222222222";
+    sessionStorage.setItem("flintloom.sessionId", SESSION_A);
+    localStorage.setItem(
+      "flintloom.sessions",
+      JSON.stringify([
+        { id: SESSION_A, title: "Keep me", updatedAt: 2 },
+        { id: SESSION_B, title: "Delete me", updatedAt: 1 },
+      ]),
+    );
+    installFetch({});
+    await mountApp();
+    const deleteBtn = Array.from(document.querySelectorAll(".sidebar-history-delete")).find(
+      (el) => el.getAttribute("aria-label") === "删除任务 Delete me",
+    ) as HTMLButtonElement;
+    expect(deleteBtn).toBeTruthy();
+    await act(async () => {
+      deleteBtn.click();
+    });
+    expect(document.body.textContent).not.toContain("Delete me");
+    expect(document.body.textContent).toContain("Keep me");
+    expect(JSON.parse(localStorage.getItem("flintloom.sessions") ?? "[]")).toHaveLength(1);
   });
 
   it("switches between persisted sessions from sidebar", async () => {

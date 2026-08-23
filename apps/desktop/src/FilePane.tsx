@@ -104,8 +104,39 @@ export function FilePane({
     }
   }
 
+  async function ensureDirExpanded(dirPath: string) {
+    setExpanded((prev) => {
+      if (prev.has(dirPath)) return prev;
+      const next = new Set(prev);
+      next.add(dirPath);
+      return next;
+    });
+    if (children[dirPath]) return;
+    const list = await fetchFiles(dirPath);
+    setChildren((prev) => ({ ...prev, [dirPath]: list.entries }));
+    setDirErrors((prev) => {
+      if (!prev.has(dirPath)) return prev;
+      const cleared = new Set(prev);
+      cleared.delete(dirPath);
+      return cleared;
+    });
+  }
+
+  async function revealPath(filePath: string) {
+    const normalized = filePath.replaceAll("\\", "/");
+    const parts = normalized.split("/").filter(Boolean);
+    if (parts.length === 0) return;
+    let parent = ".";
+    for (let i = 0; i < parts.length - 1; i++) {
+      parent = childPath(parent, parts[i]!);
+      await ensureDirExpanded(parent);
+    }
+    setSelectedFile(normalized);
+  }
+
   async function previewFile(filePath: string, insertIntoInput: boolean) {
-    setSelectedFile(filePath);
+    setTab("files");
+    await revealPath(filePath);
     if (insertIntoInput) onInsertPath(filePath);
     await startPreview(filePath);
   }

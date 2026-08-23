@@ -3,6 +3,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   loadSessions,
+  removeSession,
   saveSessions,
   titleFromBubbles,
   upsertSession,
@@ -32,6 +33,14 @@ describe("sessionList", () => {
     const sessions = upsertSession([], "id", long);
     expect(sessions[0]?.title.endsWith("…")).toBe(true);
     expect(sessions[0]?.title.length).toBe(49);
+  });
+
+  it("removes session from list", () => {
+    const first = upsertSession([], "a", "Alpha");
+    const second = upsertSession(first, "b", "Beta");
+    const remaining = removeSession(second, "b");
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]?.id).toBe("a");
   });
 
   it("derives title from first user bubble", () => {

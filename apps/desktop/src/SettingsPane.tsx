@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   fetchCredentialSettings,
+  installPlugin,
   putCredentialSlot,
   reloadHostSettings,
   type CredentialSlotSnapshot,
 } from "./api.ts";
+import { pickWorkspaceFolder } from "./workspacePicker.ts";
 
 const CHANNEL_SLOT_IDS = new Set(["telegram", "discord", "slack", "feishu"]);
 
@@ -60,6 +62,9 @@ export function SettingsPane({ onSaved }: Props) {
   const [error, setError] = useState(false);
   const [message, setMessage] = useState<string | undefined>();
   const [saving, setSaving] = useState<string | undefined>();
+  const [pluginPath, setPluginPath] = useState("");
+  const [pluginId, setPluginId] = useState("");
+  const [installing, setInstalling] = useState(false);
 
   const load = useCallback(() => {
     const ac = new AbortController();
@@ -85,6 +90,36 @@ export function SettingsPane({ onSaved }: Props) {
   useEffect(() => {
     return load();
   }, [load]);
+
+  function installErrorMessage(err: unknown): string {
+    if (!(err instanceof Error)) return "安装失败";
+    if (err.message === "busy") return "有对话进行中，请稍后再安装";
+    if (err.message === "path") return "无效插件路径（需为含入口的本地目录）";
+    if (err.message === "id") return "插件 ID 无效或已存在";
+    if (err.message === "plugins") return "当前工作区缺少 flintloom.yml";
+    return "安装失败";
+  }
+
+  async function installLocalPlugin() {
+    const sourcePath = pluginPath.trim();
+    if (sourcePath.length === 0) return;
+    setInstalling(true);
+    setMessage(undefined);
+    try {
+      const result = await installPlugin(
+        sourcePath,
+        pluginId.trim().length > 0 ? pluginId.trim() : undefined,
+      );
+      setPluginPath("");
+      setPluginId("");
+      onSaved?.();
+      setMessage(`已安装插件 ${result.id} 并重载 host`);
+    } catch (err) {
+      setMessage(installErrorMessage(err));
+    } finally {
+      setInstalling(false);
+    }
+  }
 
   async function saveSlot(slotId: string) {
     const form = forms[slotId] ?? emptyForm();
@@ -354,6 +389,60 @@ export function SettingsPane({ onSaved }: Props) {
             <p className="settings-hint">{webhook.hint}</p>
           </div>
         ) : null}
+      </section>
+      <section className="settings-section">
+        <h3 className="settings-section-title">插件安装</h3>
+        <div className="settings-card">
+          <p className="settings-card-hint">
+            等价于 <code>pnpm flint plugin add &lt;路径&gt;</code>：将本地插件目录复制到{" "}
+            <code>~/.flintloom/plugins/</code>，并在当前工作区{" "}
+            <code>flintloom.yml</code> 末尾追加一行。安装成功后会自动重载 host。
+          </p>
+          <div className="settings-form-row settings-path-row">
+            <label>
+              插件目录
+              <input
+                type="text"
+                value={pluginPath}
+                placeholder="G:/path/to/my-plugin"
+                onChange={(e) => setPluginPath(e.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              className="btn-ghost settings-browse-btn"
+              disabled={installing}
+              onClick={() =>
+                void pickWorkspaceFolder().then((picked) => {
+                  if (picked) setPluginPath(picked);
+                })
+              }
+            >
+              浏览…
+            </button>
+          </div>
+          <div className="settings-form-row">
+            <label>
+              插件 ID（可选）
+              <input
+                type="text"
+                value={pluginId}
+                placeholder="留空则使用目录名"
+                onChange={(e) => setPluginId(e.target.value)}
+              />
+            </label>
+          </div>
+          <div className="settings-card-actions">
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={installing || pluginPath.trim().length === 0}
+              onClick={() => void installLocalPlugin()}
+            >
+              安装插件
+            </button>
+          </div>
+        </div>
       </section>
     </div>
   );

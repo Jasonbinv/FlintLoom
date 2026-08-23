@@ -11,6 +11,7 @@ import { WorkspaceEscapeError } from "@flintloom/tools";
 import { cancelWaitingTurn, handleTurnActions, sessionHasWaitingTurn } from "./a2ui.ts";
 import { handleTurnGuard } from "./guard.ts";
 import { handleSettingsRequest } from "./settings.ts";
+import { handlePluginInstallRequest } from "./plugin-install.ts";
 import {
   listWorkspaceFiles,
   normalizeRelPath,
@@ -598,6 +599,19 @@ async function handleRequest(
       homeDir: opts.homeDir,
       workspaceRootRef: opts.workspaceRootRef,
       port: opts.port,
+      busy: opts.busy,
+      reloadRuntime: opts.reloadRuntime,
+    })
+  ) {
+    return;
+  }
+
+  if (
+    await handlePluginInstallRequest(req, res, {
+      pathname,
+      method: req.method ?? "GET",
+      homeDir: opts.homeDir,
+      workspaceRoot: workspaceRoot,
       busy: opts.busy,
       reloadRuntime: opts.reloadRuntime,
     })
