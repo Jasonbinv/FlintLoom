@@ -20,6 +20,7 @@ import { ASR_MAX_BYTES, readBodyBytes, transcribeAudio } from "./asr.ts";
 import { synthesizeSpeech } from "./tts.ts";
 import { parseTurnBody } from "./turn-body.ts";
 import { loadOrCreateToken, readCredentials } from "./token.ts";
+import { readCredentialsStore, type CredentialSource, type CredentialsStore } from "./credentials.ts";
 
 export type PluginSnapshot = {
   id: string;
@@ -69,31 +70,23 @@ function firstNonEmpty(...values: (string | undefined)[]): string | undefined {
   return undefined;
 }
 
-function resolveChatApiKey(
-  homeDir: string,
+function resolveLayeredString(
+  envKey: string,
   fileEnv: Record<string, string>,
-): string | undefined {
-  const credKey = readCredentials(homeDir).chatApiKey;
-  return firstNonEmpty(
-    process.env.FLINTLOOM_API_KEY,
-    fileEnv.FLINTLOOM_API_KEY,
-    typeof credKey === "string" ? credKey : undefined,
-  );
-}
-
-function resolveEnvApiKey(
-  envName: string,
-  fileEnv: Record<string, string>,
-): string | undefined {
-  return firstNonEmpty(process.env[envName], fileEnv[envName]);
-}
-
-function resolveEnvBaseUrl(
-  envName: string,
-  fileEnv: Record<string, string>,
-  fallback: string,
-): string {
-  return firstNonEmpty(process.env[envName], fileEnv[envName]) ?? fallback;
+  credValue: string | undefined,
+): { value: string | undefined; source: CredentialSource } {
+  const fromProcess = process.env[envKey];
+  if (typeof fromProcess === "string" && fromProcess.length > 0) {
+    return { value: fromProcess, source: "env" };
+  }
+  const fromFile = fileEnv[envKey];
+  if (typeof fromFile === "string" && fromFile.length > 0) {
+    return { value: fromFile, source: "env" };
+  }
+  if (typeof credValue === "string" && credValue.length > 0) {
+    return { value: credValue, source: "credentials" };
+  }
+  return { value: undefined, source: "none" };
 }
 
 function parseTelegramChatIds(raw: string | undefined): number[] | undefined {
@@ -126,19 +119,23 @@ function isLocalLlmBaseUrl(baseUrl: string): boolean {
 
 function resolveTelegramOverlay(
   fileEnv: Record<string, string>,
+  credStore: CredentialsStore,
 ): { token: string; allowedChatIds: number[] } | undefined {
-  const token = firstNonEmpty(
-    process.env.FLINTLOOM_TELEGRAM_TOKEN,
-    fileEnv.FLINTLOOM_TELEGRAM_TOKEN,
-  );
+  const credTelegram = credStore.channels?.telegram;
+  const token = resolveLayeredString(
+    "FLINTLOOM_TELEGRAM_TOKEN",
+    fileEnv,
+    credTelegram?.token,
+  ).value;
   if (token === undefined) {
     return undefined;
   }
   const allowedChatIds = parseTelegramChatIds(
-    firstNonEmpty(
-      process.env.FLINTLOOM_TELEGRAM_CHAT_IDS,
-      fileEnv.FLINTLOOM_TELEGRAM_CHAT_IDS,
-    ),
+    resolveLayeredString(
+      "FLINTLOOM_TELEGRAM_CHAT_IDS",
+      fileEnv,
+      credTelegram?.allowedChatIds,
+    ).value,
   );
   if (allowedChatIds === undefined) {
     return undefined;
@@ -156,16 +153,23 @@ export async function createRuntime(
     throw new Error("plugins");
   }
   const fileEnv = readDotEnv(join(workspaceRoot, ".env"));
+  const credStore = readCredentialsStore(homeDir);
   const config = mergeMcpServersIntoConfig(
     loadConfig(readFileSync(ymlPath, "utf8")),
     { workspaceRoot, homeDir, fileEnv },
   );
-  const apiKey = resolveChatApiKey(homeDir, fileEnv);
-  const runtimeConfigById: Record<string, Record<string, unknown>> = {};
+  const credChat = credStore.providers?.chat;
+  const chatKeyLayer = resolveLayeredString(
+    "FLINTLOOM_API_KEY",
+    fileEnv,
+    credChat?.apiKey,
+  );
+  const apiKey = chatKeyLayer.value;
   const chatBaseUrl =
-    firstNonEmpty(process.env.FLINTLOOM_BASE_URL, fileEnv.FLINTLOOM_BASE_URL) ??
+    resolveLayeredString("FLINTLOOM_BASE_URL", fileEnv, credChat?.baseUrl).value ??
     "https://api.deepseek.com/v1";
   const chatUsesLocalLlm = isLocalLlmBaseUrl(chatBaseUrl);
+  const runtimeConfigById: Record<string, Record<string, unknown>> = {};
 
   if (apiKey !== undefined) {
     runtimeConfigById["models-chat"] = {
@@ -175,42 +179,59 @@ export async function createRuntime(
         firstNonEmpty(
           process.env.FLINTLOOM_CHAT_MODEL,
           fileEnv.FLINTLOOM_CHAT_MODEL,
+          credChat?.model,
         ) ?? "deepseek-chat",
     };
   }
 
-  const mediaApiKey =
-    resolveEnvApiKey("FLINTLOOM_MEDIA_API_KEY", fileEnv) ??
-    (apiKey !== undefined && !chatUsesLocalLlm ? apiKey : undefined);
+  const credMedia = credStore.providers?.media;
+  const mediaKeyLayer = resolveLayeredString(
+    "FLINTLOOM_MEDIA_API_KEY",
+    fileEnv,
+    credMedia?.apiKey,
+  );
+  let mediaApiKey = mediaKeyLayer.value;
+  const explicitMediaConfigured =
+    resolveLayeredString("FLINTLOOM_MEDIA_API_KEY", fileEnv, credMedia?.apiKey).source !==
+    "none";
+  if (mediaApiKey === undefined && apiKey !== undefined && !chatUsesLocalLlm) {
+    mediaApiKey = apiKey;
+  }
   if (mediaApiKey !== undefined) {
-    const explicitMediaKey = resolveEnvApiKey("FLINTLOOM_MEDIA_API_KEY", fileEnv);
-    const mediaBaseUrl =
-      explicitMediaKey !== undefined
-        ? resolveEnvBaseUrl(
-            "FLINTLOOM_MEDIA_BASE_URL",
-            fileEnv,
-            "https://dashscope.aliyuncs.com/compatible-mode/v1",
-          )
-        : chatBaseUrl;
+    const mediaBaseUrl = explicitMediaConfigured
+      ? (resolveLayeredString(
+          "FLINTLOOM_MEDIA_BASE_URL",
+          fileEnv,
+          credMedia?.baseUrl,
+        ).value ?? "https://dashscope.aliyuncs.com/compatible-mode/v1")
+      : chatBaseUrl;
     runtimeConfigById["models-media"] = {
       apiKey: mediaApiKey,
       baseUrl: mediaBaseUrl,
     };
   }
 
-  const guardApiKey =
-    resolveEnvApiKey("FLINTLOOM_GUARD_API_KEY", fileEnv) ??
-    (apiKey !== undefined && !chatUsesLocalLlm ? apiKey : undefined);
+  const credGuard = credStore.providers?.guard;
+  const guardKeyLayer = resolveLayeredString(
+    "FLINTLOOM_GUARD_API_KEY",
+    fileEnv,
+    credGuard?.apiKey,
+  );
+  let guardApiKey = guardKeyLayer.value;
+  const explicitGuardConfigured =
+    resolveLayeredString("FLINTLOOM_GUARD_API_KEY", fileEnv, credGuard?.apiKey).source !==
+    "none";
+  if (guardApiKey === undefined && apiKey !== undefined && !chatUsesLocalLlm) {
+    guardApiKey = apiKey;
+  }
   if (guardApiKey !== undefined) {
-    const explicitGuardKey = resolveEnvApiKey("FLINTLOOM_GUARD_API_KEY", fileEnv);
-    const guardBaseUrl =
-      explicitGuardKey !== undefined
-        ? resolveEnvBaseUrl(
-            "FLINTLOOM_GUARD_BASE_URL",
-            fileEnv,
-            "https://api.deepseek.com/v1",
-          )
-        : chatBaseUrl;
+    const guardBaseUrl = explicitGuardConfigured
+      ? (resolveLayeredString(
+          "FLINTLOOM_GUARD_BASE_URL",
+          fileEnv,
+          credGuard?.baseUrl,
+        ).value ?? "https://api.deepseek.com/v1")
+      : chatBaseUrl;
     runtimeConfigById["models-guard"] = {
       apiKey: guardApiKey,
       baseUrl: guardBaseUrl,
@@ -218,10 +239,14 @@ export async function createRuntime(
         firstNonEmpty(
           process.env.FLINTLOOM_GUARD_MODEL,
           fileEnv.FLINTLOOM_GUARD_MODEL,
-        ) ?? firstNonEmpty(
+          credGuard?.model,
+        ) ??
+        firstNonEmpty(
           process.env.FLINTLOOM_CHAT_MODEL,
           fileEnv.FLINTLOOM_CHAT_MODEL,
-        ) ?? "deepseek-chat",
+          credChat?.model,
+        ) ??
+        "deepseek-chat",
     };
   }
   runtimeConfigById.knowledge = {
@@ -232,7 +257,7 @@ export async function createRuntime(
   };
 
   if (opts?.pollChannels === true) {
-    const telegram = resolveTelegramOverlay(fileEnv);
+    const telegram = resolveTelegramOverlay(fileEnv, credStore);
     runtimeConfigById["channel-telegram"] = {
       workspaceRoot,
       poll: true,
@@ -275,8 +300,13 @@ function formatHostError(
     }
   }
   const credKey = readCredentials(homeDir).chatApiKey;
+  const credStore = readCredentialsStore(homeDir);
+  const credChatKey = credStore.providers?.chat?.apiKey;
   if (typeof credKey === "string" && credKey.length > 0) {
     secrets.push(credKey);
+  }
+  if (typeof credChatKey === "string" && credChatKey.length > 0 && credChatKey !== credKey) {
+    secrets.push(credChatKey);
   }
   for (const secret of secrets) {
     if (message.includes(secret)) {

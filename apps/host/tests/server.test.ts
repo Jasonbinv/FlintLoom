@@ -512,6 +512,55 @@ describe("startHost", () => {
     }
   });
 
+  it("credentials media overlays when chat is local via .env", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-cred-media-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
+    writeAssembly(workspaceRoot);
+    writeFileSync(
+      join(workspaceRoot, ".env"),
+      [
+        "FLINTLOOM_BASE_URL=http://127.0.0.1:8080/v1",
+        "FLINTLOOM_API_KEY=local",
+        "FLINTLOOM_CHAT_MODEL=local-model",
+      ].join("\n"),
+    );
+    mkdirSync(join(homeDir, ".flintloom"), { recursive: true });
+    writeFileSync(
+      join(homeDir, ".flintloom", "credentials"),
+      JSON.stringify({
+        providers: {
+          media: {
+            apiKey: "sk-from-cred",
+            baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+          },
+        },
+      }),
+    );
+
+    const previousKey = process.env.FLINTLOOM_API_KEY;
+    const previousUrl = process.env.FLINTLOOM_BASE_URL;
+    delete process.env.FLINTLOOM_API_KEY;
+    delete process.env.FLINTLOOM_BASE_URL;
+    try {
+      const { ctx, stop } = await createRuntime(workspaceRoot, homeDir);
+      const snap = ctx.require<ModelRegistry>("models").snapshot();
+      expect(snap.find((row) => row.kind === "chat")?.configured).toBe(true);
+      expect(snap.find((row) => row.kind === "asr")?.configured).toBe(true);
+      stop();
+    } finally {
+      if (previousKey === undefined) {
+        delete process.env.FLINTLOOM_API_KEY;
+      } else {
+        process.env.FLINTLOOM_API_KEY = previousKey;
+      }
+      if (previousUrl === undefined) {
+        delete process.env.FLINTLOOM_BASE_URL;
+      } else {
+        process.env.FLINTLOOM_BASE_URL = previousUrl;
+      }
+    }
+  });
+
   it("local chat with FLINTLOOM_MEDIA_API_KEY overlays media from DashScope", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-hybrid-"));
     const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
