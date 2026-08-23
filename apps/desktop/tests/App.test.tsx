@@ -89,6 +89,9 @@ function requestUrl(input: RequestInfo | URL): string {
 function installFetch(opts: {
   models?: Response | Error;
   plugins?: Response | Error;
+  settings?: Response | Error;
+  settingsPut?: Response | Error;
+  settingsReload?: Response | Error;
   session?: Response | Error;
   turn?: Response | Error;
   actions?: Response | Error;
@@ -169,6 +172,56 @@ function installFetch(opts: {
           entries: [{ name: "README.md", type: "file" }],
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    if (url.includes("/v1/settings/reload")) {
+      if (opts.settingsReload instanceof Error) throw opts.settingsReload;
+      return (
+        opts.settingsReload ??
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      );
+    }
+    if (url.includes("/v1/settings/credentials/") && init?.method === "PUT") {
+      if (opts.settingsPut instanceof Error) throw opts.settingsPut;
+      return (
+        opts.settingsPut ??
+        new Response(JSON.stringify({ slot: { id: "media" } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      );
+    }
+    if (url.includes("/v1/settings/credentials")) {
+      if (opts.settings instanceof Error) throw opts.settings;
+      return (
+        opts.settings ??
+        new Response(
+          JSON.stringify({
+            slots: [
+              {
+                id: "chat",
+                label: "Chat / Omni",
+                configured: true,
+                source: "env",
+                maskedKey: "loca…cal",
+              },
+              {
+                id: "media",
+                label: "Media (ASR/TTS/…)",
+                configured: false,
+                source: "none",
+              },
+            ],
+            webhook: {
+              url: "http://127.0.0.1:7331/v1/hooks",
+              hint: "Bearer hostToken",
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        )
       );
     }
     if (url.includes("/v1/models")) {
@@ -1443,6 +1496,23 @@ describe("App", () => {
     await waitForText("asr 已配置");
     expect(document.body.textContent).toContain("tts 未配置");
     expect(document.body.textContent).toContain("omni 已配置");
+  });
+
+  it("renders Settings page with credential slots", async () => {
+    installFetch();
+    await mountApp();
+    const settingsTab = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "Settings",
+    );
+    if (!settingsTab) throw new Error("no Settings tab");
+    await act(async () => {
+      settingsTab.click();
+    });
+    await waitForText("Chat / Omni");
+    expect(document.body.textContent).toContain("来自 .env");
+    expect(document.body.textContent).toContain("loca…cal");
+    expect(document.body.textContent).toContain("/v1/hooks");
+    expect(document.querySelector("textarea")).toBeNull();
   });
 
   it("renders a2ui DataTable and Chart without pausing turn", async () => {

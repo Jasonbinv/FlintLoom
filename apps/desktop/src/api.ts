@@ -65,6 +65,49 @@ export async function fetchPlugins(
   return (await res.json()) as { id: string; name: string; status: "loaded" }[];
 }
 
+export type CredentialSlotSnapshot = {
+  id: string;
+  label: string;
+  configured: boolean;
+  source: string;
+  baseUrl?: string;
+  model?: string;
+  allowedChatIds?: string;
+  maskedKey?: string;
+};
+
+export async function fetchCredentialSettings(
+  signal?: AbortSignal,
+): Promise<{
+  slots: CredentialSlotSnapshot[];
+  webhook: { url: string; hint: string };
+}> {
+  const res = await fetch("/v1/settings/credentials", { signal });
+  if (!res.ok) throw new Error("host unreachable");
+  return (await res.json()) as {
+    slots: CredentialSlotSnapshot[];
+    webhook: { url: string; hint: string };
+  };
+}
+
+export async function putCredentialSlot(
+  slotId: string,
+  body: Record<string, string>,
+): Promise<void> {
+  const res = await fetch(`/v1/settings/credentials/${encodeURIComponent(slotId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error("save failed");
+}
+
+export async function reloadHostSettings(): Promise<void> {
+  const res = await fetch("/v1/settings/reload", { method: "POST" });
+  if (res.status === 409) throw new Error("busy");
+  if (!res.ok) throw new Error("reload failed");
+}
+
 export async function fetchSession(
   sessionId: string,
 ): Promise<{ events: WorkbenchEvent[] } | undefined> {

@@ -4,6 +4,7 @@ import { cancelTurn, fetchModels, fetchSession, postTurn, postTurnAction, postTu
 import { FilePane } from "./FilePane.tsx";
 import { ModelsPane } from "./ModelsPane.tsx";
 import { PluginsPane } from "./PluginsPane.tsx";
+import { SettingsPane } from "./SettingsPane.tsx";
 import { ImageInput } from "./ImageInput.tsx";
 import { VoiceInput } from "./VoiceInput.tsx";
 import { TtsPlay } from "./TtsPlay.tsx";
@@ -13,7 +14,7 @@ import "./app.css";
 
 const SESSION_KEY = "flintloom.sessionId";
 
-type Page = "chat" | "plugins" | "models";
+type Page = "chat" | "plugins" | "models" | "settings";
 
 type Bubble =
   | { id: string; kind: "user"; text: string; images?: UserImage[] }
@@ -212,6 +213,24 @@ export function App() {
     if (bubble) setBubbles((prev) => [...prev, bubble]);
   }
 
+  function refreshModelStatus() {
+    void fetchModels()
+      .then((models) => {
+        const chat = models.find((m) => m.kind === "chat");
+        setChatConfigured(chat?.configured ?? false);
+        const guard = models.find((m) => m.kind === "guard");
+        setGuardConfigured(guard?.configured ?? false);
+        const asr = models.find((m) => m.kind === "asr");
+        setAsrConfigured(asr?.configured ?? false);
+        const omni = models.find((m) => m.kind === "omni");
+        setOmniConfigured(omni?.configured ?? false);
+        const tts = models.find((m) => m.kind === "tts");
+        setTtsConfigured(tts?.configured ?? false);
+        setHostDown(false);
+      })
+      .catch(() => setHostDown(true));
+  }
+
   useEffect(() => {
     const ac = new AbortController();
     void fetchModels(ac.signal)
@@ -341,6 +360,13 @@ export function App() {
             onClick={() => setPage("models")}
           >
             Models
+          </button>
+          <button
+            type="button"
+            className={page === "settings" ? "active" : undefined}
+            onClick={() => setPage("settings")}
+          >
+            Settings
           </button>
         </nav>
         {hostDown ? (
@@ -521,9 +547,19 @@ export function App() {
       ) : (
         <main className="settings-pane">
           <h2 className="settings-title">
-            {page === "plugins" ? "Plugins" : "Models"}
+            {page === "plugins"
+              ? "Plugins"
+              : page === "models"
+                ? "Models"
+                : "Settings"}
           </h2>
-          {page === "plugins" ? <PluginsPane /> : <ModelsPane />}
+          {page === "plugins" ? (
+            <PluginsPane />
+          ) : page === "models" ? (
+            <ModelsPane />
+          ) : (
+            <SettingsPane onSaved={refreshModelStatus} />
+          )}
         </main>
       )}
     </div>
