@@ -119,7 +119,7 @@ Webhook 入站复用 `hostToken`（`~/.flintloom/credentials`），地址见设�
 | Discord | `FLINTLOOM_DISCORD_TOKEN` | `FLINTLOOM_DISCORD_CHANNEL_IDS` |
 | Slack | `FLINTLOOM_SLACK_TOKEN` | `FLINTLOOM_SLACK_CHANNEL_IDS` |
 | 飞书 | `FLINTLOOM_FEISHU_APP_ID` + `FLINTLOOM_FEISHU_APP_SECRET` | `FLINTLOOM_FEISHU_CHAT_IDS`（`oc_…`） |
-| 企业微信 | `FLINTLOOM_WECOM_CORP_ID` + `FLINTLOOM_WECOM_CORP_SECRET` + `FLINTLOOM_WECOM_AGENT_ID` + `FLINTLOOM_WECOM_CALLBACK_TOKEN` | `FLINTLOOM_WECOM_USER_IDS`；回调 `http://127.0.0.1:7331/v1/channels/wecom/callback`（需公网 HTTPS） |
+| 企业微信 | `FLINTLOOM_WECOM_CORP_ID` + `FLINTLOOM_WECOM_CORP_SECRET` + `FLINTLOOM_WECOM_AGENT_ID` + `FLINTLOOM_WECOM_CALLBACK_TOKEN`；可选 `FLINTLOOM_WECOM_ENCODING_AES_KEY`（安全模式） | `FLINTLOOM_WECOM_USER_IDS`；回调 `http://127.0.0.1:7331/v1/channels/wecom/callback`（需公网 HTTPS）。开启 EncodingAESKey 时入站验签解密，回包为加密 XML（明文模式仍回 `success`） |
 
 Host 在 `startHost` / `pnpm desktop` 且凭据齐全时会自动轮询入站（Telegram / Discord / Slack / 飞书）；企业微信通过官方回调入站。CLI 单轮 `pnpm flint` 不轮询。
 
@@ -313,6 +313,7 @@ pnpm flint config set wecom appId ww_corp_id
 pnpm flint config set wecom apiKey corp_secret
 pnpm flint config set wecom agentId 1000002
 pnpm flint config set wecom callbackToken your_callback_token
+pnpm flint config set wecom encodingAesKey your_43_char_aes_key
 ```
 
 CLI 会读取工作区的 `.env` 与 `flintloom.yml`，与桌面共用同一套 Host 逻辑（CLI 路径不经过 Vite 代理）。

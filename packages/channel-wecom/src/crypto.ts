@@ -27,6 +27,15 @@ function aesKey(encodingAesKey: string): Buffer {
   return Buffer.from(`${encodingAesKey}=`, "base64");
 }
 
+export function signWecomSignature(
+  token: string,
+  timestamp: string,
+  nonce: string,
+  encrypt: string,
+): string {
+  return sha1Signature(token, timestamp, nonce, encrypt);
+}
+
 export function verifyWecomSignature(
   token: string,
   timestamp: string,
@@ -34,7 +43,29 @@ export function verifyWecomSignature(
   encrypt: string,
   msgSignature: string,
 ): boolean {
-  return sha1Signature(token, timestamp, nonce, encrypt) === msgSignature;
+  return signWecomSignature(token, timestamp, nonce, encrypt) === msgSignature;
+}
+
+/** Encrypted passive reply XML (WeCom secure mode HTTP body). */
+export function buildWecomEncryptedReply(
+  encodingAesKey: string,
+  corpId: string,
+  token: string,
+  plain: string,
+  opts?: { timestamp?: string; nonce?: string },
+): string {
+  const timestamp = opts?.timestamp ?? String(Math.floor(Date.now() / 1000));
+  const nonce = opts?.nonce ?? randomBytes(8).toString("hex");
+  const encrypt = encryptWecomMessage(encodingAesKey, corpId, plain);
+  const signature = signWecomSignature(token, timestamp, nonce, encrypt);
+  return (
+    `<xml>` +
+    `<Encrypt><![CDATA[${encrypt}]]></Encrypt>` +
+    `<MsgSignature><![CDATA[${signature}]]></MsgSignature>` +
+    `<TimeStamp>${timestamp}</TimeStamp>` +
+    `<Nonce><![CDATA[${nonce}]]></Nonce>` +
+    `</xml>`
+  );
 }
 
 export function encryptWecomMessage(

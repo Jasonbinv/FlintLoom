@@ -5,7 +5,13 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ChatProvider } from "@flintloom/models";
 import { ModelRegistry } from "@flintloom/models";
-import { encryptWecomMessage, resetWecomTokenCache } from "@flintloom/channel-wecom";
+import {
+  decryptWecomMessage,
+  encryptWecomMessage,
+  parseWecomEncryptXml,
+  resetWecomTokenCache,
+  verifyWecomSignature,
+} from "@flintloom/channel-wecom";
 import { startHost } from "../src/index.ts";
 import { ASSEMBLY } from "./assembly.ts";
 
@@ -162,6 +168,17 @@ describe("wecom host callback", () => {
       },
     );
     expect(inbound.status).toBe(200);
-    expect(await inbound.text()).toBe("success");
+    const replyBody = await inbound.text();
+    expect(replyBody).toContain("<Encrypt>");
+    const replyEncrypt = parseWecomEncryptXml(replyBody);
+    expect(replyEncrypt).toBeTruthy();
+    expect(decryptWecomMessage(ENCODING_AES_KEY, "ww_test", replyEncrypt!)).toBe("success");
+    const replySig = /<MsgSignature><!\[CDATA\[([^\]]+)\]\]><\/MsgSignature>/.exec(replyBody)?.[1];
+    const replyTs = /<TimeStamp>([^<]+)<\/TimeStamp>/.exec(replyBody)?.[1];
+    const replyNonce = /<Nonce><!\[CDATA\[([^\]]+)\]\]><\/Nonce>/.exec(replyBody)?.[1];
+    expect(replySig && replyTs && replyNonce).toBeTruthy();
+    expect(
+      verifyWecomSignature("cbtok", replyTs!, replyNonce!, replyEncrypt!, replySig!),
+    ).toBe(true);
   });
 });

@@ -1,11 +1,14 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
+  buildWecomEncryptedReply,
   decryptWecomEcho,
   decryptWecomMessage,
   encryptWecomMessage,
+  signWecomSignature,
   verifyWecomSignature,
 } from "../src/crypto.ts";
+import { parseWecomEncryptXml } from "../src/xml.ts";
 
 const ENCODING_AES_KEY = "B5lpjOtetwGroJdq29oRJifgTHAmUVcFPZlznhgaeuQ";
 const CORP_ID = "ww_test_corp";
@@ -45,5 +48,21 @@ describe("wecom crypto", () => {
   it("decrypt rejects mismatched corpId", () => {
     const encrypted = encryptWecomMessage(ENCODING_AES_KEY, CORP_ID, "hello");
     expect(() => decryptWecomMessage(ENCODING_AES_KEY, "ww_other", encrypted)).toThrow(/corpId/);
+  });
+
+  it("buildWecomEncryptedReply produces signed XML decryptable to plain", () => {
+    const token = "cbtok";
+    const timestamp = "1409659589";
+    const nonce = "replynonce";
+    const xml = buildWecomEncryptedReply(ENCODING_AES_KEY, CORP_ID, token, "success", {
+      timestamp,
+      nonce,
+    });
+    const encrypt = parseWecomEncryptXml(xml);
+    expect(encrypt).toBeTruthy();
+    const expectedSig = wecomSignature(token, timestamp, nonce, encrypt!);
+    expect(signWecomSignature(token, timestamp, nonce, encrypt!)).toBe(expectedSig);
+    expect(verifyWecomSignature(token, timestamp, nonce, encrypt!, expectedSig)).toBe(true);
+    expect(decryptWecomMessage(ENCODING_AES_KEY, CORP_ID, encrypt!)).toBe("success");
   });
 });

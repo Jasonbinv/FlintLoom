@@ -3,6 +3,7 @@ import type { ChannelRegistry } from "@flintloom/channel";
 import type { WecomConfig } from "./config.ts";
 import { wecomSessionId } from "./adapter.ts";
 import {
+  buildWecomEncryptedReply,
   decryptWecomEcho,
   decryptWecomMessage,
   verifyWecomSignature,
@@ -12,6 +13,23 @@ import { parseWecomEncryptXml, parseWecomInboundXml } from "./xml.ts";
 function send(res: ServerResponse, status: number, body?: string): void {
   res.writeHead(status);
   res.end(body);
+}
+
+function sendAck(res: ServerResponse, parsed: WecomConfig): void {
+  if (parsed.encodingAesKey === undefined) {
+    send(res, 200, "success");
+    return;
+  }
+  send(
+    res,
+    200,
+    buildWecomEncryptedReply(
+      parsed.encodingAesKey,
+      parsed.corpId,
+      parsed.callbackToken,
+      "success",
+    ),
+  );
 }
 
 async function readBody(req: IncomingMessage): Promise<string> {
@@ -124,11 +142,11 @@ export async function handleWecomCallback(
 
   const message = parseWecomInboundXml(inboundXml);
   if (message === undefined) {
-    send(res, 200, "success");
+    sendAck(res, parsed);
     return true;
   }
   if (!parsed.allowedUserIds.has(message.fromUser)) {
-    send(res, 200, "success");
+    sendAck(res, parsed);
     return true;
   }
 
@@ -156,7 +174,7 @@ export async function handleWecomCallback(
     req.off("close", onClose);
     res.off("close", onClose);
     if (!res.destroyed && !res.writableEnded && !res.headersSent) {
-      send(res, 200, "success");
+      sendAck(res, parsed);
     }
   } finally {
     req.off("close", onClose);
