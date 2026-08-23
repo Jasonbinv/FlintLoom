@@ -1076,6 +1076,50 @@ describe("App", () => {
     expect(document.body.textContent).toContain("可疑");
   });
 
+  it("hides guard steward bubble when verdict is ok and summary is empty", async () => {
+    installFetch({
+      session: new Response(
+        JSON.stringify({
+          events: [
+            {
+              type: "guard/steward",
+              callId: "c1",
+              tool: "fs",
+              verdict: "ok",
+              summary: "",
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    expect(document.querySelector(".guard-steward")).toBeNull();
+  });
+
+  it("shows guard steward bubble when verdict is ok but summary is non-empty", async () => {
+    installFetch({
+      session: new Response(
+        JSON.stringify({
+          events: [
+            {
+              type: "guard/steward",
+              callId: "c1",
+              tool: "fs",
+              verdict: "ok",
+              summary: "large output",
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    await waitForText("large output");
+    expect(document.querySelector(".guard-steward")).toBeTruthy();
+    expect(document.body.textContent).toContain("复查");
+  });
+
   it("button click posts the current picker value in data", async () => {
     const messages = [
       {
@@ -1585,6 +1629,46 @@ describe("App", () => {
     expect(
       Array.from(document.querySelectorAll("button")).some((btn) => btn.textContent === "语音"),
     ).toBe(false);
+  });
+
+  it("shows tts play button on assistant messages when tts is configured", async () => {
+    installFetch({
+      models: new Response(
+        JSON.stringify([
+          { kind: "chat", configured: true, defaultId: "default" },
+          { kind: "tts", configured: true, defaultId: "default" },
+        ]),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+      session: new Response(
+        JSON.stringify({
+          events: [{ type: "assistant/message", text: "hello world" }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    await waitForText("hello world");
+    expect(document.querySelector(".bubble-tts")).toBeTruthy();
+    expect(document.body.textContent).toContain("朗读");
+  });
+
+  it("hides tts play button when tts is not configured", async () => {
+    installFetch({
+      models: new Response(
+        JSON.stringify([{ kind: "chat", configured: true, defaultId: "default" }]),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+      session: new Response(
+        JSON.stringify({
+          events: [{ type: "assistant/message", text: "hello world" }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    await waitForText("hello world");
+    expect(document.querySelector(".bubble-tts")).toBeNull();
   });
 
   it("shows embedding and rerank pills on Models page", async () => {
