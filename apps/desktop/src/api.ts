@@ -95,6 +95,10 @@ export type CredentialSlotSnapshot = {
   baseUrl?: string;
   model?: string;
   appId?: string;
+  agentId?: string;
+  callbackToken?: string;
+  encodingAesKey?: string;
+  callbackUrl?: string;
   allowedChatIds?: string;
   maskedKey?: string;
 };

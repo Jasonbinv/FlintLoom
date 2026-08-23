@@ -119,8 +119,9 @@ Webhook 入站复用 `hostToken`（`~/.flintloom/credentials`），地址见设�
 | Discord | `FLINTLOOM_DISCORD_TOKEN` | `FLINTLOOM_DISCORD_CHANNEL_IDS` |
 | Slack | `FLINTLOOM_SLACK_TOKEN` | `FLINTLOOM_SLACK_CHANNEL_IDS` |
 | 飞书 | `FLINTLOOM_FEISHU_APP_ID` + `FLINTLOOM_FEISHU_APP_SECRET` | `FLINTLOOM_FEISHU_CHAT_IDS`（`oc_…`） |
+| 企业微信 | `FLINTLOOM_WECOM_CORP_ID` + `FLINTLOOM_WECOM_CORP_SECRET` + `FLINTLOOM_WECOM_AGENT_ID` + `FLINTLOOM_WECOM_CALLBACK_TOKEN` | `FLINTLOOM_WECOM_USER_IDS`；回调 `http://127.0.0.1:7331/v1/channels/wecom/callback`（需公网 HTTPS） |
 
-Host 在 `startHost` / `pnpm desktop` 且凭据齐全时会自动轮询入站；CLI 单轮 `pnpm flint` 不轮询。
+Host 在 `startHost` / `pnpm desktop` 且凭据齐全时会自动轮询入站（Telegram / Discord / Slack / 飞书）；企业微信通过官方回调入站。CLI 单轮 `pnpm flint` 不轮询。
 
 ---
 

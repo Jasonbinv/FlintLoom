@@ -8,7 +8,8 @@ export type CredentialSlotId =
   | "telegram"
   | "discord"
   | "slack"
-  | "feishu";
+  | "feishu"
+  | "wecom";
 export type CredentialSource = "env" | "credentials" | "none";
 
 export type CredentialsStore = {

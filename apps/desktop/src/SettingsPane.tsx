@@ -8,18 +8,30 @@ import {
 } from "./api.ts";
 import { pickWorkspaceFolder } from "./workspacePicker.ts";
 
-const CHANNEL_SLOT_IDS = new Set(["telegram", "discord", "slack", "feishu"]);
+const CHANNEL_SLOT_IDS = new Set(["telegram", "discord", "slack", "feishu", "wecom"]);
 
 type SlotForm = {
   apiKey: string;
   baseUrl: string;
   model: string;
   appId: string;
+  agentId: string;
+  callbackToken: string;
+  encodingAesKey: string;
   allowedChatIds: string;
 };
 
 function emptyForm(): SlotForm {
-  return { apiKey: "", baseUrl: "", model: "", appId: "", allowedChatIds: "" };
+  return {
+    apiKey: "",
+    baseUrl: "",
+    model: "",
+    appId: "",
+    agentId: "",
+    callbackToken: "",
+    encodingAesKey: "",
+    allowedChatIds: "",
+  };
 }
 
 function sourceLabel(source: string): string {
@@ -34,6 +46,9 @@ function slotFormFromSnapshot(slot: CredentialSlotSnapshot): SlotForm {
     baseUrl: slot.baseUrl ?? "",
     model: slot.model ?? "",
     appId: slot.appId ?? "",
+    agentId: slot.agentId ?? "",
+    callbackToken: "",
+    encodingAesKey: "",
     allowedChatIds: slot.allowedChatIds ?? "",
   };
 }
@@ -42,10 +57,12 @@ function channelIdsPlaceholder(slotId: string): string {
   if (slotId === "telegram") return "123456789,-1001234567890";
   if (slotId === "discord") return "123456789012345678";
   if (slotId === "slack") return "C01234567,G01234567";
+  if (slotId === "wecom") return "zhangsan,lisi";
   return "oc_abc123,oc_def456";
 }
 
 function channelIdsLabel(slotId: string): string {
+  if (slotId === "wecom") return "Allowed user IDs";
   if (slotId === "feishu") return "Allowed chat IDs";
   if (slotId === "telegram") return "Allowed chat IDs";
   return "Allowed channel IDs";
@@ -140,6 +157,20 @@ export function SettingsPane({ onSaved }: Props) {
     }
     if (slotId === "feishu" && form.appId.trim().length > 0) {
       body.appId = form.appId.trim();
+    }
+    if (slotId === "wecom") {
+      if (form.appId.trim().length > 0) {
+        body.appId = form.appId.trim();
+      }
+      if (form.agentId.trim().length > 0) {
+        body.agentId = form.agentId.trim();
+      }
+      if (form.callbackToken.trim().length > 0) {
+        body.callbackToken = form.callbackToken.trim();
+      }
+      if (form.encodingAesKey.trim().length > 0) {
+        body.encodingAesKey = form.encodingAesKey.trim();
+      }
     }
     setSaving(slotId);
     setMessage(undefined);
@@ -295,7 +326,12 @@ export function SettingsPane({ onSaved }: Props) {
         <h3 className="settings-section-title">Channels</h3>
         {channelSlots.map((slot) => {
           const form = forms[slot.id] ?? emptyForm();
-          const tokenLabel = slot.id === "feishu" ? "App Secret" : "Bot Token";
+          const tokenLabel =
+            slot.id === "feishu"
+              ? "App Secret"
+              : slot.id === "wecom"
+                ? "Corp Secret"
+                : "Bot Token";
           return (
             <div key={slot.id} className="settings-card">
               <div className="settings-card-head">
@@ -307,10 +343,15 @@ export function SettingsPane({ onSaved }: Props) {
                   <span className="settings-masked-key">{slot.maskedKey}</span>
                 ) : null}
               </div>
-              {slot.id === "feishu" ? (
+              {slot.id === "wecom" && slot.callbackUrl ? (
+                <p className="settings-card-hint">
+                  回调 URL：<code>{slot.callbackUrl}</code>（需公网 HTTPS，可用 ngrok 转发）
+                </p>
+              ) : null}
+              {slot.id === "feishu" || slot.id === "wecom" ? (
                 <div className="settings-form-row">
                   <label>
-                    App ID
+                    {slot.id === "wecom" ? "Corp ID" : "App ID"}
                     <input
                       type="text"
                       value={form.appId}
@@ -319,6 +360,24 @@ export function SettingsPane({ onSaved }: Props) {
                         setForms((prev) => ({
                           ...prev,
                           [slot.id]: { ...form, appId: e.target.value },
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
+              ) : null}
+              {slot.id === "wecom" ? (
+                <div className="settings-form-row">
+                  <label>
+                    Agent ID
+                    <input
+                      type="text"
+                      value={form.agentId}
+                      placeholder={slot.agentId ?? "留空则不修改"}
+                      onChange={(e) =>
+                        setForms((prev) => ({
+                          ...prev,
+                          [slot.id]: { ...form, agentId: e.target.value },
                         }))
                       }
                     />
@@ -341,6 +400,42 @@ export function SettingsPane({ onSaved }: Props) {
                   />
                 </label>
               </div>
+              {slot.id === "wecom" ? (
+                <>
+                  <div className="settings-form-row">
+                    <label>
+                      Callback Token
+                      <input
+                        type="password"
+                        value={form.callbackToken}
+                        placeholder={slot.callbackToken ?? "留空则不修改"}
+                        onChange={(e) =>
+                          setForms((prev) => ({
+                            ...prev,
+                            [slot.id]: { ...form, callbackToken: e.target.value },
+                          }))
+                        }
+                      />
+                    </label>
+                  </div>
+                  <div className="settings-form-row">
+                    <label>
+                      Encoding AES Key（可选，明文模式可留空）
+                      <input
+                        type="password"
+                        value={form.encodingAesKey}
+                        placeholder={slot.encodingAesKey ?? "留空则不修改"}
+                        onChange={(e) =>
+                          setForms((prev) => ({
+                            ...prev,
+                            [slot.id]: { ...form, encodingAesKey: e.target.value },
+                          }))
+                        }
+                      />
+                    </label>
+                  </div>
+                </>
+              ) : null}
               <div className="settings-form-row">
                 <label>
                   {channelIdsLabel(slot.id)}

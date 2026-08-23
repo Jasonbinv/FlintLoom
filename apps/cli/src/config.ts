@@ -8,6 +8,7 @@ const SLOT_IDS = new Set<CredentialSlotId>([
   "discord",
   "slack",
   "feishu",
+  "wecom",
 ]);
 
 const CONFIG_KEYS = new Set([

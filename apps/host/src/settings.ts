@@ -24,6 +24,7 @@ const SLOT_IDS: CredentialSlotId[] = [
   "discord",
   "slack",
   "feishu",
+  "wecom",
 ];
 
 export type CredentialSlotSnapshot = {
@@ -35,7 +36,11 @@ export type CredentialSlotSnapshot = {
   model?: string;
   appId?: string;
   allowedChatIds?: string;
+  agentId?: string;
+  callbackToken?: string;
+  encodingAesKey?: string;
   maskedKey?: string;
+  callbackUrl?: string;
 };
 
 function readWorkspaceDotEnv(workspaceRoot: string): Record<string, string> {
@@ -331,6 +336,74 @@ function feishuSlotSnapshot(
   };
 }
 
+function wecomSlotSnapshot(
+  fileEnv: Record<string, string>,
+  credStore: ReturnType<typeof readCredentialsStore>,
+  port: number,
+): CredentialSlotSnapshot {
+  const credWecom = credStore.channels?.wecom;
+  const corpIdLayer = resolveLayeredString(
+    "FLINTLOOM_WECOM_CORP_ID",
+    fileEnv,
+    credWecom?.corpId,
+  );
+  const secretLayer = resolveLayeredString(
+    "FLINTLOOM_WECOM_CORP_SECRET",
+    fileEnv,
+    credWecom?.corpSecret,
+  );
+  const agentIdLayer = resolveLayeredString(
+    "FLINTLOOM_WECOM_AGENT_ID",
+    fileEnv,
+    credWecom?.agentId,
+  );
+  const callbackTokenLayer = resolveLayeredString(
+    "FLINTLOOM_WECOM_CALLBACK_TOKEN",
+    fileEnv,
+    credWecom?.callbackToken,
+  );
+  const encodingLayer = resolveLayeredString(
+    "FLINTLOOM_WECOM_ENCODING_AES_KEY",
+    fileEnv,
+    credWecom?.encodingAesKey,
+  );
+  const userIdsLayer = resolveLayeredString(
+    "FLINTLOOM_WECOM_USER_IDS",
+    fileEnv,
+    credWecom?.allowedUserIds,
+  );
+  const ids = parseAllowedStringIds(userIdsLayer.value, /^[\w@.-]+$/);
+  const configured =
+    corpIdLayer.value !== undefined &&
+    secretLayer.value !== undefined &&
+    agentIdLayer.value !== undefined &&
+    callbackTokenLayer.value !== undefined &&
+    ids !== undefined;
+  return {
+    id: "wecom",
+    label: "企业微信",
+    configured,
+    source:
+      secretLayer.source !== "none"
+        ? secretLayer.source
+        : corpIdLayer.source !== "none"
+          ? corpIdLayer.source
+          : userIdsLayer.source,
+    appId: corpIdLayer.value,
+    agentId: agentIdLayer.value,
+    allowedChatIds: userIdsLayer.value,
+    maskedKey:
+      secretLayer.value !== undefined ? maskSecret(secretLayer.value) : undefined,
+    callbackToken:
+      callbackTokenLayer.value !== undefined
+        ? maskSecret(callbackTokenLayer.value)
+        : undefined,
+    encodingAesKey:
+      encodingLayer.value !== undefined ? maskSecret(encodingLayer.value) : undefined,
+    callbackUrl: `http://127.0.0.1:${port}/v1/channels/wecom/callback`,
+  };
+}
+
 export function buildCredentialsSnapshot(
   homeDir: string,
   workspaceRoot: string,
@@ -366,6 +439,7 @@ export function buildCredentialsSnapshot(
         "allowedChannelIds",
       ),
       feishuSlotSnapshot(fileEnv, credStore),
+      wecomSlotSnapshot(fileEnv, credStore, port),
     ],
     webhook: {
       url: `http://127.0.0.1:${port}/v1/hooks`,
@@ -487,6 +561,74 @@ export function applyCredentialPatch(
       feishu.allowedChatIds = body.allowedChatIds;
     }
     channels.feishu = feishu;
+    writeCredentialsStore(homeDir, { ...store, hostToken, channels });
+    return;
+  }
+
+  if (slotId === "wecom") {
+    const channels = { ...store.channels };
+    const wecom = { ...(channels.wecom ?? {}) };
+    if ("appId" in body) {
+      if (typeof body.appId !== "string") {
+        throw new Error("appId");
+      }
+      if (body.appId.length === 0) {
+        delete wecom.corpId;
+      } else {
+        wecom.corpId = body.appId;
+      }
+    }
+    if ("apiKey" in body) {
+      if (typeof body.apiKey !== "string") {
+        throw new Error("apiKey");
+      }
+      if (body.apiKey.length === 0) {
+        delete wecom.corpSecret;
+      } else {
+        wecom.corpSecret = body.apiKey;
+      }
+    }
+    if ("agentId" in body) {
+      if (typeof body.agentId !== "string") {
+        throw new Error("agentId");
+      }
+      if (body.agentId.length === 0) {
+        delete wecom.agentId;
+      } else {
+        wecom.agentId = body.agentId;
+      }
+    }
+    if ("callbackToken" in body) {
+      if (typeof body.callbackToken !== "string") {
+        throw new Error("callbackToken");
+      }
+      if (body.callbackToken.length === 0) {
+        delete wecom.callbackToken;
+      } else {
+        wecom.callbackToken = body.callbackToken;
+      }
+    }
+    if ("encodingAesKey" in body) {
+      if (typeof body.encodingAesKey !== "string") {
+        throw new Error("encodingAesKey");
+      }
+      if (body.encodingAesKey.length === 0) {
+        delete wecom.encodingAesKey;
+      } else {
+        wecom.encodingAesKey = body.encodingAesKey;
+      }
+    }
+    if ("allowedChatIds" in body) {
+      if (typeof body.allowedChatIds !== "string") {
+        throw new Error("allowedChatIds");
+      }
+      const ids = parseAllowedStringIds(body.allowedChatIds, /^[\w@.-]+$/);
+      if (ids === undefined) {
+        throw new Error("allowedChatIds");
+      }
+      wecom.allowedUserIds = body.allowedChatIds;
+    }
+    channels.wecom = wecom;
     writeCredentialsStore(homeDir, { ...store, hostToken, channels });
     return;
   }

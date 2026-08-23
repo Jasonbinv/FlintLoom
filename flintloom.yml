@@ -44,5 +44,7 @@ plugins:
     name: "@flintloom/channel-slack"
   - id: channel-feishu
     name: "@flintloom/channel-feishu"
+  - id: channel-wecom
+    name: "@flintloom/channel-wecom"
   - id: channel-acp
     name: "@flintloom/channel-acp"

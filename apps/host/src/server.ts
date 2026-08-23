@@ -12,6 +12,8 @@ import { cancelWaitingTurn, handleTurnActions, sessionHasWaitingTurn } from "./a
 import { handleTurnGuard } from "./guard.ts";
 import { handleSettingsRequest } from "./settings.ts";
 import { handlePluginInstallRequest } from "./plugin-install.ts";
+import { handleWecomCallback } from "@flintloom/channel-wecom";
+import type { WecomConfig } from "@flintloom/channel-wecom";
 import {
   listWorkspaceFiles,
   normalizeRelPath,
@@ -225,6 +227,72 @@ function resolveFeishuOverlay(
   return { appId, appSecret, allowedChatIds };
 }
 
+function resolveWecomOverlay(
+  fileEnv: Record<string, string>,
+  credStore: CredentialsStore,
+): {
+  corpId: string;
+  corpSecret: string;
+  agentId: string;
+  callbackToken: string;
+  encodingAesKey?: string;
+  allowedUserIds: string[];
+} | undefined {
+  const credWecom = credStore.channels?.wecom;
+  const corpId = resolveLayeredString(
+    "FLINTLOOM_WECOM_CORP_ID",
+    fileEnv,
+    credWecom?.corpId,
+  ).value;
+  const corpSecret = resolveLayeredString(
+    "FLINTLOOM_WECOM_CORP_SECRET",
+    fileEnv,
+    credWecom?.corpSecret,
+  ).value;
+  const agentId = resolveLayeredString(
+    "FLINTLOOM_WECOM_AGENT_ID",
+    fileEnv,
+    credWecom?.agentId,
+  ).value;
+  const callbackToken = resolveLayeredString(
+    "FLINTLOOM_WECOM_CALLBACK_TOKEN",
+    fileEnv,
+    credWecom?.callbackToken,
+  ).value;
+  const encodingAesKey = resolveLayeredString(
+    "FLINTLOOM_WECOM_ENCODING_AES_KEY",
+    fileEnv,
+    credWecom?.encodingAesKey,
+  ).value;
+  if (
+    corpId === undefined ||
+    corpSecret === undefined ||
+    agentId === undefined ||
+    callbackToken === undefined
+  ) {
+    return undefined;
+  }
+  const allowedUserIds = parseAllowedStringIds(
+    resolveLayeredString(
+      "FLINTLOOM_WECOM_USER_IDS",
+      fileEnv,
+      credWecom?.allowedUserIds,
+    ).value,
+    /^[\w@.-]+$/,
+  );
+  if (allowedUserIds === undefined) {
+    return undefined;
+  }
+  return {
+    corpId,
+    corpSecret,
+    agentId,
+    callbackToken,
+    ...(encodingAesKey !== undefined ? { encodingAesKey } : {}),
+    allowedUserIds,
+  };
+}
+
 export async function createRuntime(
   workspaceRoot: string,
   homeDir: string,
@@ -362,6 +430,21 @@ export async function createRuntime(
       workspaceRoot,
       poll: true,
       ...(feishu ?? {}),
+    };
+  }
+
+  const wecom = resolveWecomOverlay(fileEnv, credStore);
+  if (wecom !== undefined) {
+    runtimeConfigById["channel-wecom"] = {
+      workspaceRoot,
+      corpId: wecom.corpId,
+      corpSecret: wecom.corpSecret,
+      agentId: wecom.agentId,
+      callbackToken: wecom.callbackToken,
+      ...(wecom.encodingAesKey !== undefined
+        ? { encodingAesKey: wecom.encodingAesKey }
+        : {}),
+      allowedUserIds: wecom.allowedUserIds,
     };
   }
 
@@ -586,6 +669,19 @@ async function handleRequest(
   const runtime = opts.runtimeRef.current;
   const busy = opts.busy;
   const workspaceRoot = opts.workspaceRootRef.current;
+
+  if (
+    await handleWecomCallback(req, res, {
+      pathname,
+      method: req.method ?? "GET",
+      config: runtime.ctx.get<WecomConfig>("wecomConfig"),
+      channels: runtime.ctx.get<ChannelRegistry>("channels"),
+      busy: opts.busy,
+      workspaceRoot,
+    })
+  ) {
+    return;
+  }
 
   if (pathname.startsWith("/v1/") && !isAuthorized(req, opts.token)) {
     send(res, 401);
