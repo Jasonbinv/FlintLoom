@@ -109,6 +109,11 @@
 - Plugins 页：`mcp-servers.yml` 自动合并说明文案
 - Host：`GET /v1/plugins` 列出 `mcp-servers.yml` 合并行
 
+## 33. 本地 llama overlay
+
+- `FLINTLOOM_BASE_URL` 为 `127.0.0.1` / `localhost` / `::1` 时，host 仅 overlay `models-chat`（含 omni）
+- 不 overlay `models-media` / `models-guard`，避免 DashScope 媒体 kind 误显示已配置
+
 ## 非目标
 
 - ACP v2、Streamable HTTP、fs/terminal 客户端能力

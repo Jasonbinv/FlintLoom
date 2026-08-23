@@ -1,16 +1,8 @@
-根据你本机情况：
+# 本地 llama.cpp + FlintLoom
 
-| 项 | 数值 |
-|---|---|
-| GPU | **RTX 3070 Ti，8GB** |
-| 当前空闲显存 | 约 **2.5GB**（桌面/Electron 等也在占 GPU） |
-| 模型 | Qwen2.5-1.5B **Q4_K_M**，约 **1.07GB** |
+FlintLoom 通过 **OpenAI 兼容 HTTP API** 连模型，不能直接把 GGUF 路径写进 `.env`。需先用 `llama-server` 提供 `/v1/chat/completions`。
 
-1.5B + Q4 很小，**权重全放 GPU 没问题**；主要吃显存的是 **KV cache（由 `-c` 决定）**。
-
-## 推荐参数
-
-### 日常用 FlintLoom（推荐）
+## 1. 启动 llama-server
 
 ```powershell
 .\llama-server.exe `
@@ -19,50 +11,55 @@
   --host 127.0.0.1 `
   --port 8080 `
   -ngl 99 `
-  -c 16384 `
+  -c 8192 `
   --chat-template qwen2 `
   -np 1
 ```
 
-| 参数 | 建议 | 说明 |
-|------|------|------|
-| **`-ngl`** | **`99`** | 1.5B 层数不多，99 = 全层 GPU；权重约 1.1GB |
-| **`-c`** | **`8192`** | 8GB 卡上较均衡；Agent 多轮 + 工具结果一般够用 |
-| **`-np`** | **`1`** | 单用户（FlintLoom），少占显存 |
+RTX 3070 Ti（8GB）建议：**`-ngl 99` + `-c 8192` + `-np 1`**。与 Electron 同时开显存紧时改为 `-c 4096`。
 
-粗算显存（全 GPU、单路）：权重 ~1.1GB + KV（8192）~0.2–0.3GB + 开销 ~0.3–0.5GB → 合计约 **1.6–1.8GB**（仅 llama-server 时）。
-
-### 若启动报 OOM / 显存不足
-
-先关 Electron 或其它占 GPU 的程序，再试：
+查模型 id（`FLINTLOOM_CHAT_MODEL` 需与之一致）：
 
 ```powershell
--ngl 99 -c 4096 -np 1
+curl.exe http://127.0.0.1:8080/v1/models
 ```
 
-仍 OOM 再降到 `-c 2048`。
+若返回 `id` 为完整路径，`.env` 里 `FLINTLOOM_CHAT_MODEL` 填该路径；若用了 `--alias`，可填别名。
 
-### 若几乎只跑 llama（关掉占 GPU 的软件）
+## 2. FlintLoom `.env`
 
-可试更长上下文：
+在工作区 `FlintLoom/.env`：
+
+```env
+FLINTLOOM_BASE_URL=http://127.0.0.1:8080/v1
+FLINTLOOM_API_KEY=local
+FLINTLOOM_CHAT_MODEL=G:\llama\models\Qwen2.5-1.5B\qwen2.5-1.5b-instruct-q4_k_m.gguf
+```
+
+或（使用 `--alias` 时）：
+
+```env
+FLINTLOOM_CHAT_MODEL=qwen2.5-1.5b
+```
+
+注释掉云端 `FLINTLOOM_BASE_URL` / `FLINTLOOM_API_KEY`，避免混用。
+
+改完后重启 `pnpm desktop:app`。
+
+## 3. Host 行为（本地 URL）
+
+当 `FLINTLOOM_BASE_URL` 指向 `127.0.0.1` / `localhost` 时，host **只 overlay 文本 chat/omni**，不会 overlay：
+
+- `models-media`（asr / tts / 图片等）
+- `models-guard`（steward）
+
+因此 Models 页媒体 kind 显示「未配置」、顶栏无 guard pill 是预期行为。语音/图片需单独配置 DashScope（与本地 chat 不能共用同一组 `BASE_URL`）。
+
+## 4. 自测
 
 ```powershell
--ngl 99 -c 16384 -np 1
+cd G:\AgentCode\PerAgent\FlintLoom
+pnpm flint "你好"
 ```
 
-## 不建议
-
-- **`-ngl` 不用省**：1.5B 全 GPU 才快；减层只会变慢，几乎省不了多少显存。
-- **`-c` 别一上来 32768**：8GB 上容易 OOM，且 FlintLoom 单轮通常用不到。
-
-## 可选（CUDA 包若支持）
-
-```powershell
---flash-attn
-```
-
-可略减 KV 显存，有则加上；不支持会报错，去掉即可。
-
----
-
-**结论**：你这块 3070 Ti 跑这个 1.5B Q4，**`-ngl 99` + `-c 8192` + `-np 1`** 是合适默认；桌面和 llama 同时开时若不稳，把 **`-c` 改为 `4096`**。改完 `.env` 指向 `http://127.0.0.1:8080/v1` 后记得重启 `pnpm desktop:app`。
+顶栏应显示 **chat 已配置**。

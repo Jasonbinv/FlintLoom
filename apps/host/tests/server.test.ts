@@ -474,6 +474,44 @@ describe("startHost", () => {
     }
   });
 
+  it("local LLM base URL overlays chat only, not media or guard", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-local-llm-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
+    writeAssembly(workspaceRoot);
+    writeFileSync(
+      join(workspaceRoot, ".env"),
+      [
+        "FLINTLOOM_BASE_URL=http://127.0.0.1:8080/v1",
+        "FLINTLOOM_API_KEY=local",
+        "FLINTLOOM_CHAT_MODEL=local-model",
+      ].join("\n"),
+    );
+
+    const previousKey = process.env.FLINTLOOM_API_KEY;
+    const previousUrl = process.env.FLINTLOOM_BASE_URL;
+    delete process.env.FLINTLOOM_API_KEY;
+    delete process.env.FLINTLOOM_BASE_URL;
+    try {
+      const { ctx, stop } = await createRuntime(workspaceRoot, homeDir);
+      const snap = ctx.require<ModelRegistry>("models").snapshot();
+      expect(snap.find((row) => row.kind === "chat")?.configured).toBe(true);
+      expect(snap.find((row) => row.kind === "asr")?.configured).toBe(false);
+      expect(snap.find((row) => row.kind === "guard")?.configured).toBe(false);
+      stop();
+    } finally {
+      if (previousKey === undefined) {
+        delete process.env.FLINTLOOM_API_KEY;
+      } else {
+        process.env.FLINTLOOM_API_KEY = previousKey;
+      }
+      if (previousUrl === undefined) {
+        delete process.env.FLINTLOOM_BASE_URL;
+      } else {
+        process.env.FLINTLOOM_BASE_URL = previousUrl;
+      }
+    }
+  });
+
   it("returns 500 when runTurn throws before SSE headers", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-ws-"));
     const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));

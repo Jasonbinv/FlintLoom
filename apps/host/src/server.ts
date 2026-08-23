@@ -100,6 +100,15 @@ function parseTelegramChatIds(raw: string | undefined): number[] | undefined {
   return ids.length > 0 ? ids : undefined;
 }
 
+function isLocalLlmBaseUrl(baseUrl: string): boolean {
+  try {
+    const host = new URL(baseUrl).hostname;
+    return host === "127.0.0.1" || host === "localhost" || host === "::1";
+  } catch {
+    return false;
+  }
+}
+
 function resolveTelegramOverlay(
   fileEnv: Record<string, string>,
 ): { token: string; allowedChatIds: number[] } | undefined {
@@ -151,22 +160,24 @@ export async function createRuntime(
           fileEnv.FLINTLOOM_CHAT_MODEL,
         ) ?? "deepseek-chat",
     };
-    runtimeConfigById["models-media"] = {
-      apiKey,
-      baseUrl,
-    };
-    runtimeConfigById["models-guard"] = {
-      apiKey,
-      baseUrl,
-      model:
-        firstNonEmpty(
-          process.env.FLINTLOOM_GUARD_MODEL,
-          fileEnv.FLINTLOOM_GUARD_MODEL,
-        ) ?? firstNonEmpty(
-          process.env.FLINTLOOM_CHAT_MODEL,
-          fileEnv.FLINTLOOM_CHAT_MODEL,
-        ) ?? "deepseek-chat",
-    };
+    if (!isLocalLlmBaseUrl(baseUrl)) {
+      runtimeConfigById["models-media"] = {
+        apiKey,
+        baseUrl,
+      };
+      runtimeConfigById["models-guard"] = {
+        apiKey,
+        baseUrl,
+        model:
+          firstNonEmpty(
+            process.env.FLINTLOOM_GUARD_MODEL,
+            fileEnv.FLINTLOOM_GUARD_MODEL,
+          ) ?? firstNonEmpty(
+            process.env.FLINTLOOM_CHAT_MODEL,
+            fileEnv.FLINTLOOM_CHAT_MODEL,
+          ) ?? "deepseek-chat",
+      };
+    }
   }
   runtimeConfigById.knowledge = {
     dbPath: join(homeDir, ".flintloom", "knowledge.sqlite"),
