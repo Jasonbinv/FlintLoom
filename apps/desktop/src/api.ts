@@ -108,6 +108,27 @@ export async function reloadHostSettings(): Promise<void> {
   if (!res.ok) throw new Error("reload failed");
 }
 
+export async function fetchWorkspace(
+  signal?: AbortSignal,
+): Promise<{ workspaceRoot: string }> {
+  const res = await fetch("/v1/settings/workspace", { signal });
+  if (!res.ok) throw new Error("host unreachable");
+  return (await res.json()) as { workspaceRoot: string };
+}
+
+export async function setWorkspace(workspaceRoot: string): Promise<string> {
+  const res = await fetch("/v1/settings/workspace", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ workspaceRoot }),
+  });
+  if (res.status === 409) throw new Error("busy");
+  if (res.status === 400) throw new Error("invalid workspace");
+  if (!res.ok) throw new Error("workspace switch failed");
+  const body = (await res.json()) as { workspaceRoot: string };
+  return body.workspaceRoot;
+}
+
 export async function fetchSession(
   sessionId: string,
 ): Promise<{ events: WorkbenchEvent[] } | undefined> {

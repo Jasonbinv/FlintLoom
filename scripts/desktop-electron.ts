@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
-import { loadOrCreateToken, startHost } from "@flintloom/host";
+import { loadOrCreateToken, resolveWorkspaceRoot, startHost } from "@flintloom/host";
 import { ensureHost } from "../apps/desktop/src/probe.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -27,13 +27,15 @@ async function waitForHttpOk(url: string, timeoutMs = 30_000): Promise<void> {
 }
 
 const token = loadOrCreateToken(homedir());
+const homeDir = homedir();
+const workspaceRoot = resolveWorkspaceRoot(homeDir, process.cwd());
 await ensureHost({
   origin: "http://127.0.0.1:7331",
   token,
   start: async () => {
     await startHost({
-      workspaceRoot: process.cwd(),
-      homeDir: homedir(),
+      workspaceRoot,
+      homeDir,
       port: 7331,
     });
   },

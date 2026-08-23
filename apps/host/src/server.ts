@@ -22,6 +22,7 @@ import { synthesizeSpeech } from "./tts.ts";
 import { parseTurnBody } from "./turn-body.ts";
 import { loadOrCreateToken, readCredentials } from "./token.ts";
 import { readCredentialsStore, type CredentialsStore, resolveLayeredString, isLocalLlmBaseUrl } from "./credentials.ts";
+import { resolveWorkspaceRoot } from "./workspace.ts";
 
 export type PluginSnapshot = {
   id: string;
@@ -444,7 +445,7 @@ async function handleRequest(
   res: ServerResponse,
   opts: {
     token: string;
-    workspaceRoot: string;
+    workspaceRootRef: { current: string };
     homeDir: string;
     port: number;
     runtimeRef: { current: Runtime };
@@ -458,6 +459,7 @@ async function handleRequest(
   const pathname = url.pathname;
   const runtime = opts.runtimeRef.current;
   const busy = opts.busy;
+  const workspaceRoot = opts.workspaceRootRef.current;
 
   if (pathname.startsWith("/v1/") && !isAuthorized(req, opts.token)) {
     send(res, 401);
@@ -469,7 +471,7 @@ async function handleRequest(
       pathname,
       method: req.method ?? "GET",
       homeDir: opts.homeDir,
-      workspaceRoot: opts.workspaceRoot,
+      workspaceRootRef: opts.workspaceRootRef,
       port: opts.port,
       busy: opts.busy,
       reloadRuntime: opts.reloadRuntime,
@@ -482,7 +484,7 @@ async function handleRequest(
     await handleKnowledgeRequest(req, res, {
       pathname,
       url,
-      workspaceRoot: opts.workspaceRoot,
+      workspaceRoot,
       ctx: runtime.ctx,
     })
   ) {
@@ -493,7 +495,7 @@ async function handleRequest(
     await handleTurnGuard(req, res, {
       pathname,
       ctx: runtime.ctx,
-      workspaceRoot: opts.workspaceRoot,
+      workspaceRoot,
       turns: opts.turns,
       busy: opts.busy,
       streamLoopResult: (sseReq, sseRes, session, work, turnId) =>
@@ -516,7 +518,7 @@ async function handleRequest(
     await handleTurnActions(req, res, {
       pathname,
       ctx: runtime.ctx,
-      workspaceRoot: opts.workspaceRoot,
+      workspaceRoot,
       turns: opts.turns,
       busy: opts.busy,
       streamLoopResult: (sseReq, sseRes, session, work, turnId) =>
@@ -621,7 +623,7 @@ async function handleRequest(
       return;
     }
     try {
-      const result = await previewWorkspaceFile(opts.workspaceRoot, rel);
+      const result = await previewWorkspaceFile(workspaceRoot, rel);
       if (result === "not_found") {
         send(res, 404);
         return;
@@ -640,7 +642,7 @@ async function handleRequest(
   if (req.method === "GET" && pathname === "/v1/files") {
     const rel = normalizeRelPath(url.searchParams.get("path")) ?? ".";
     try {
-      const result = await listWorkspaceFiles(opts.workspaceRoot, rel);
+      const result = await listWorkspaceFiles(workspaceRoot, rel);
       if (result === "hidden" || result === "not_found") {
         send(res, 404);
         return;
@@ -716,7 +718,7 @@ async function handleRequest(
           session,
           text: body.text,
           images: body.images,
-          workspaceRoot: opts.workspaceRoot,
+          workspaceRoot,
           channel: "host",
           signal,
           onEvent,
@@ -760,7 +762,7 @@ async function handleRequest(
       const result = await channels.inbound("webhook", {
         text: body.text,
         sessionId: body.sessionId,
-        workspaceRoot: opts.workspaceRoot,
+        workspaceRoot,
         signal: controller.signal,
       });
       req.off("close", onClose);
@@ -789,8 +791,11 @@ export async function startHost(opts: {
   port?: number;
 }): Promise<{ url: string; close: () => Promise<void>; runtime: Runtime }> {
   const token = loadOrCreateToken(opts.homeDir);
+  const workspaceRootRef = {
+    current: resolveWorkspaceRoot(opts.homeDir, opts.workspaceRoot),
+  };
   const runtimeRef = {
-    current: await createRuntime(opts.workspaceRoot, opts.homeDir, {
+    current: await createRuntime(workspaceRootRef.current, opts.homeDir, {
       pollChannels: true,
     }),
   };
@@ -803,7 +808,7 @@ export async function startHost(opts: {
 
   const reloadRuntime = async (): Promise<void> => {
     runtimeRef.current.stop();
-    runtimeRef.current = await createRuntime(opts.workspaceRoot, opts.homeDir, {
+    runtimeRef.current = await createRuntime(workspaceRootRef.current, opts.homeDir, {
       pollChannels: true,
     });
     busyRef.current = runtimeRef.current.ctx.require<Set<string>>("turnBusy");
@@ -812,7 +817,7 @@ export async function startHost(opts: {
   const server = createServer((req, res) => {
     void handleRequest(req, res, {
       token,
-      workspaceRoot: opts.workspaceRoot,
+      workspaceRootRef,
       homeDir: opts.homeDir,
       port: listenPort,
       runtimeRef,
@@ -823,7 +828,7 @@ export async function startHost(opts: {
     }).catch((err: unknown) => {
       if (!res.destroyed && !res.writableEnded && !res.headersSent) {
         res.writeHead(500, { "Content-Type": "text/plain" });
-        res.end(formatHostError(err, opts.homeDir, opts.workspaceRoot));
+        res.end(formatHostError(err, opts.homeDir, workspaceRootRef.current));
         return;
       }
       if (!res.destroyed && !res.writableEnded) {

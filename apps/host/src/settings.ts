@@ -10,6 +10,11 @@ import {
   writeCredentialsStore,
   isLocalLlmBaseUrl,
 } from "./credentials.ts";
+import {
+  normalizeWorkspaceRoot,
+  validateWorkspaceRoot,
+  writePersistedWorkspace,
+} from "./workspace.ts";
 
 const SLOT_IDS: CredentialSlotId[] = ["chat", "media", "guard", "telegram"];
 
@@ -368,16 +373,60 @@ export async function handleSettingsRequest(
     pathname: string;
     method: string;
     homeDir: string;
-    workspaceRoot: string;
+    workspaceRootRef: { current: string };
     port: number;
     busy: Set<string>;
     reloadRuntime: () => Promise<void>;
   },
 ): Promise<boolean> {
   const { pathname, method } = opts;
+  const workspaceRoot = opts.workspaceRootRef.current;
+
+  if (method === "GET" && pathname === "/v1/settings/workspace") {
+    sendJson(res, 200, { workspaceRoot });
+    return true;
+  }
+
+  if (method === "POST" && pathname === "/v1/settings/workspace") {
+    if (opts.busy.size > 0) {
+      send(res, 409, "busy");
+      return true;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(await readBody(req));
+    } catch {
+      send(res, 400);
+      return true;
+    }
+    if (
+      parsed === null ||
+      typeof parsed !== "object" ||
+      Array.isArray(parsed) ||
+      typeof (parsed as { workspaceRoot?: unknown }).workspaceRoot !== "string"
+    ) {
+      send(res, 400);
+      return true;
+    }
+    const nextRoot = (parsed as { workspaceRoot: string }).workspaceRoot.trim();
+    if (!validateWorkspaceRoot(nextRoot)) {
+      send(res, 400, "invalid workspace");
+      return true;
+    }
+    const normalized = normalizeWorkspaceRoot(nextRoot);
+    if (normalized === opts.workspaceRootRef.current) {
+      sendJson(res, 200, { workspaceRoot: normalized, ok: true });
+      return true;
+    }
+    writePersistedWorkspace(opts.homeDir, normalized);
+    opts.workspaceRootRef.current = normalized;
+    await opts.reloadRuntime();
+    sendJson(res, 200, { workspaceRoot: normalized, ok: true });
+    return true;
+  }
 
   if (method === "GET" && pathname === "/v1/settings/credentials") {
-    sendJson(res, 200, buildCredentialsSnapshot(opts.homeDir, opts.workspaceRoot, opts.port));
+    sendJson(res, 200, buildCredentialsSnapshot(opts.homeDir, workspaceRoot, opts.port));
     return true;
   }
 
@@ -422,7 +471,7 @@ export async function handleSettingsRequest(
       return true;
     }
     sendJson(res, 200, {
-      slot: snapshotForSlot(opts.homeDir, opts.workspaceRoot, opts.port, slotId),
+      slot: snapshotForSlot(opts.homeDir, workspaceRoot, opts.port, slotId),
     });
     return true;
   }

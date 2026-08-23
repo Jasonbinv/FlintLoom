@@ -1,6 +1,20 @@
-import { app, BrowserWindow, Menu } from "electron";
+import { app, BrowserWindow, Menu, dialog, ipcMain } from "electron";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
+const rootDir = dirname(fileURLToPath(import.meta.url));
 const desktopUrl = process.env.FLINT_DESKTOP_URL ?? "http://127.0.0.1:5173";
+
+ipcMain.handle("pick-workspace-folder", async () => {
+  const win = BrowserWindow.getFocusedWindow();
+  const result = await dialog.showOpenDialog(win ?? undefined, {
+    properties: ["openDirectory"],
+  });
+  if (result.canceled || result.filePaths.length === 0) {
+    return undefined;
+  }
+  return result.filePaths[0];
+});
 
 async function loadWithRetry(win, url, attempts = 8) {
   for (let i = 0; i < attempts; i++) {
@@ -26,6 +40,7 @@ async function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      preload: join(rootDir, "preload.mjs"),
     },
   });
   win.once("ready-to-show", () => {

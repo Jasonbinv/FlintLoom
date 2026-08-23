@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { A2uiSurface } from "./A2uiSurface.tsx";
-import { cancelTurn, fetchModels, fetchSession, postTurn, postTurnAction, postTurnGuard } from "./api.ts";
+import { cancelTurn, fetchModels, fetchSession, fetchWorkspace, postTurn, postTurnAction, postTurnGuard, setWorkspace } from "./api.ts";
 import { FilePane } from "./FilePane.tsx";
 import { ModelsPane } from "./ModelsPane.tsx";
 import { PluginsPane } from "./PluginsPane.tsx";
@@ -19,6 +19,7 @@ import {
   THEME_LABELS,
   type Theme,
 } from "./theme.ts";
+import { formatWorkspaceLabel, pickWorkspaceFolder } from "./workspacePicker.ts";
 import "./app.css";
 
 const SESSION_KEY = "flintloom.sessionId";
@@ -168,6 +169,10 @@ export function App() {
   const [waitingAction, setWaitingAction] = useState(false);
   const [page, setPage] = useState<Page>("chat");
   const [filePaneCollapsed, setFilePaneCollapsed] = useState(false);
+  const [filePaneKey, setFilePaneKey] = useState(0);
+  const [workspaceRoot, setWorkspaceRoot] = useState<string | undefined>();
+  const [workspaceBusy, setWorkspaceBusy] = useState(false);
+  const [workspaceMessage, setWorkspaceMessage] = useState<string | undefined>();
   const [theme, setTheme] = useState<Theme>(() => loadTheme());
 
   function cycleTheme() {
@@ -200,6 +205,32 @@ export function App() {
     setSending(false);
     turnIdRef.current = undefined;
     setPage("chat");
+  }
+
+  async function chooseWorkspace() {
+    const picked = await pickWorkspaceFolder();
+    if (!picked) return;
+    setWorkspaceBusy(true);
+    setWorkspaceMessage(undefined);
+    try {
+      const next = await setWorkspace(picked);
+      setWorkspaceRoot(next);
+      setFilePaneKey((key) => key + 1);
+      startNewChat();
+      refreshModelStatus();
+      setWorkspaceMessage("工作区已切换");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message === "busy") {
+        setWorkspaceMessage("有对话进行中，请稍后再切换");
+      } else if (message === "invalid workspace") {
+        setWorkspaceMessage("无效工作区：目录需包含 flintloom.yml");
+      } else {
+        setWorkspaceMessage("切换工作区失败");
+      }
+    } finally {
+      setWorkspaceBusy(false);
+    }
   }
 
   function handleEvent(event: WorkbenchEvent) {
@@ -278,6 +309,13 @@ export function App() {
 
   useEffect(() => {
     const ac = new AbortController();
+    void fetchWorkspace(ac.signal)
+      .then((workspace) => {
+        setWorkspaceRoot(workspace.workspaceRoot);
+      })
+      .catch(() => {
+        // host may be down; workspace label stays empty
+      });
     void fetchModels(ac.signal)
       .then((models) => {
         const chat = models.find((m) => m.kind === "chat");
@@ -399,13 +437,29 @@ export function App() {
             <p className="sidebar-brand-sub">Agent Workbench</p>
           </div>
         </div>
-        {page === "chat" ? (
-          <div className="sidebar-actions">
+        <div className="sidebar-actions">
+          <button
+            type="button"
+            className="btn-pick-workspace"
+            disabled={workspaceBusy || hostDown}
+            onClick={() => void chooseWorkspace()}
+          >
+            📁 选择工作区
+          </button>
+          {workspaceRoot ? (
+            <p className="workspace-path" title={workspaceRoot}>
+              {formatWorkspaceLabel(workspaceRoot)}
+            </p>
+          ) : null}
+          {workspaceMessage ? (
+            <p className="workspace-message">{workspaceMessage}</p>
+          ) : null}
+          {page === "chat" ? (
             <button type="button" className="btn-new-chat" onClick={startNewChat}>
               ＋ 新建对话
             </button>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
         <nav className="sidebar-nav" aria-label="Workbench">
           {navItems.map((item) => (
             <button
@@ -647,6 +701,7 @@ export function App() {
           </footer>
         </div>
         <FilePane
+          key={filePaneKey}
           collapsed={filePaneCollapsed}
           onToggleCollapse={() => setFilePaneCollapsed((v) => !v)}
           onInsertPath={(p) => setInput((cur) => insertPath(cur, p))}

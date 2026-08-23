@@ -7,6 +7,7 @@ import { ModelRegistry } from "@flintloom/models";
 import { Session } from "@flintloom/session";
 import { ToolRegistry } from "@flintloom/tools";
 import { createRuntime, loadOrCreateToken, startHost } from "../src/index.ts";
+import { readPersistedWorkspace } from "../src/workspace.ts";
 import { ASSEMBLY, writeAssembly } from "./assembly.ts";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
@@ -615,6 +616,47 @@ describe("startHost", () => {
         process.env.FLINTLOOM_MEDIA_BASE_URL = prev.mediaUrl;
       }
     }
+  });
+
+  it("POST /v1/settings/workspace switches workspace and persists", async () => {
+    const workspaceA = mkdtempSync(join(tmpdir(), "flintloom-host-ws-a-"));
+    const workspaceB = mkdtempSync(join(tmpdir(), "flintloom-host-ws-b-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-ws-home-"));
+    writeAssembly(workspaceA);
+    writeAssembly(workspaceB);
+    const host = await startHost({ workspaceRoot: workspaceA, homeDir, port: 0 });
+    const store = JSON.parse(
+      readFileSync(join(homeDir, ".flintloom", "credentials"), "utf8"),
+    ) as { hostToken: string };
+    const headers = { Authorization: `Bearer ${store.hostToken}` };
+
+    const getRes = await fetch(`${host.url}/v1/settings/workspace`, { headers });
+    expect(getRes.status).toBe(200);
+    expect(((await getRes.json()) as { workspaceRoot: string }).workspaceRoot).toBe(
+      workspaceA,
+    );
+
+    const postRes = await fetch(`${host.url}/v1/settings/workspace`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ workspaceRoot: workspaceB }),
+    });
+    expect(postRes.status).toBe(200);
+    expect(((await postRes.json()) as { workspaceRoot: string }).workspaceRoot).toBe(
+      workspaceB,
+    );
+
+    const getAfter = await fetch(`${host.url}/v1/settings/workspace`, { headers });
+    expect(((await getAfter.json()) as { workspaceRoot: string }).workspaceRoot).toBe(
+      workspaceB,
+    );
+    expect(readPersistedWorkspace(homeDir)).toBe(workspaceB);
+
+    const filesRes = await fetch(`${host.url}/v1/files?path=.`, { headers });
+    const filesBody = (await filesRes.json()) as { entries: { name: string }[] };
+    expect(filesBody.entries.some((e) => e.name === "flintloom.yml")).toBe(true);
+
+    await host.close();
   });
 
   it("GET /v1/settings/credentials returns masked slots", async () => {

@@ -184,6 +184,18 @@ function installFetch(opts: {
         })
       );
     }
+    if (url.includes("/v1/settings/workspace")) {
+      if (init?.method === "POST") {
+        return new Response(
+          JSON.stringify({ workspaceRoot: "C:/workspace/new", ok: true }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(
+        JSON.stringify({ workspaceRoot: "C:/workspace/current" }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
     if (url.includes("/v1/settings/credentials/") && init?.method === "PUT") {
       if (opts.settingsPut instanceof Error) throw opts.settingsPut;
       return (
