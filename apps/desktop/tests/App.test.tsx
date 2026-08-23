@@ -1556,6 +1556,37 @@ describe("App", () => {
     ).toBe(false);
   });
 
+  it("shows voice button when asr is configured", async () => {
+    installFetch({
+      models: new Response(
+        JSON.stringify([
+          { kind: "chat", configured: true, defaultId: "default" },
+          { kind: "asr", configured: true, defaultId: "default" },
+        ]),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    await waitForText("语音");
+    expect(
+      Array.from(document.querySelectorAll("button")).some((btn) => btn.textContent === "语音"),
+    ).toBe(true);
+  });
+
+  it("hides voice button when asr is not configured", async () => {
+    installFetch({
+      models: new Response(
+        JSON.stringify([{ kind: "chat", configured: true, defaultId: "default" }]),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    await waitForText("chat 已配置");
+    expect(
+      Array.from(document.querySelectorAll("button")).some((btn) => btn.textContent === "语音"),
+    ).toBe(false);
+  });
+
   it("shows embedding and rerank pills on Models page", async () => {
     installFetch({
       models: new Response(

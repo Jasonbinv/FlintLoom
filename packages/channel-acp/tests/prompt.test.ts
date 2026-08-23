@@ -59,4 +59,40 @@ describe("ACP prompt", () => {
     );
     expect(content).toEqual({ text: "spoken" });
   });
+
+  it("reports embeddedContext when omni is configured", () => {
+    const ctx = new Context();
+    ctx.plugin(modelsPlugin);
+    const models = ctx.require<ModelRegistry>("models");
+    models.registerOmni("o", {
+      stream: async function* () {
+        yield { type: "text", text: "ok" };
+      },
+    });
+    models.setDefault("omni", "o");
+    expect(promptCapabilities(ctx).embeddedContext).toBe(true);
+  });
+
+  it("merges embedded_context blocks into prompt text", async () => {
+    const ctx = new Context();
+    ctx.plugin(modelsPlugin);
+    const models = ctx.require<ModelRegistry>("models");
+    models.registerOmni("o", {
+      stream: async function* () {
+        yield { type: "text", text: "ok" };
+      },
+    });
+    models.setDefault("omni", "o");
+    const content = await promptContent(
+      ctx,
+      [
+        { type: "text", text: "question" },
+        { type: "embedded_context", text: "file context here" },
+      ],
+      new AbortController().signal,
+    );
+    expect(content).toEqual({
+      text: "question\nfile context here",
+    });
+  });
 });
