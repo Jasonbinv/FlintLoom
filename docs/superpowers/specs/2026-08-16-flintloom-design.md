@@ -318,5 +318,6 @@ v1 内置通道：desktop、cli、webhook、telegram。ACP 作为同一接口上
 32. Models 媒体 kind 摘要 + Plugins MCP 说明（同上 §32）— asr/tts/omni 等 pill；`mcp-servers.yml` 文案；`/v1/plugins` 含 MCP 行测试。
 33. 本地 llama overlay（同上 §33）— `127.0.0.1` / `localhost` 的 `BASE_URL` 仅 overlay `models-chat`，不挂媒体与 guard。
 34. 媒体 / guard 独立 env（同上 §34）— `FLINTLOOM_MEDIA_*` / `FLINTLOOM_GUARD_*` 可与本地 chat 并存。
+35. 桌面凭据与通道设置（见 [凭据与通道设计](2026-08-23-flintloom-desktop-credentials-channels-design.md)）— `~/.flintloom/credentials` per-slot API、Settings 页、reload runtime；本地 guard 指引；Telegram 可配。
 
 第 2–7 刀在同一份总 spec 上继续拆计划。新 Loom 包必须带 `apply`，禁止再往 `createRuntime` 里堆 `register`。

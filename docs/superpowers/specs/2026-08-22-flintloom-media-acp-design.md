@@ -120,6 +120,12 @@
 - `FLINTLOOM_GUARD_API_KEY` + 可选 `FLINTLOOM_GUARD_BASE_URL` + `FLINTLOOM_GUARD_MODEL` → overlay `models-guard`
 - 与 slice 33 组合：本地 chat + 云端媒体 / guard 可并存
 
+## 35. 桌面凭据与通道设置
+
+- 见 [凭据与通道设计](2026-08-23-flintloom-desktop-credentials-channels-design.md)
+- `GET/PUT /v1/settings/credentials`、 `POST /v1/settings/reload`
+- Settings 页配置 chat / media / guard / telegram；Models 页仍只读
+
 ## 非目标
 
 - ACP v2、Streamable HTTP、fs/terminal 客户端能力
