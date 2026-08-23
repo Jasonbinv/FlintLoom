@@ -512,6 +512,62 @@ describe("startHost", () => {
     }
   });
 
+  it("local chat with FLINTLOOM_MEDIA_API_KEY overlays media from DashScope", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-hybrid-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
+    writeAssembly(workspaceRoot);
+    writeFileSync(
+      join(workspaceRoot, ".env"),
+      [
+        "FLINTLOOM_BASE_URL=http://127.0.0.1:8080/v1",
+        "FLINTLOOM_API_KEY=local",
+        "FLINTLOOM_CHAT_MODEL=local-model",
+        "FLINTLOOM_MEDIA_API_KEY=sk-cloud",
+        "FLINTLOOM_MEDIA_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1",
+      ].join("\n"),
+    );
+
+    const prev = {
+      key: process.env.FLINTLOOM_API_KEY,
+      url: process.env.FLINTLOOM_BASE_URL,
+      mediaKey: process.env.FLINTLOOM_MEDIA_API_KEY,
+      mediaUrl: process.env.FLINTLOOM_MEDIA_BASE_URL,
+    };
+    delete process.env.FLINTLOOM_API_KEY;
+    delete process.env.FLINTLOOM_BASE_URL;
+    delete process.env.FLINTLOOM_MEDIA_API_KEY;
+    delete process.env.FLINTLOOM_MEDIA_BASE_URL;
+    try {
+      const { ctx, stop } = await createRuntime(workspaceRoot, homeDir);
+      const snap = ctx.require<ModelRegistry>("models").snapshot();
+      expect(snap.find((row) => row.kind === "chat")?.configured).toBe(true);
+      expect(snap.find((row) => row.kind === "asr")?.configured).toBe(true);
+      expect(snap.find((row) => row.kind === "guard")?.configured).toBe(false);
+      stop();
+    } finally {
+      if (prev.key === undefined) {
+        delete process.env.FLINTLOOM_API_KEY;
+      } else {
+        process.env.FLINTLOOM_API_KEY = prev.key;
+      }
+      if (prev.url === undefined) {
+        delete process.env.FLINTLOOM_BASE_URL;
+      } else {
+        process.env.FLINTLOOM_BASE_URL = prev.url;
+      }
+      if (prev.mediaKey === undefined) {
+        delete process.env.FLINTLOOM_MEDIA_API_KEY;
+      } else {
+        process.env.FLINTLOOM_MEDIA_API_KEY = prev.mediaKey;
+      }
+      if (prev.mediaUrl === undefined) {
+        delete process.env.FLINTLOOM_MEDIA_BASE_URL;
+      } else {
+        process.env.FLINTLOOM_MEDIA_BASE_URL = prev.mediaUrl;
+      }
+    }
+  });
+
   it("returns 500 when runTurn throws before SSE headers", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-ws-"));
     const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));

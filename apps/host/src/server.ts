@@ -81,6 +81,21 @@ function resolveChatApiKey(
   );
 }
 
+function resolveEnvApiKey(
+  envName: string,
+  fileEnv: Record<string, string>,
+): string | undefined {
+  return firstNonEmpty(process.env[envName], fileEnv[envName]);
+}
+
+function resolveEnvBaseUrl(
+  envName: string,
+  fileEnv: Record<string, string>,
+  fallback: string,
+): string {
+  return firstNonEmpty(process.env[envName], fileEnv[envName]) ?? fallback;
+}
+
 function parseTelegramChatIds(raw: string | undefined): number[] | undefined {
   if (raw === undefined || raw.length === 0) {
     return undefined;
@@ -147,37 +162,67 @@ export async function createRuntime(
   );
   const apiKey = resolveChatApiKey(homeDir, fileEnv);
   const runtimeConfigById: Record<string, Record<string, unknown>> = {};
+  const chatBaseUrl =
+    firstNonEmpty(process.env.FLINTLOOM_BASE_URL, fileEnv.FLINTLOOM_BASE_URL) ??
+    "https://api.deepseek.com/v1";
+  const chatUsesLocalLlm = isLocalLlmBaseUrl(chatBaseUrl);
+
   if (apiKey !== undefined) {
-    const baseUrl =
-      firstNonEmpty(process.env.FLINTLOOM_BASE_URL, fileEnv.FLINTLOOM_BASE_URL) ??
-      "https://api.deepseek.com/v1";
     runtimeConfigById["models-chat"] = {
       apiKey,
-      baseUrl,
+      baseUrl: chatBaseUrl,
       model:
         firstNonEmpty(
           process.env.FLINTLOOM_CHAT_MODEL,
           fileEnv.FLINTLOOM_CHAT_MODEL,
         ) ?? "deepseek-chat",
     };
-    if (!isLocalLlmBaseUrl(baseUrl)) {
-      runtimeConfigById["models-media"] = {
-        apiKey,
-        baseUrl,
-      };
-      runtimeConfigById["models-guard"] = {
-        apiKey,
-        baseUrl,
-        model:
-          firstNonEmpty(
-            process.env.FLINTLOOM_GUARD_MODEL,
-            fileEnv.FLINTLOOM_GUARD_MODEL,
-          ) ?? firstNonEmpty(
-            process.env.FLINTLOOM_CHAT_MODEL,
-            fileEnv.FLINTLOOM_CHAT_MODEL,
-          ) ?? "deepseek-chat",
-      };
-    }
+  }
+
+  const mediaApiKey =
+    resolveEnvApiKey("FLINTLOOM_MEDIA_API_KEY", fileEnv) ??
+    (apiKey !== undefined && !chatUsesLocalLlm ? apiKey : undefined);
+  if (mediaApiKey !== undefined) {
+    const explicitMediaKey = resolveEnvApiKey("FLINTLOOM_MEDIA_API_KEY", fileEnv);
+    const mediaBaseUrl =
+      explicitMediaKey !== undefined
+        ? resolveEnvBaseUrl(
+            "FLINTLOOM_MEDIA_BASE_URL",
+            fileEnv,
+            "https://dashscope.aliyuncs.com/compatible-mode/v1",
+          )
+        : chatBaseUrl;
+    runtimeConfigById["models-media"] = {
+      apiKey: mediaApiKey,
+      baseUrl: mediaBaseUrl,
+    };
+  }
+
+  const guardApiKey =
+    resolveEnvApiKey("FLINTLOOM_GUARD_API_KEY", fileEnv) ??
+    (apiKey !== undefined && !chatUsesLocalLlm ? apiKey : undefined);
+  if (guardApiKey !== undefined) {
+    const explicitGuardKey = resolveEnvApiKey("FLINTLOOM_GUARD_API_KEY", fileEnv);
+    const guardBaseUrl =
+      explicitGuardKey !== undefined
+        ? resolveEnvBaseUrl(
+            "FLINTLOOM_GUARD_BASE_URL",
+            fileEnv,
+            "https://api.deepseek.com/v1",
+          )
+        : chatBaseUrl;
+    runtimeConfigById["models-guard"] = {
+      apiKey: guardApiKey,
+      baseUrl: guardBaseUrl,
+      model:
+        firstNonEmpty(
+          process.env.FLINTLOOM_GUARD_MODEL,
+          fileEnv.FLINTLOOM_GUARD_MODEL,
+        ) ?? firstNonEmpty(
+          process.env.FLINTLOOM_CHAT_MODEL,
+          fileEnv.FLINTLOOM_CHAT_MODEL,
+        ) ?? "deepseek-chat",
+    };
   }
   runtimeConfigById.knowledge = {
     dbPath: join(homeDir, ".flintloom", "knowledge.sqlite"),

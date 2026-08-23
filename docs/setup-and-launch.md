@@ -84,7 +84,7 @@ FLINTLOOM_CHAT_MODEL=qwen3.7-plus
 
 DeepSeek 等其它厂商可参考 `.env.example` 中的注释切换 `BASE_URL` 与 `CHAT_MODEL`。
 
-本地 **llama-server**（`http://127.0.0.1:8080/v1`）仅 overlay 文本 chat；媒体 kind 与 guard 不会随本地 URL 显示「已配置」。详见 [本地llama部署模型.md](./本地llama部署模型.md)。
+本地 **llama-server**（`http://127.0.0.1:8080/v1`）仅 overlay 文本 chat；媒体 kind 与 guard 不会随本地 URL 显示「已配置」。可用 `FLINTLOOM_MEDIA_*` / `FLINTLOOM_GUARD_*` 单独挂云端能力。详见 [本地llama部署模型.md](./本地llama部署模型.md)。
 
 ---
 

@@ -53,7 +53,20 @@ FLINTLOOM_CHAT_MODEL=qwen2.5-1.5b
 - `models-media`（asr / tts / 图片等）
 - `models-guard`（steward）
 
-因此 Models 页媒体 kind 显示「未配置」、顶栏无 guard pill 是预期行为。语音/图片需单独配置 DashScope（与本地 chat 不能共用同一组 `BASE_URL`）。
+因此 Models 页媒体 kind 显示「未配置」、顶栏无 guard pill 是预期行为。若需语音/图片，可额外配置：
+
+```env
+FLINTLOOM_MEDIA_API_KEY=sk-你的DashScope密钥
+FLINTLOOM_MEDIA_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+```
+
+可选 guard（与本地 chat 分开）：
+
+```env
+FLINTLOOM_GUARD_API_KEY=sk-xxx
+FLINTLOOM_GUARD_BASE_URL=https://api.deepseek.com/v1
+FLINTLOOM_GUARD_MODEL=deepseek-chat
+```
 
 ## 4. 自测
 

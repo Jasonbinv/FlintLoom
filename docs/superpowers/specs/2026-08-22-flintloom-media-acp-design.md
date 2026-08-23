@@ -114,6 +114,12 @@
 - `FLINTLOOM_BASE_URL` 为 `127.0.0.1` / `localhost` / `::1` 时，host 仅 overlay `models-chat`（含 omni）
 - 不 overlay `models-media` / `models-guard`，避免 DashScope 媒体 kind 误显示已配置
 
+## 34. 媒体 / guard 独立 env
+
+- `FLINTLOOM_MEDIA_API_KEY` + 可选 `FLINTLOOM_MEDIA_BASE_URL` → overlay `models-media`（未写 `BASE_URL` 时默认 DashScope compatible）
+- `FLINTLOOM_GUARD_API_KEY` + 可选 `FLINTLOOM_GUARD_BASE_URL` + `FLINTLOOM_GUARD_MODEL` → overlay `models-guard`
+- 与 slice 33 组合：本地 chat + 云端媒体 / guard 可并存
+
 ## 非目标
 
 - ACP v2、Streamable HTTP、fs/terminal 客户端能力
