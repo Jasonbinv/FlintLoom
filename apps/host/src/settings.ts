@@ -15,6 +15,7 @@ import {
   validateWorkspaceRoot,
   writePersistedWorkspace,
 } from "./workspace.ts";
+import { isPickFolderSupported, pickFolderNative } from "./pick-folder.ts";
 
 const SLOT_IDS: CredentialSlotId[] = [
   "chat",
@@ -710,6 +711,39 @@ export async function handleSettingsRequest(
 
   if (method === "GET" && pathname === "/v1/settings/workspace") {
     sendJson(res, 200, { workspaceRoot });
+    return true;
+  }
+
+  if (method === "POST" && pathname === "/v1/settings/workspace/pick") {
+    if (!isPickFolderSupported()) {
+      send(res, 501, "unsupported");
+      return true;
+    }
+    let parsed: unknown = {};
+    try {
+      const text = await readBody(req);
+      if (text.trim().length > 0) {
+        parsed = JSON.parse(text);
+      }
+    } catch {
+      send(res, 400);
+      return true;
+    }
+    const initialPath =
+      parsed !== null &&
+      typeof parsed === "object" &&
+      !Array.isArray(parsed) &&
+      typeof (parsed as { initialPath?: unknown }).initialPath === "string"
+        ? (parsed as { initialPath: string }).initialPath.trim()
+        : workspaceRoot;
+    const result = pickFolderNative(
+      initialPath.length > 0 ? initialPath : undefined,
+    );
+    if (result.status === "canceled") {
+      sendJson(res, 200, { canceled: true });
+      return true;
+    }
+    sendJson(res, 200, { canceled: false, path: result.path });
     return true;
   }
 

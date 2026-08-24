@@ -8,8 +8,15 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "flint": "tsx apps/cli/src/bin.ts",
     "desktop": "tsx scripts/desktop-dev.ts",
+    "desktop:stop": "tsx scripts/kill-services.ts desktop",
+    "desktop:restart": "tsx scripts/restart.ts desktop",
     "desktop:app": "tsx scripts/desktop-electron.ts",
-    "wechat-bridge": "tsx apps/wechat-bridge/src/bin.ts"
+    "desktop:app:stop": "tsx scripts/kill-services.ts desktop",
+    "desktop:app:restart": "tsx scripts/restart.ts desktop:app",
+    "wechat-bridge": "tsx apps/wechat-bridge/src/bin.ts",
+    "wechat-bridge:stop": "tsx scripts/kill-services.ts wechat-bridge",
+    "wechat-bridge:restart": "tsx scripts/restart.ts wechat-bridge",
+    "services:stop": "tsx scripts/kill-services.ts all"
   },
   "engines": {
     "node": ">=22"

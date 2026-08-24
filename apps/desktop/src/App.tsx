@@ -32,7 +32,12 @@ import {
   loadRecentWorkspaces,
   type RecentWorkspace,
 } from "./workspaceRecent.ts";
-import { formatWorkspaceLabel, pickWorkspaceFolder } from "./workspacePicker.ts";
+import { WorkspacePathDialog } from "./WorkspacePathDialog.tsx";
+import {
+  formatWorkspaceLabel,
+  pickWorkspaceFolder,
+  registerWorkspacePathDialog,
+} from "./workspacePicker.ts";
 import "./app.css";
 
 const SESSION_KEY = "flintloom.sessionId";
@@ -191,6 +196,10 @@ export function App() {
   const [recentWorkspaces, setRecentWorkspaces] = useState<RecentWorkspace[]>(() =>
     loadRecentWorkspaces(),
   );
+  const [workspaceDialog, setWorkspaceDialog] = useState<{
+    resolve: (path: string | undefined) => void;
+    initialPath?: string;
+  } | null>(null);
   const [theme, setTheme] = useState<Theme>(() => loadTheme());
   const [sessions, setSessions] = useState<SessionEntry[]>(() => loadSessions());
 
@@ -313,9 +322,14 @@ export function App() {
   }
 
   async function chooseWorkspace() {
-    const picked = await pickWorkspaceFolder();
+    const picked = await pickWorkspaceFolder(workspaceRoot);
     if (!picked) return;
     await switchWorkspace(picked);
+  }
+
+  function closeWorkspaceDialog(path?: string) {
+    workspaceDialog?.resolve(path);
+    setWorkspaceDialog(null);
   }
 
   function handleEvent(event: WorkbenchEvent) {
@@ -391,6 +405,14 @@ export function App() {
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
+
+  useEffect(() => {
+    return registerWorkspacePathDialog(({ initialPath }) => {
+      return new Promise((resolve) => {
+        setWorkspaceDialog({ resolve, initialPath });
+      });
+    });
+  }, []);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -892,6 +914,14 @@ export function App() {
         </main>
       )}
       </div>
+      {workspaceDialog ? (
+        <WorkspacePathDialog
+          initialPath={workspaceDialog.initialPath ?? workspaceRoot ?? ""}
+          recentPaths={recentWorkspaces.map((item) => item.path)}
+          onConfirm={(path) => closeWorkspaceDialog(path)}
+          onCancel={() => closeWorkspaceDialog(undefined)}
+        />
+      ) : null}
     </div>
   );
 }

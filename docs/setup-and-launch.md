@@ -374,7 +374,22 @@ Vite 使用 `strictPort: true`，5173 被占用时会直接失败。
 
 已有 `pnpm desktop` 或 `desktop:app` 在运行，或僵尸 node 占端口。
 
-PowerShell 示例（关闭占 5173 / 7331 的 node）：
+详见 **[服务重启指南](./服务重启指南.md)**。
+
+**推荐**：用内置重启命令（会先结束占端口的进程再启动）：
+
+```powershell
+pnpm desktop:restart        # 浏览器模式
+pnpm desktop:app:restart    # Electron 桌面
+pnpm wechat-bridge:restart  # 微信桥接
+pnpm services:stop          # 仅停止全部（5173 / 7331 / 7340）
+```
+
+在含 `flintloom.yml` 的目录下执行 `*:restart` 时，会自动把该目录设为工作区（可通过环境变量 `FLINT_WORKSPACE_ROOT` 覆盖）。
+
+若 Host 启动报 `Error: @flintloom/...`，检查当前工作区的 `flintloom.yml` 中插件 `name` 是否正确（例如 infographic 应为 `@flintloom/infographic/plugin`）。
+
+手动结束进程（PowerShell）：
 
 ```powershell
 Get-NetTCPConnection -LocalPort 5173,7331 -ErrorAction SilentlyContinue |

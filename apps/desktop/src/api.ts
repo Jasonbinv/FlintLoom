@@ -156,6 +156,42 @@ export async function setWorkspace(workspaceRoot: string): Promise<string> {
   return body.workspaceRoot;
 }
 
+export type PickWorkspaceResult =
+  | { status: "picked"; path: string }
+  | { status: "canceled" }
+  | { status: "unsupported" };
+
+/** Open a native folder picker via the local Host (Windows / macOS / Linux). */
+export async function pickWorkspaceFromHost(
+  initialPath?: string,
+  signal?: AbortSignal,
+): Promise<PickWorkspaceResult> {
+  const res = await fetch("/v1/settings/workspace/pick", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(
+      initialPath !== undefined && initialPath.trim().length > 0
+        ? { initialPath }
+        : {},
+    ),
+    signal,
+  });
+  if (res.status === 501) {
+    return { status: "unsupported" };
+  }
+  if (!res.ok) {
+    return { status: "unsupported" };
+  }
+  const body = (await res.json()) as { canceled?: boolean; path?: string };
+  if (body.canceled) {
+    return { status: "canceled" };
+  }
+  if (typeof body.path === "string" && body.path.trim().length > 0) {
+    return { status: "picked", path: body.path.trim() };
+  }
+  return { status: "canceled" };
+}
+
 export async function fetchSession(
   sessionId: string,
 ): Promise<{ events: WorkbenchEvent[] } | undefined> {
