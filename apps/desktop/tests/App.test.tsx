@@ -1874,6 +1874,68 @@ describe("App", () => {
     ).toBe(false);
   });
 
+  it("renders a2ui DataTable and Chart from updateDataModel bindings", async () => {
+    const messages = [
+      {
+        version: "v0.9" as const,
+        createSurface: { surfaceId: "main", catalogId: "flintloom:a2ui:core" },
+      },
+      {
+        version: "v0.9" as const,
+        updateComponents: {
+          surfaceId: "main",
+          components: [
+            { id: "root", component: "Column", children: ["tbl", "chart"] },
+            { id: "tbl", component: "DataTable", data: { path: "/tbl" } },
+            { id: "chart", component: "Chart", kind: "line", data: { path: "/chart" } },
+          ],
+        },
+      },
+      {
+        version: "v0.9" as const,
+        updateDataModel: {
+          surfaceId: "main",
+          path: "/tbl",
+          value: { headers: ["sku", "qty"], rows: [["widget", "9"]] },
+        },
+      },
+      {
+        version: "v0.9" as const,
+        updateDataModel: {
+          surfaceId: "main",
+          path: "/chart",
+          value: { labels: ["Jan", "Feb"], values: [1, 3] },
+        },
+      },
+    ];
+    const sse =
+      `data: {"type":"turn/start","turnId":"t-bind"}\n\n` +
+      `data: ${JSON.stringify({
+        type: "a2ui/surface",
+        turnId: "t-bind",
+        surfaceId: "main",
+        wait: false,
+        messages,
+      })}\n\n` +
+      `data: {"type":"assistant/message","text":"bound"}\n\n` +
+      `data: {"type":"end","status":"ok"}\n\n`;
+    installFetch({
+      turn: new Response(sse, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    });
+    await mountApp();
+    await typeAndSend("show bound data");
+    await waitForText("widget");
+    expect(document.querySelector(".a2ui-table")).toBeTruthy();
+    expect(document.body.textContent).toContain("sku");
+    const chartSvgEl = document.querySelector(".a2ui-chart-svg");
+    expect(chartSvgEl).toBeTruthy();
+    expect(chartSvgEl?.innerHTML).toContain("polyline");
+    expect(document.body.textContent).toContain("Jan");
+  });
+
   it("renders a2ui Infographic from inline document", async () => {
     const messages = [
       {

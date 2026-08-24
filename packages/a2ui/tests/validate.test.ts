@@ -306,6 +306,101 @@ describe("createA2uiService", () => {
     ).toThrow(/bad chart/);
   });
 
+  it("rejects DataTable and Chart boundary violations", () => {
+    const svc = createA2uiService();
+    const base = [
+      { version: "v0.9" as const, createSurface: { surfaceId: "s", catalogId: "flintloom:a2ui:core" } },
+    ];
+    const tableComponents = (tbl: Record<string, unknown>) => [
+      ...base,
+      {
+        version: "v0.9" as const,
+        updateComponents: {
+          surfaceId: "s",
+          components: [{ id: "root", component: "DataTable", ...tbl }],
+        },
+      },
+    ];
+
+    expect(() =>
+      svc.validateEmit(
+        tableComponents({ headers: Array.from({ length: 21 }, (_, i) => `c${i}`), rows: [] }),
+      ),
+    ).toThrow(/bad table/);
+    expect(() =>
+      svc.validateEmit(
+        tableComponents({
+          headers: ["a"],
+          rows: Array.from({ length: 101 }, () => ["x"]),
+        }),
+      ),
+    ).toThrow(/bad table/);
+    expect(() =>
+      svc.validateEmit(tableComponents({ headers: ["a", "b"], rows: [["only-one"]] })),
+    ).toThrow(/bad table/);
+    expect(() =>
+      svc.validateEmit(
+        tableComponents({ headers: ["a"], rows: [["x".repeat(2001)]] }),
+      ),
+    ).toThrow(/bad table/);
+
+    const chartComponents = (chart: Record<string, unknown>) => [
+      ...base,
+      {
+        version: "v0.9" as const,
+        updateComponents: {
+          surfaceId: "s",
+          components: [{ id: "root", component: "Chart", ...chart }],
+        },
+      },
+    ];
+
+    expect(() =>
+      svc.validateEmit(
+        chartComponents({
+          labels: Array.from({ length: 25 }, (_, i) => `L${i}`),
+          values: Array.from({ length: 25 }, () => 1),
+        }),
+      ),
+    ).toThrow(/bad chart/);
+    expect(() =>
+      svc.validateEmit(chartComponents({ labels: ["A", "B"], values: [1] })),
+    ).toThrow(/bad chart/);
+    expect(() =>
+      svc.validateEmit(chartComponents({ labels: ["A"], values: [Number.NaN] })),
+    ).toThrow(/bad chart/);
+    expect(() =>
+      svc.validateEmit(chartComponents({ kind: "pie", labels: ["A"], values: [1] })),
+    ).toThrow(/bad chart/);
+  });
+
+  it("accepts DataTable and Chart data path bindings without inline rows", () => {
+    const svc = createA2uiService();
+    const tableSnap = svc.validateEmit([
+      { version: "v0.9", createSurface: { surfaceId: "s", catalogId: "flintloom:a2ui:core" } },
+      {
+        version: "v0.9",
+        updateComponents: {
+          surfaceId: "s",
+          components: [{ id: "root", component: "DataTable", data: { path: "/tbl" } }],
+        },
+      },
+    ]);
+    expect(tableSnap.wait).toBe(false);
+
+    const chartSnap = svc.validateEmit([
+      { version: "v0.9", createSurface: { surfaceId: "c", catalogId: "flintloom:a2ui:core" } },
+      {
+        version: "v0.9",
+        updateComponents: {
+          surfaceId: "c",
+          components: [{ id: "root", component: "Chart", kind: "line", data: { path: "/chart" } }],
+        },
+      },
+    ]);
+    expect(chartSnap.wait).toBe(false);
+  });
+
   it("accepts Infographic with inline document or file path without wait", () => {
     const svc = createA2uiService();
     const docSnap = svc.validateEmit([
