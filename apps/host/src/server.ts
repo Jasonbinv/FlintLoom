@@ -18,7 +18,18 @@ import {
   listWorkspaceFiles,
   normalizeRelPath,
   previewWorkspaceFile,
+  readWorkspaceFileBytes,
+  readWorkspaceFileMarkdown,
+  writeWorkspaceFileBytes,
+  writeWorkspaceFileFromMarkdown,
+  FILE_RAW_MAX_BYTES,
 } from "./files.ts";
+import {
+  buildSafeHtmlWrapperHtml,
+  createSafeHtmlPreviewToken,
+  readSafeHtmlBytes,
+  resolveSafeHtmlToken,
+} from "./safeHtmlPreview.ts";
 import { handleKnowledgeRequest } from "./knowledge.ts";
 import { ASR_MAX_BYTES, readBodyBytes, transcribeAudio } from "./asr.ts";
 import { synthesizeSpeech } from "./tts.ts";
@@ -683,8 +694,96 @@ async function handleRequest(
     return;
   }
 
+  if (req.method === "GET" && pathname === "/v1/files/safe-html") {
+    const token = url.searchParams.get("t");
+    const entry = resolveSafeHtmlToken(token);
+    if (!entry || entry.workspaceRoot !== workspaceRoot) {
+      send(res, 404, "not found");
+      return;
+    }
+    const html = buildSafeHtmlWrapperHtml(opts.port, token!, entry.relPath);
+    res.writeHead(200, {
+      "Content-Type": "text/html; charset=utf-8",
+      "Content-Security-Policy":
+        "default-src 'none'; frame-src http://127.0.0.1:*; style-src 'unsafe-inline'; base-uri 'none'",
+      "X-Content-Type-Options": "nosniff",
+    });
+    res.end(html);
+    return;
+  }
+
+  if (req.method === "GET" && pathname === "/v1/files/safe-html/content") {
+    const token = url.searchParams.get("t");
+    const entry = resolveSafeHtmlToken(token);
+    if (!entry || entry.workspaceRoot !== workspaceRoot) {
+      send(res, 404, "not found");
+      return;
+    }
+    try {
+      const bytes = await readSafeHtmlBytes(workspaceRoot, entry.relPath);
+      if (bytes === "not_found") {
+        send(res, 404, "not found");
+        return;
+      }
+      if (bytes === "too_large") {
+        send(res, 413, "too large");
+        return;
+      }
+      res.writeHead(200, {
+        "Content-Type": "text/html; charset=utf-8",
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "no-referrer",
+      });
+      res.end(bytes);
+    } catch (err) {
+      if (err instanceof WorkspaceEscapeError) {
+        send(res, 400, err.message);
+        return;
+      }
+      throw err;
+    }
+    return;
+  }
+
   if (pathname.startsWith("/v1/") && !isAuthorized(req, opts.token)) {
     send(res, 401);
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/v1/files/safe-html/open") {
+    const raw = await readBody(req);
+    let parsed: { path?: unknown };
+    try {
+      parsed = JSON.parse(raw) as { path?: unknown };
+    } catch {
+      send(res, 400, "invalid json");
+      return;
+    }
+    if (typeof parsed.path !== "string") {
+      send(res, 400, "path required");
+      return;
+    }
+    try {
+      const result = await createSafeHtmlPreviewToken(workspaceRoot, parsed.path);
+      if (!result.ok) {
+        const status =
+          result.reason === "not_found"
+            ? 404
+            : result.reason === "too_large"
+              ? 413
+              : 400;
+        send(res, status, result.reason);
+        return;
+      }
+      const openUrl = `http://127.0.0.1:${opts.port}/v1/files/safe-html?t=${encodeURIComponent(result.token)}`;
+      sendJson(res, 200, { openUrl });
+    } catch (err) {
+      if (err instanceof WorkspaceEscapeError) {
+        send(res, 400, err.message);
+        return;
+      }
+      throw err;
+    }
     return;
   }
 
@@ -867,6 +966,151 @@ async function handleRequest(
     } catch (err) {
       if (err instanceof WorkspaceEscapeError) {
         send(res, 400, err.message);
+        return;
+      }
+      throw err;
+    }
+    return;
+  }
+
+  if (req.method === "GET" && pathname === "/v1/files/raw") {
+    const rel = normalizeRelPath(url.searchParams.get("path"));
+    if (rel === undefined) {
+      send(res, 400);
+      return;
+    }
+    try {
+      const result = await readWorkspaceFileBytes(workspaceRoot, rel);
+      if (result === "not_found") {
+        send(res, 404);
+        return;
+      }
+      if (result === "too_large") {
+        send(res, 413);
+        return;
+      }
+      res.writeHead(200, {
+        "Content-Type": "application/octet-stream",
+        "Content-Length": result.byteLength,
+      });
+      res.end(result);
+    } catch (err) {
+      if (err instanceof WorkspaceEscapeError) {
+        send(res, 400, err.message);
+        return;
+      }
+      throw err;
+    }
+    return;
+  }
+
+  if (req.method === "PUT" && pathname === "/v1/files/raw") {
+    const rel = normalizeRelPath(url.searchParams.get("path"));
+    if (rel === undefined) {
+      send(res, 400);
+      return;
+    }
+    const bytes = await readBodyBytes(req, FILE_RAW_MAX_BYTES);
+    if (bytes === "too_large") {
+      send(res, 413);
+      return;
+    }
+    try {
+      const result = await writeWorkspaceFileBytes(workspaceRoot, rel, bytes);
+      if (result === "not_found") {
+        send(res, 404);
+        return;
+      }
+      if (result === "too_large") {
+        send(res, 413);
+        return;
+      }
+      sendJson(res, 200, { ok: true });
+    } catch (err) {
+      if (err instanceof WorkspaceEscapeError) {
+        send(res, 400, err.message);
+        return;
+      }
+      throw err;
+    }
+    return;
+  }
+
+  if (req.method === "GET" && pathname === "/v1/files/markdown") {
+    const rel = normalizeRelPath(url.searchParams.get("path"));
+    if (rel === undefined) {
+      send(res, 400);
+      return;
+    }
+    try {
+      const result = await readWorkspaceFileMarkdown(workspaceRoot, rel);
+      if (result === "not_found") {
+        send(res, 404);
+        return;
+      }
+      if (result === "too_large") {
+        send(res, 413);
+        return;
+      }
+      if (result === "unsupported") {
+        send(res, 400, "unsupported");
+        return;
+      }
+      sendJson(res, 200, { path: rel, markdown: result });
+    } catch (err) {
+      if (err instanceof WorkspaceEscapeError) {
+        send(res, 400, err.message);
+        return;
+      }
+      throw err;
+    }
+    return;
+  }
+
+  if (req.method === "PUT" && pathname === "/v1/files/from-markdown") {
+    const rel = normalizeRelPath(url.searchParams.get("path"));
+    if (rel === undefined) {
+      send(res, 400);
+      return;
+    }
+    const raw = await readBody(req);
+    let parsed: { markdown?: unknown };
+    try {
+      parsed = JSON.parse(raw) as { markdown?: unknown };
+    } catch {
+      send(res, 400, "invalid json");
+      return;
+    }
+    if (typeof parsed.markdown !== "string") {
+      send(res, 400, "markdown required");
+      return;
+    }
+    try {
+      const result = await writeWorkspaceFileFromMarkdown(
+        workspaceRoot,
+        rel,
+        parsed.markdown,
+      );
+      if (result === "not_found") {
+        send(res, 404);
+        return;
+      }
+      if (result === "too_large") {
+        send(res, 413);
+        return;
+      }
+      if (result === "unsupported") {
+        send(res, 400, "unsupported");
+        return;
+      }
+      sendJson(res, 200, { ok: true });
+    } catch (err) {
+      if (err instanceof WorkspaceEscapeError) {
+        send(res, 400, err.message);
+        return;
+      }
+      if (err instanceof Error && err.message === "unreadable") {
+        send(res, 400, "unreadable");
         return;
       }
       throw err;

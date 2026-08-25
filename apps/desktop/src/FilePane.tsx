@@ -6,7 +6,28 @@ import {
   type FileEntry,
 } from "./files.ts";
 import { FileIcon } from "./FileIcon.tsx";
+import { FilePaneResizeHandle } from "./FilePaneResizeHandle.tsx";
+import { FilePreviewContent } from "./FilePreviewContent.tsx";
 import { KnowledgePane } from "./KnowledgePane.tsx";
+import { useFilePaneTreeResize } from "./useFilePaneTreeResize.ts";
+
+const TREE_INDENT_PX = 16;
+const TREE_BASE_INDENT_PX = 12;
+const ROOT_TREE_PATH = ".";
+
+function sortFileEntries(entries: FileEntry[]): FileEntry[] {
+  const dirs = entries
+    .filter((entry) => entry.type === "dir")
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const files = entries
+    .filter((entry) => entry.type === "file")
+    .sort((a, b) => a.name.localeCompare(b.name));
+  return [...dirs, ...files];
+}
+
+function treeIndent(depth: number): number {
+  return TREE_BASE_INDENT_PX + depth * TREE_INDENT_PX;
+}
 
 type Props = {
   onInsertPath: (path: string) => void;
@@ -32,10 +53,22 @@ export function FilePane({
   const [dirErrors, setDirErrors] = useState<Set<string>>(() => new Set());
   const [previewText, setPreviewText] = useState("");
   const [previewKind, setPreviewKind] = useState<
-    "markdown" | "text" | "failed" | "svg"
+    "markdown" | "text" | "failed" | "svg" | "spreadsheet" | "pdf" | "docx" | "pptx"
   >("text");
   const [previewError, setPreviewError] = useState(false);
   const previewAc = useRef<AbortController | undefined>(undefined);
+  const filePaneBodyRef = useRef<HTMLDivElement>(null);
+  const {
+    width: treeWidth,
+    dragging: treeDragging,
+    onHandlePointerDown: onTreeHandlePointerDown,
+    onHandlePointerMove: onTreeHandlePointerMove,
+    onHandlePointerUp: onTreeHandlePointerUp,
+    onHandlePointerCancel: onTreeHandlePointerCancel,
+  } = useFilePaneTreeResize({
+    bodyRef: filePaneBodyRef,
+    enabled: tab === "files",
+  });
 
   async function loadPreview(filePath: string, signal: AbortSignal) {
     try {
@@ -58,16 +91,32 @@ export function FilePane({
     return loadPreview(filePath, ac.signal);
   }
 
+  async function loadDirChildren(dirPath: string, signal?: AbortSignal) {
+    const list = await fetchFiles(dirPath, signal);
+    setChildren((prev) => ({ ...prev, [dirPath]: list.entries }));
+    setDirErrors((prev) => {
+      if (!prev.has(dirPath)) return prev;
+      const cleared = new Set(prev);
+      cleared.delete(dirPath);
+      return cleared;
+    });
+    return list.entries;
+  }
+
   useEffect(() => {
     const ac = new AbortController();
-    void fetchFiles(".", ac.signal)
+    void fetchFiles(ROOT_TREE_PATH, ac.signal)
       .then(async (list) => {
         if (ac.signal.aborted) return;
         setRootEntries(list.entries);
         setTreeError(false);
+        setExpanded(new Set([ROOT_TREE_PATH]));
+
         const firstFile = list.entries.find((e) => e.type === "file");
         if (firstFile) {
-          await startPreview(childPath(".", firstFile.name));
+          const firstPath = childPath(ROOT_TREE_PATH, firstFile.name);
+          setSelectedFile(firstPath);
+          await startPreview(firstPath);
         }
       })
       .catch(() => {
@@ -91,14 +140,7 @@ export function FilePane({
     setExpanded(next);
     if (children[dirPath]) return;
     try {
-      const list = await fetchFiles(dirPath);
-      setChildren((prev) => ({ ...prev, [dirPath]: list.entries }));
-      setDirErrors((prev) => {
-        if (!prev.has(dirPath)) return prev;
-        const cleared = new Set(prev);
-        cleared.delete(dirPath);
-        return cleared;
-      });
+      await loadDirChildren(dirPath);
     } catch {
       setDirErrors((prev) => new Set(prev).add(dirPath));
     }
@@ -112,14 +154,7 @@ export function FilePane({
       return next;
     });
     if (children[dirPath]) return;
-    const list = await fetchFiles(dirPath);
-    setChildren((prev) => ({ ...prev, [dirPath]: list.entries }));
-    setDirErrors((prev) => {
-      if (!prev.has(dirPath)) return prev;
-      const cleared = new Set(prev);
-      cleared.delete(dirPath);
-      return cleared;
-    });
+    await loadDirChildren(dirPath);
   }
 
   async function revealPath(filePath: string) {
@@ -151,35 +186,70 @@ export function FilePane({
   }, [requestedPath, previewRequest]);
 
   function renderEntries(entries: FileEntry[], parent: string, depth: number) {
-    return entries.map((entry) => {
+    return sortFileEntries(entries).map((entry) => {
       const path = childPath(parent, entry.name);
+      const indent = treeIndent(depth);
+
       if (entry.type === "dir") {
         const isOpen = expanded.has(path);
         return (
-          <div key={path} className="file-node" style={{ paddingLeft: depth * 14 }}>
-            <button type="button" onClick={() => void toggleDir(path)}>
-              <span className="file-chevron">{isOpen ? "▾" : "▸"}</span>
-              <FileIcon name={entry.name} isDir />
-              <span className="file-label">{entry.name}</span>
+          <div key={path} className="file-tree__node" role="none">
+            <button
+              type="button"
+              role="treeitem"
+              aria-expanded={isOpen}
+              className="file-tree__row file-tree__row--folder"
+              style={{ ["--file-tree-indent" as string]: `${indent}px` }}
+              onClick={() => void toggleDir(path)}
+            >
+              <span className="file-tree__lead">
+                <span className="file-tree__chevron" aria-hidden>
+                  {isOpen ? "▾" : "▸"}
+                </span>
+                <FileIcon name={entry.name} isDir />
+                <span className="file-tree__name file-label">{entry.name}</span>
+              </span>
             </button>
             {isOpen && dirErrors.has(path) ? (
-              <div className="file-tree-error">host unreachable</div>
+              <div
+                className="file-tree__state file-tree__state--error"
+                style={{ paddingLeft: `${treeIndent(depth + 1)}px` }}
+              >
+                host unreachable
+              </div>
             ) : null}
-            {isOpen && children[path]
-              ? renderEntries(children[path], path, depth + 1)
-              : null}
+            {isOpen && children[path] ? (
+              <div
+                className="file-tree__children"
+                role="group"
+                style={{ ["--file-tree-indent" as string]: `${indent}px` }}
+              >
+                {renderEntries(children[path], path, depth + 1)}
+              </div>
+            ) : null}
           </div>
         );
       }
+
+      const isActive = selectedFile === path;
       return (
-        <div key={path} className="file-node" style={{ paddingLeft: depth * 14 }}>
+        <div key={path} className="file-tree__node" role="none">
           <button
             type="button"
-            className={selectedFile === path ? "selected" : undefined}
+            role="treeitem"
+            aria-selected={isActive}
+            className={`file-tree__row${isActive ? " file-tree__row--active" : ""}`}
+            style={{ ["--file-tree-indent" as string]: `${indent}px` }}
             onClick={() => void openFile(path)}
           >
-            <FileIcon name={entry.name} />
-            <span className="file-label">{entry.name}</span>
+            <span className="file-tree__lead">
+              <span
+                className="file-tree__chevron file-tree__chevron--spacer"
+                aria-hidden
+              />
+              <FileIcon name={entry.name} />
+              <span className="file-tree__name file-label">{entry.name}</span>
+            </span>
           </button>
         </div>
       );
@@ -233,27 +303,108 @@ export function FilePane({
         </button>
       </div>
       {tab === "files" ? (
-        <>
-          <div className="file-tree">
-            {treeError ? (
-              <div className="file-tree-error">host unreachable</div>
+        <div
+          className={`file-pane-body${treeDragging ? " file-pane-body--dragging" : ""}`}
+          ref={filePaneBodyRef}
+        >
+          {treeDragging ? <div className="file-pane-inner-drag-overlay" /> : null}
+          <div className="file-tree-surface" style={{ width: `${treeWidth}px` }}>
+            <div className="file-tree" role="tree" aria-label="工作空间文件">
+              {treeError ? (
+                <div className="file-tree__state file-tree__state--error">
+                  host unreachable
+                </div>
+              ) : (
+                <>
+                  <div className="file-tree__node" role="none">
+                    <button
+                      type="button"
+                      role="treeitem"
+                      aria-expanded={expanded.has(ROOT_TREE_PATH)}
+                      className="file-tree__row file-tree__row--root"
+                      style={{
+                        ["--file-tree-indent" as string]: `${treeIndent(0)}px`,
+                      }}
+                      onClick={() => {
+                        setExpanded((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(ROOT_TREE_PATH)) {
+                            next.delete(ROOT_TREE_PATH);
+                          } else {
+                            next.add(ROOT_TREE_PATH);
+                          }
+                          return next;
+                        });
+                      }}
+                    >
+                      <span className="file-tree__lead">
+                        <span className="file-tree__chevron" aria-hidden>
+                          {expanded.has(ROOT_TREE_PATH) ? "▾" : "▸"}
+                        </span>
+                        <FileIcon name="workspace" isDir />
+                        <span className="file-tree__name file-label">工作空间</span>
+                      </span>
+                    </button>
+                    {expanded.has(ROOT_TREE_PATH) ? (
+                      <div
+                        className="file-tree__children"
+                        role="group"
+                        style={{
+                          ["--file-tree-indent" as string]: `${treeIndent(0)}px`,
+                        }}
+                      >
+                        {rootEntries.length === 0 ? (
+                          <div
+                            className="file-tree__state"
+                            style={{ paddingLeft: `${treeIndent(1)}px` }}
+                          >
+                            暂无文件
+                          </div>
+                        ) : (
+                          renderEntries(rootEntries, ROOT_TREE_PATH, 1)
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+          <div className="file-pane-inner-split-rail">
+            <FilePaneResizeHandle
+              className="file-pane-inner-split-handle"
+              ariaLabel="调整目录树宽度"
+              onPointerDown={onTreeHandlePointerDown}
+              onPointerMove={onTreeHandlePointerMove}
+              onPointerUp={onTreeHandlePointerUp}
+              onPointerCancel={onTreeHandlePointerCancel}
+            />
+          </div>
+          <div className="file-preview-surface">
+            {previewKind === "svg" && !previewError ? (
+              <div className="file-preview file-preview-svg">
+                <header className="file-preview-header">
+                  <span className="file-preview-header__name">
+                    {selectedFile ? selectedFile.split("/").pop() : "预览"}
+                  </span>
+                  <span className="file-preview-header__badge">SVG</span>
+                </header>
+                <div className="file-preview-svg__frame">
+                  <img
+                    alt={selectedFile ?? ""}
+                    src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(previewText)}`}
+                  />
+                </div>
+              </div>
             ) : (
-              renderEntries(rootEntries, ".", 0)
+              <FilePreviewContent
+                filePath={selectedFile}
+                kind={previewError ? "error" : previewKind}
+                text={previewError ? "host unreachable" : previewText}
+              />
             )}
           </div>
-          {previewKind === "svg" && !previewError ? (
-            <div className="file-preview file-preview-svg">
-              <img
-                alt={selectedFile ?? ""}
-                src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(previewText)}`}
-              />
-            </div>
-          ) : (
-            <pre className="file-preview">
-              {previewError ? "host unreachable" : previewText}
-            </pre>
-          )}
-        </>
+        </div>
       ) : (
         <KnowledgePane selectedPath={selectedFile} />
       )}

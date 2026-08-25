@@ -152,6 +152,38 @@ function installFetch(opts: {
         )
       );
     }
+    if (url.includes("/v1/files/safe-html/open")) {
+      return new Response(
+        JSON.stringify({
+          openUrl: "http://127.0.0.1:7331/v1/files/safe-html?t=test-token",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    if (url.includes("/v1/files/markdown")) {
+      return new Response(
+        JSON.stringify({ path: "report.pdf", markdown: "# Title\n" }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    if (url.includes("/v1/files/from-markdown")) {
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (url.includes("/v1/files/raw")) {
+      if (init?.method === "PUT") {
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response("spreadsheet-bytes", {
+        status: 200,
+        headers: { "Content-Type": "application/octet-stream" },
+      });
+    }
     if (url.includes("/v1/files/preview")) {
       if (opts.preview instanceof Error) throw opts.preview;
       if (opts.preview) return opts.preview.clone();
@@ -532,6 +564,99 @@ describe("App", () => {
       `"kind":"svg"`,
     );
     expect(document.body.textContent).not.toContain('"nodes"');
+  });
+
+  it("renders html files in a sandbox iframe instead of markdown prose", async () => {
+    installFetch({
+      files: new Response(
+        JSON.stringify({
+          path: ".",
+          entries: [{ name: "page.html", type: "file" }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+      preview: new Response(
+        JSON.stringify({
+          path: "page.html",
+          kind: "markdown",
+          text: "# Title\n",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    await waitForText("page.html");
+    const fileButton = findFileTreeButton("page.html");
+    if (!fileButton) throw new Error("no page.html button");
+    await act(async () => {
+      fileButton.click();
+    });
+    const iframe = document.querySelector(".file-preview-html-iframe");
+    expect(iframe).toBeTruthy();
+    expect(iframe?.getAttribute("sandbox")).toBe("allow-scripts");
+    expect(iframe?.getAttribute("src")).toBe(
+      "/v1/files/safe-html/content?t=test-token",
+    );
+    expect(document.querySelector(".file-preview-prose")).toBeNull();
+  });
+
+  it("renders spreadsheet files with fortune preview shell", async () => {
+    installFetch({
+      files: new Response(
+        JSON.stringify({
+          path: ".",
+          entries: [{ name: "report.xlsx", type: "file" }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+      preview: new Response(
+        JSON.stringify({
+          path: "report.xlsx",
+          kind: "spreadsheet",
+          text: "",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    await waitForText("report.xlsx");
+    const fileButton = findFileTreeButton("report.xlsx");
+    if (!fileButton) throw new Error("no report.xlsx button");
+    await act(async () => {
+      fileButton.click();
+    });
+    expect(document.querySelector(".file-preview--spreadsheet")).toBeTruthy();
+    expect(document.body.textContent).toContain("Excel");
+  });
+
+  it("renders office documents with preview and edit tabs", async () => {
+    installFetch({
+      files: new Response(
+        JSON.stringify({
+          path: ".",
+          entries: [{ name: "report.pdf", type: "file" }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+      preview: new Response(
+        JSON.stringify({
+          path: "report.pdf",
+          kind: "pdf",
+          text: "",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    await waitForText("report.pdf");
+    const fileButton = findFileTreeButton("report.pdf");
+    if (!fileButton) throw new Error("no report.pdf button");
+    await act(async () => {
+      fileButton.click();
+    });
+    expect(document.querySelector(".file-preview--office")).toBeTruthy();
+    expect(document.body.textContent).toContain("预览");
+    expect(document.body.textContent).toContain("编辑");
   });
 
   it("keeps root file tree when expanding a folder list fails", async () => {
@@ -2017,9 +2142,9 @@ describe("App", () => {
     await act(async () => {
       card?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
-    await waitForText("# Hello");
-    const preview = document.querySelector(".file-preview");
-    expect(preview?.textContent).toContain("# Hello");
+    await waitForText("Hello");
+    const preview = document.querySelector(".file-preview-prose");
+    expect(preview?.textContent).toContain("Hello");
   });
 
   it("deletes a session from sidebar task list", async () => {

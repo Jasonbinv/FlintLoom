@@ -2,6 +2,9 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { A2uiSurface } from "./A2uiSurface.tsx";
 import { cancelTurn, fetchModels, fetchSession, fetchWorkspace, postTurn, postTurnAction, postTurnGuard, setWorkspace } from "./api.ts";
 import { FilePane } from "./FilePane.tsx";
+import { FilePaneResizeHandle } from "./FilePaneResizeHandle.tsx";
+import { FILE_PANE_COLLAPSED_WIDTH } from "./filePaneWidth.ts";
+import { useFilePaneResize } from "./useFilePaneResize.ts";
 import { ModelsPane } from "./ModelsPane.tsx";
 import { PluginsPane } from "./PluginsPane.tsx";
 import { SettingsPane } from "./SettingsPane.tsx";
@@ -202,6 +205,18 @@ export function App() {
   } | null>(null);
   const [theme, setTheme] = useState<Theme>(() => loadTheme());
   const [sessions, setSessions] = useState<SessionEntry[]>(() => loadSessions());
+  const workbenchBodyRef = useRef<HTMLDivElement>(null);
+  const {
+    width: filePaneWidth,
+    dragging: filePaneDragging,
+    onHandlePointerDown,
+    onHandlePointerMove,
+    onHandlePointerUp,
+    onHandlePointerCancel,
+  } = useFilePaneResize({
+    stageRef: workbenchBodyRef,
+    enabled: page === "chat" && !filePaneCollapsed,
+  });
 
   function openFileFromChat(path: string) {
     setFilePaneCollapsed(false);
@@ -690,7 +705,7 @@ export function App() {
       </aside>
       <div className="main-content">
       {page === "chat" ? (
-      <div className="workbench-body">
+      <div className="workbench-body" ref={workbenchBodyRef}>
         <div className="chat-column">
           <header className="chat-header">
             <h2 className="chat-title">{taskTitle}</h2>
@@ -886,14 +901,34 @@ export function App() {
             </div>
           </footer>
         </div>
-        <FilePane
-          key={filePaneKey}
-          collapsed={filePaneCollapsed}
-          onToggleCollapse={() => setFilePaneCollapsed((v) => !v)}
-          onInsertPath={(p) => setInput((cur) => insertPath(cur, p))}
-          requestedPath={previewPath}
-          previewRequest={previewRequest}
-        />
+        {filePaneDragging ? <div className="file-pane-drag-overlay" /> : null}
+        {!filePaneCollapsed ? (
+          <div className="file-pane-split-rail">
+            <FilePaneResizeHandle
+              onPointerDown={onHandlePointerDown}
+              onPointerMove={onHandlePointerMove}
+              onPointerUp={onHandlePointerUp}
+              onPointerCancel={onHandlePointerCancel}
+            />
+          </div>
+        ) : null}
+        <div
+          className={`file-pane-rail${filePaneCollapsed ? " file-pane-rail--collapsed" : ""}`}
+          style={
+            filePaneCollapsed
+              ? { width: `${FILE_PANE_COLLAPSED_WIDTH}px` }
+              : { width: `${filePaneWidth}px` }
+          }
+        >
+          <FilePane
+            key={filePaneKey}
+            collapsed={filePaneCollapsed}
+            onToggleCollapse={() => setFilePaneCollapsed((v) => !v)}
+            onInsertPath={(p) => setInput((cur) => insertPath(cur, p))}
+            requestedPath={previewPath}
+            previewRequest={previewRequest}
+          />
+        </div>
       </div>
       ) : (
         <main className="settings-pane">

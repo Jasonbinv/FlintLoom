@@ -248,4 +248,106 @@ describe("GET /v1/files and /v1/files/preview", () => {
     });
     expect(res.status).toBe(404);
   });
+
+  it("opens html in a tokenized sandbox wrapper without bearer auth", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-files-html-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-files-html-home-"));
+    writeFileSync(
+      join(workspaceRoot, "page.html"),
+      "<html><body><h1>Safe HTML</h1><script>window.__x=1</script></body></html>",
+    );
+    writeAssembly(workspaceRoot);
+
+    const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+    close = host.close;
+    const token = loadOrCreateToken(homeDir);
+
+    const openRes = await fetch(`${host.url}/v1/files/safe-html/open`, {
+      method: "POST",
+      headers: {
+        ...authHeaders(token),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ path: "page.html" }),
+    });
+    const openText = await openRes.text();
+    expect(openRes.status, openText).toBe(200);
+    const openBody = JSON.parse(openText) as { openUrl: string };
+    expect(openBody.openUrl).toContain("/v1/files/safe-html?t=");
+
+    const wrapperRes = await fetch(openBody.openUrl);
+    expect(wrapperRes.status).toBe(200);
+    const wrapperHtml = await wrapperRes.text();
+    expect(wrapperHtml).toContain("sandbox=\"allow-scripts\"");
+    expect(wrapperHtml).toContain("page.html");
+
+    const contentUrl = new URL(openBody.openUrl);
+    contentUrl.pathname = "/v1/files/safe-html/content";
+    const contentRes = await fetch(contentUrl.toString());
+    expect(contentRes.status).toBe(200);
+    const contentHtml = await contentRes.text();
+    expect(contentHtml).toContain("<h1>Safe HTML</h1>");
+  });
+
+  it("previews spreadsheets without docforge markdown conversion", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-files-xlsx-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-files-xlsx-home-"));
+    writeFileSync(join(workspaceRoot, "sheet.xlsx"), "fake-xlsx-bytes");
+    writeAssembly(workspaceRoot);
+
+    const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+    close = host.close;
+    const token = loadOrCreateToken(homeDir);
+
+    const previewRes = await fetch(
+      `${host.url}/v1/files/preview?path=${encodeURIComponent("sheet.xlsx")}`,
+      { headers: authHeaders(token) },
+    );
+    expect(previewRes.status).toBe(200);
+    const preview = (await previewRes.json()) as { kind: string; text: string };
+    expect(preview.kind).toBe("spreadsheet");
+    expect(preview.text).toBe("");
+
+    const rawRes = await fetch(
+      `${host.url}/v1/files/raw?path=${encodeURIComponent("sheet.xlsx")}`,
+      { headers: authHeaders(token) },
+    );
+    expect(rawRes.status).toBe(200);
+    expect(await rawRes.text()).toBe("fake-xlsx-bytes");
+
+    const putRes = await fetch(
+      `${host.url}/v1/files/raw?path=${encodeURIComponent("sheet.xlsx")}`,
+      {
+        method: "PUT",
+        headers: authHeaders(token),
+        body: "updated-xlsx",
+      },
+    );
+    expect(putRes.status).toBe(200);
+
+    const rawAgain = await fetch(
+      `${host.url}/v1/files/raw?path=${encodeURIComponent("sheet.xlsx")}`,
+      { headers: authHeaders(token) },
+    );
+    expect(await rawAgain.text()).toBe("updated-xlsx");
+  });
+
+  it("previews pdf without docforge markdown conversion", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-files-pdf-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-files-pdf-home-"));
+    writeFileSync(join(workspaceRoot, "report.pdf"), "%PDF-1.4 fake");
+    writeAssembly(workspaceRoot);
+
+    const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+    close = host.close;
+    const token = loadOrCreateToken(homeDir);
+
+    const previewRes = await fetch(
+      `${host.url}/v1/files/preview?path=${encodeURIComponent("report.pdf")}`,
+      { headers: authHeaders(token) },
+    );
+    expect(previewRes.status).toBe(200);
+    const preview = (await previewRes.json()) as { kind: string };
+    expect(preview.kind).toBe("pdf");
+  });
 });

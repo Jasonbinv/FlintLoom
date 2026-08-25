@@ -3,10 +3,18 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@corbe30/fortune-excel": "^2.3.3",
+    "@fortune-sheet/core": "^1.0.4",
+    "@fortune-sheet/react": "^1.0.4",
     "@flintloom/host": "workspace:*",
     "@flintloom/infographic": "workspace:*",
+    "jszip": "^3.10.1",
+    "docx-preview": "^0.3.0",
+    "marked": "^18.0.9",
+    "pptxviewjs": "^1.1.9",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@types/react": "^18.3.18",
