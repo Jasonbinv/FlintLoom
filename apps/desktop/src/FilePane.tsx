@@ -1,10 +1,9 @@
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 import { FileActionDialog } from "./FileActionDialog.tsx";
 import { FileIcon } from "./FileIcon.tsx";
 import { FileMoveDialog } from "./FileMoveDialog.tsx";
 import { FilePaneResizeHandle } from "./FilePaneResizeHandle.tsx";
-import { FilePreviewContent } from "./FilePreviewContent.tsx";
-import { FileTreeContextMenu } from "./FileTreeContextMenu.tsx";
+import { FilePreviewCloseButton, FilePreviewContent } from "./FilePreviewContent.tsx";import { FileTreeContextMenu } from "./FileTreeContextMenu.tsx";
 import {
   FileTreeNodeActionMenu,
   WORKSPACE_ROOT_NODE,
@@ -19,6 +18,7 @@ import {
   createWorkspaceFile,
   deleteWorkspaceEntry,
   fetchFiles,
+  fetchFilesSync,
   fetchPreview,
   buildFileMoveTargets,
   isValidEntryName,
@@ -32,6 +32,24 @@ import {
 const TREE_INDENT_PX = 16;
 const TREE_BASE_INDENT_PX = 12;
 const ROOT_TREE_PATH = ".";
+
+function delay(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException("Aborted", "AbortError"));
+      return;
+    }
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        reject(new DOMException("Aborted", "AbortError"));
+      },
+      { once: true },
+    );
+  });
+}
 
 function sortFileEntries(entries: FileEntry[]): FileEntry[] {
   const dirs = entries
@@ -64,6 +82,7 @@ export function FilePane({
 }: Props) {
   const [tab, setTab] = useState<"files" | "knowledge">("files");
   const [selectedFile, setSelectedFile] = useState<string>();
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [rootEntries, setRootEntries] = useState<FileEntry[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [children, setChildren] = useState<Record<string, FileEntry[]>>({});
@@ -98,8 +117,26 @@ export function FilePane({
     onHandlePointerCancel: onTreeHandlePointerCancel,
   } = useFilePaneTreeResize({
     bodyRef: filePaneBodyRef,
-    enabled: tab === "files",
+    enabled: tab === "files" && previewOpen,
   });
+
+  const closeFilePreview = useCallback(() => {
+    previewAc.current?.abort();
+    setPreviewOpen(false);
+    setSelectedFile(undefined);
+    setPreviewText("");
+    setPreviewKind("text");
+    setPreviewError(false);
+  }, []);
+
+  useEffect(() => {
+    if (!previewOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeFilePreview();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [closeFilePreview, previewOpen]);
 
   async function loadPreview(filePath: string, signal: AbortSignal) {
     try {
@@ -147,6 +184,7 @@ export function FilePane({
         if (firstFile) {
           const firstPath = childPath(ROOT_TREE_PATH, firstFile.name);
           setSelectedFile(firstPath);
+          setPreviewOpen(true);
           await startPreview(firstPath);
         }
       })
@@ -204,6 +242,7 @@ export function FilePane({
     setTab("files");
     await revealPath(filePath);
     if (insertIntoInput) onInsertPath(filePath);
+    setPreviewOpen(true);
     await startPreview(filePath);
   }
 
@@ -215,10 +254,108 @@ export function FilePane({
     const list = await fetchFiles(dirPath);
     if (dirPath === ROOT_TREE_PATH) {
       setRootEntries(list.entries);
-      return;
+    } else {
+      setChildren((prev) => ({ ...prev, [dirPath]: list.entries }));
     }
-    setChildren((prev) => ({ ...prev, [dirPath]: list.entries }));
+    setDirErrors((prev) => {
+      if (!prev.has(dirPath)) return prev;
+      const next = new Set(prev);
+      next.delete(dirPath);
+      return next;
+    });
   }
+
+  async function refreshTree() {
+    try {
+      await reloadDir(ROOT_TREE_PATH);
+      setTreeError(false);
+      const dirs = [...expanded].filter((path) => path !== ROOT_TREE_PATH);
+      await Promise.all(
+        dirs.map(async (dirPath) => {
+          try {
+            await reloadDir(dirPath);
+          } catch {
+            setDirErrors((prev) => new Set(prev).add(dirPath));
+          }
+        }),
+      );
+      if (selectedFile) {
+        await startPreview(selectedFile);
+      }
+    } catch {
+      setTreeError(true);
+    }
+  }
+
+  const expandedRef = useRef(expanded);
+  expandedRef.current = expanded;
+  const selectedFileRef = useRef(selectedFile);
+  selectedFileRef.current = selectedFile;
+  const refreshTreeRef = useRef(refreshTree);
+  refreshTreeRef.current = refreshTree;
+  const reloadDirRef = useRef(reloadDir);
+  reloadDirRef.current = reloadDir;
+  const startPreviewRef = useRef(startPreview);
+  startPreviewRef.current = startPreview;
+
+  useEffect(() => {
+    const ac = new AbortController();
+    let generation = 0;
+
+    async function loop() {
+      while (!ac.signal.aborted) {
+        try {
+          const sync = await fetchFilesSync(generation, ac.signal);
+          if (ac.signal.aborted) return;
+          const isCatchUp =
+            generation !== sync.generation &&
+            sync.files.length === 0 &&
+            sync.dirs.length === 1 &&
+            sync.dirs[0] === ".";
+          generation = sync.generation;
+          if (isCatchUp) {
+            await refreshTreeRef.current();
+            continue;
+          }
+          if (sync.dirs.length === 0 && sync.files.length === 0) {
+            continue;
+          }
+          const expandedNow = expandedRef.current;
+          for (const dir of sync.dirs) {
+            if (dir === ROOT_TREE_PATH || expandedNow.has(dir)) {
+              try {
+                await reloadDirRef.current(dir);
+                if (dir === ROOT_TREE_PATH) setTreeError(false);
+              } catch {
+                if (dir === ROOT_TREE_PATH) setTreeError(true);
+                else {
+                  setDirErrors((prev) => new Set(prev).add(dir));
+                }
+              }
+            }
+          }
+          const selected = selectedFileRef.current;
+          if (selected && sync.files.includes(selected)) {
+            await startPreviewRef.current(selected);
+          }
+        } catch (err) {
+          if (ac.signal.aborted) return;
+          if (err instanceof DOMException && err.name === "AbortError") return;
+          if (err instanceof Error && err.name === "AbortError") return;
+          try {
+            await delay(1000, ac.signal);
+          } catch {
+            return;
+          }
+        }
+      }
+    }
+
+    void loop();
+    return () => {
+      ac.abort();
+    };
+  }, []);
 
   function closeTreeMenu() {
     setTreeContextMenu(null);
@@ -377,6 +514,7 @@ export function FilePane({
         await deleteWorkspaceEntry(fileAction.node.path);
         if (selectedFile && pathIsInside(fileAction.node.path, selectedFile)) {
           setSelectedFile(undefined);
+          setPreviewOpen(false);
           setPreviewText("");
           setPreviewKind("text");
         }
@@ -442,6 +580,15 @@ export function FilePane({
     onRename: startRename,
     onMove: startMove,
     onDelete: startDelete,
+    onRefresh: (node) => {
+      if (node.isRoot) {
+        void refreshTree();
+        return;
+      }
+      void reloadDir(node.path).catch(() => {
+        setDirErrors((prev) => new Set(prev).add(node.path));
+      });
+    },
     onExpandAllFolders: () => {
       void expandAllFolders();
     },
@@ -549,16 +696,27 @@ export function FilePane({
     <aside className="file-pane">
       <header className="file-pane-header">
         <h3 className="file-pane-title">工作空间文件</h3>
-        {onToggleCollapse ? (
+        <div className="file-pane-header-actions">
           <button
             type="button"
             className="icon-btn"
-            title="收起面板"
-            onClick={onToggleCollapse}
+            title="刷新文件列表"
+            aria-label="刷新文件"
+            onClick={() => void refreshTree()}
           >
-            ◨
+            ↻
           </button>
-        ) : null}
+          {onToggleCollapse ? (
+            <button
+              type="button"
+              className="icon-btn"
+              title="收起面板"
+              onClick={onToggleCollapse}
+            >
+              ◨
+            </button>
+          ) : null}
+        </div>
       </header>
       <div className="side-tabs">
         <button
@@ -578,13 +736,13 @@ export function FilePane({
       </div>
       {tab === "files" ? (
         <div
-          className={`file-pane-body${treeDragging ? " file-pane-body--dragging" : ""}`}
+          className={`file-pane-body${treeDragging ? " file-pane-body--dragging" : ""}${previewOpen ? "" : " file-pane-body--preview-closed"}`}
           ref={filePaneBodyRef}
         >
           {treeDragging ? <div className="file-pane-inner-drag-overlay" /> : null}
           <div
             className="file-tree-surface"
-            style={{ width: `${treeWidth}px` }}
+            style={previewOpen ? { width: `${treeWidth}px` } : undefined}
             onContextMenu={(event) => {
               if (isTreeRowTarget(event.target)) return;
               event.preventDefault();
@@ -659,40 +817,48 @@ export function FilePane({
               )}
             </div>
           </div>
-          <div className="file-pane-inner-split-rail">
-            <FilePaneResizeHandle
-              className="file-pane-inner-split-handle"
-              ariaLabel="调整目录树宽度"
-              onPointerDown={onTreeHandlePointerDown}
-              onPointerMove={onTreeHandlePointerMove}
-              onPointerUp={onTreeHandlePointerUp}
-              onPointerCancel={onTreeHandlePointerCancel}
-            />
-          </div>
-          <div className="file-preview-surface">
-            {previewKind === "svg" && !previewError ? (
-              <div className="file-preview file-preview-svg">
-                <header className="file-preview-header">
-                  <span className="file-preview-header__name">
-                    {selectedFile ? selectedFile.split("/").pop() : "预览"}
-                  </span>
-                  <span className="file-preview-header__badge">SVG</span>
-                </header>
-                <div className="file-preview-svg__frame">
-                  <img
-                    alt={selectedFile ?? ""}
-                    src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(previewText)}`}
-                  />
-                </div>
+          {previewOpen ? (
+            <>
+              <div className="file-pane-inner-split-rail">
+                <FilePaneResizeHandle
+                  className="file-pane-inner-split-handle"
+                  ariaLabel="调整目录树宽度"
+                  onPointerDown={onTreeHandlePointerDown}
+                  onPointerMove={onTreeHandlePointerMove}
+                  onPointerUp={onTreeHandlePointerUp}
+                  onPointerCancel={onTreeHandlePointerCancel}
+                />
               </div>
-            ) : (
-              <FilePreviewContent
-                filePath={selectedFile}
-                kind={previewError ? "error" : previewKind}
-                text={previewError ? "host unreachable" : previewText}
-              />
-            )}
-          </div>
+              <div className="file-preview-surface">
+                {previewKind === "svg" && !previewError ? (
+                  <div className="file-preview file-preview-svg">
+                    <header className="file-preview-header">
+                      <span className="file-preview-header__name">
+                        {selectedFile ? selectedFile.split("/").pop() : "预览"}
+                      </span>
+                      <div className="file-preview-header__actions">
+                        <span className="file-preview-header__badge">SVG</span>
+                        <FilePreviewCloseButton onClose={closeFilePreview} />
+                      </div>
+                    </header>
+                    <div className="file-preview-svg__frame">
+                      <img
+                        alt={selectedFile ?? ""}
+                        src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(previewText)}`}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <FilePreviewContent
+                    filePath={selectedFile}
+                    kind={previewError ? "error" : previewKind}
+                    text={previewError ? "host unreachable" : previewText}
+                    onClose={closeFilePreview}
+                  />
+                )}
+              </div>
+            </>
+          ) : null}
         </div>
       ) : (
         <KnowledgePane selectedPath={selectedFile} />

@@ -86,6 +86,22 @@ function requestUrl(input: RequestInfo | URL): string {
   return input.url;
 }
 
+function hangUntilAbort(signal?: AbortSignal): Promise<Response> {
+  return new Promise((_resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException("Aborted", "AbortError"));
+      return;
+    }
+    signal?.addEventListener(
+      "abort",
+      () => {
+        reject(new DOMException("Aborted", "AbortError"));
+      },
+      { once: true },
+    );
+  });
+}
+
 function installFetch(opts: {
   models?: Response | Error;
   plugins?: Response | Error;
@@ -98,6 +114,8 @@ function installFetch(opts: {
   guard?: Response | Error;
   cancel?: Response | Error;
   files?: Response | Error;
+  listRootEntries?: () => Array<{ name: string; type: "file" | "dir" }>;
+  filesSync?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
   preview?: Response | Error;
   knowledge?: Response | Error;
   knowledgeSearch?: Response | Error;
@@ -207,6 +225,10 @@ function installFetch(opts: {
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
     }
+    if (url.includes("/v1/files/sync")) {
+      if (opts.filesSync) return opts.filesSync(input, init);
+      return hangUntilAbort(init?.signal);
+    }
     if (url.includes("/v1/files")) {
       if (opts.files instanceof Error) throw opts.files;
       const path = new URL(url, "http://local").searchParams.get("path");
@@ -214,6 +236,12 @@ function installFetch(opts: {
       if (!isRoot) {
         return new Response(
           JSON.stringify({ path, entries: [] }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (opts.listRootEntries) {
+        return new Response(
+          JSON.stringify({ path: ".", entries: opts.listRootEntries() }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
@@ -565,6 +593,51 @@ describe("App", () => {
     expect(textarea.value).toBe("README.md");
   });
 
+  it("closes file preview with the header close button", async () => {
+    installFetch();
+    await mountApp();
+    await waitForText("README.md");
+    await waitForText("Hello");
+    expect(document.querySelector(".file-preview-surface")).toBeTruthy();
+
+    const closeBtn = document.querySelector(
+      ".file-preview-header__close",
+    ) as HTMLButtonElement | null;
+    if (!closeBtn) throw new Error("no preview close button");
+    await act(async () => {
+      closeBtn.click();
+    });
+
+    expect(document.querySelector(".file-preview-surface")).toBeNull();
+    const fileButton = findFileTreeButton("README.md");
+    if (!fileButton) throw new Error("no README.md button");
+    expect(fileButton.getAttribute("aria-selected")).not.toBe("true");
+  });
+
+  it("reopens file preview after closing", async () => {
+    installFetch();
+    await mountApp();
+    await waitForText("README.md");
+    await waitForText("Hello");
+
+    const closeBtn = document.querySelector(
+      ".file-preview-header__close",
+    ) as HTMLButtonElement | null;
+    if (!closeBtn) throw new Error("no preview close button");
+    await act(async () => {
+      closeBtn.click();
+    });
+    expect(document.querySelector(".file-preview-surface")).toBeNull();
+
+    const fileButton = findFileTreeButton("README.md");
+    if (!fileButton) throw new Error("no README.md button");
+    await act(async () => {
+      fileButton.click();
+    });
+    expect(document.querySelector(".file-preview-surface")).toBeTruthy();
+    await waitForText("Hello");
+  });
+
   it("renders infographic preview as an image without json source", async () => {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg"><text>Parse</text></svg>`;
     installFetch({
@@ -735,6 +808,41 @@ describe("App", () => {
     expect(document.body.textContent).not.toContain("无法预览");
   });
 
+  it("renders image files with an inline image preview", async () => {
+    installFetch({
+      files: new Response(
+        JSON.stringify({
+          path: ".",
+          entries: [{ name: "photo.png", type: "file" }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+      preview: new Response(
+        JSON.stringify({
+          path: "photo.png",
+          kind: "image",
+          text: "",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    await waitForText("photo.png");
+    const fileButton = findFileTreeButton("photo.png");
+    if (!fileButton) throw new Error("no photo.png button");
+    await act(async () => {
+      fileButton.click();
+    });
+    const image = document.querySelector("img.file-preview-image");
+    expect(image).toBeTruthy();
+    expect(image?.getAttribute("src")).toBe(
+      "/v1/files/raw?path=photo.png",
+    );
+    expect(image?.getAttribute("alt")).toBe("photo.png");
+    expect(document.body.textContent).toContain("图片");
+    expect(document.body.textContent).not.toContain("无法预览");
+  });
+
   it("renders office documents with preview and edit tabs", async () => {
     installFetch({
       files: new Response(
@@ -848,8 +956,77 @@ describe("App", () => {
     expect(findContextMenuItem("全部收起")).toBeTruthy();
     expect(findContextMenuItem("新建文件")).toBeTruthy();
     expect(findContextMenuItem("新建文件夹")).toBeTruthy();
+    expect(findContextMenuItem("刷新")).toBeTruthy();
     expect(findContextMenuItem("移动到文件夹")).toBeFalsy();
     expect(findContextMenuItem("删除")).toBeFalsy();
+  });
+
+  it("refreshes workspace files from the header button", async () => {
+    let entries: Array<{ name: string; type: "file" | "dir" }> = [
+      { name: "README.md", type: "file" },
+    ];
+    installFetch({ listRootEntries: () => entries });
+    await mountApp();
+    await waitForText("README.md");
+    expect(findFileTreeButton("notes.md")).toBeUndefined();
+
+    entries = [
+      { name: "README.md", type: "file" },
+      { name: "notes.md", type: "file" },
+    ];
+    const refresh = document.querySelector(
+      '[aria-label="刷新文件"]',
+    ) as HTMLButtonElement | null;
+    if (!refresh) throw new Error("no refresh button");
+    await act(async () => {
+      refresh.click();
+    });
+    await waitForText("notes.md");
+  });
+
+  it("adds a workspace file when file sync reports it", async () => {
+    let entries: Array<{ name: string; type: "file" | "dir" }> = [
+      { name: "README.md", type: "file" },
+    ];
+    let resolveSync: ((res: Response) => void) | undefined;
+    let delivered = false;
+    installFetch({
+      listRootEntries: () => entries,
+      filesSync: (_input, init) => {
+        if (delivered) return hangUntilAbort(init?.signal);
+        return new Promise<Response>((resolve) => {
+          resolveSync = (res) => {
+            delivered = true;
+            resolve(res);
+          };
+        });
+      },
+    });
+    await mountApp();
+    await waitForText("README.md");
+    expect(findFileTreeButton("notes.md")).toBeUndefined();
+    const urls = vi.mocked(fetch).mock.calls.map(([input]) => requestUrl(input));
+    expect(urls.some((u) => u.includes("/v1/files/sync?generation=0"))).toBe(
+      true,
+    );
+
+    entries = [
+      { name: "README.md", type: "file" },
+      { name: "notes.md", type: "file" },
+    ];
+    await act(async () => {
+      resolveSync?.(
+        new Response(
+          JSON.stringify({
+            generation: 1,
+            dirs: ["."],
+            files: ["notes.md"],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+    });
+    await waitForText("notes.md");
   });
 
   it("creates a file from the root context menu", async () => {
@@ -956,6 +1133,7 @@ describe("App", () => {
       fireContextMenu(docsButton);
     });
     expect(findContextMenuItem("展开")).toBeTruthy();
+    expect(findContextMenuItem("刷新")).toBeTruthy();
     expect(findContextMenuItem("新建文件")).toBeTruthy();
     expect(findContextMenuItem("新建子文件夹")).toBeTruthy();
     expect(findContextMenuItem("重命名")).toBeTruthy();

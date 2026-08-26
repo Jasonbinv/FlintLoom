@@ -12,6 +12,7 @@ export type FilePreview = {
     | "pptx"
     | "audio"
     | "video"
+    | "image"
     | "failed";
   text: string;
 };
@@ -79,6 +80,23 @@ export async function fetchFiles(
   });
   if (!res.ok) throw new Error("host unreachable");
   return (await res.json()) as FileList;
+}
+
+export type FileSync = {
+  generation: number;
+  dirs: string[];
+  files: string[];
+};
+
+export async function fetchFilesSync(
+  generation: number,
+  signal?: AbortSignal,
+): Promise<FileSync> {
+  const res = await fetch(`/v1/files/sync?generation=${generation}`, {
+    signal,
+  });
+  if (!res.ok) throw new Error("host unreachable");
+  return (await res.json()) as FileSync;
 }
 
 export async function fetchPreview(
