@@ -54,6 +54,8 @@ function previewBadge(filePath: string | undefined, kind: PreviewKind): string {
   if (kind === "docx") return "Word";
   if (kind === "pptx") return "PPT";
   if (kind === "spreadsheet") return "Excel";
+  if (kind === "audio") return "音频";
+  if (kind === "video") return "视频";
   if (kind === "svg") return "SVG";
   if (kind === "failed" || kind === "error") return "无法预览";
   if (!filePath) return "文本";
@@ -184,6 +186,33 @@ export function FilePreviewContent({ filePath, kind, text }: Props) {
 
   if (kind === "spreadsheet" && filePath) {
     return <SpreadsheetPreview filePath={filePath} title={title} />;
+  }
+
+  if ((kind === "audio" || kind === "video") && filePath) {
+    const src = `/v1/files/raw?path=${encodeURIComponent(filePath)}`;
+    return (
+      <div className={`file-preview file-preview--${kind}`}>
+        <PreviewHeader title={title} filePath={filePath} badge={badge} />
+        <div className={`file-preview-media file-preview-media--${kind}`}>
+          {kind === "audio" ? (
+            <audio
+              className="file-preview-audio"
+              src={src}
+              controls
+              preload="metadata"
+            />
+          ) : (
+            <video
+              className="file-preview-video"
+              src={src}
+              controls
+              preload="metadata"
+              playsInline
+            />
+          )}
+        </div>
+      </div>
+    );
   }
 
   if (

@@ -184,6 +184,17 @@ function installFetch(opts: {
         headers: { "Content-Type": "application/octet-stream" },
       });
     }
+    if (
+      url.includes("/v1/files/mkdir") ||
+      url.includes("/v1/files/create") ||
+      url.includes("/v1/files/rename") ||
+      (url.includes("/v1/files") && init?.method === "DELETE")
+    ) {
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     if (url.includes("/v1/files/preview")) {
       if (opts.preview instanceof Error) throw opts.preview;
       if (opts.preview) return opts.preview.clone();
@@ -198,6 +209,14 @@ function installFetch(opts: {
     }
     if (url.includes("/v1/files")) {
       if (opts.files instanceof Error) throw opts.files;
+      const path = new URL(url, "http://local").searchParams.get("path");
+      const isRoot = path === null || path === "" || path === ".";
+      if (!isRoot) {
+        return new Response(
+          JSON.stringify({ path, entries: [] }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
       if (opts.files) return opts.files.clone();
       return new Response(
         JSON.stringify({
@@ -399,6 +418,23 @@ function findFileTreeButton(name: string): HTMLButtonElement | undefined {
     (el) => el.textContent === name,
   );
   return label?.closest("button") as HTMLButtonElement | undefined;
+}
+
+function fireContextMenu(el: Element, clientX = 48, clientY = 96) {
+  el.dispatchEvent(
+    new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX,
+      clientY,
+    }),
+  );
+}
+
+function findContextMenuItem(label: string): HTMLButtonElement | undefined {
+  return Array.from(
+    document.querySelectorAll(".file-tree-context-menu button"),
+  ).find((b) => b.textContent === label) as HTMLButtonElement | undefined;
 }
 
 beforeEach(() => {
@@ -629,6 +665,76 @@ describe("App", () => {
     expect(document.body.textContent).toContain("Excel");
   });
 
+  it("renders audio files with a playable audio element", async () => {
+    installFetch({
+      files: new Response(
+        JSON.stringify({
+          path: ".",
+          entries: [{ name: "song.mp3", type: "file" }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+      preview: new Response(
+        JSON.stringify({
+          path: "song.mp3",
+          kind: "audio",
+          text: "",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    await waitForText("song.mp3");
+    const fileButton = findFileTreeButton("song.mp3");
+    if (!fileButton) throw new Error("no song.mp3 button");
+    await act(async () => {
+      fileButton.click();
+    });
+    const audio = document.querySelector("audio.file-preview-audio");
+    expect(audio).toBeTruthy();
+    expect(audio?.getAttribute("src")).toBe(
+      "/v1/files/raw?path=song.mp3",
+    );
+    expect(audio?.hasAttribute("controls")).toBe(true);
+    expect(document.body.textContent).toContain("音频");
+    expect(document.body.textContent).not.toContain("无法预览");
+  });
+
+  it("renders video files with a playable video element", async () => {
+    installFetch({
+      files: new Response(
+        JSON.stringify({
+          path: ".",
+          entries: [{ name: "clip.mp4", type: "file" }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+      preview: new Response(
+        JSON.stringify({
+          path: "clip.mp4",
+          kind: "video",
+          text: "",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    await waitForText("clip.mp4");
+    const fileButton = findFileTreeButton("clip.mp4");
+    if (!fileButton) throw new Error("no clip.mp4 button");
+    await act(async () => {
+      fileButton.click();
+    });
+    const video = document.querySelector("video.file-preview-video");
+    expect(video).toBeTruthy();
+    expect(video?.getAttribute("src")).toBe(
+      "/v1/files/raw?path=clip.mp4",
+    );
+    expect(video?.hasAttribute("controls")).toBe(true);
+    expect(document.body.textContent).toContain("视频");
+    expect(document.body.textContent).not.toContain("无法预览");
+  });
+
   it("renders office documents with preview and edit tabs", async () => {
     installFetch({
       files: new Response(
@@ -712,6 +818,250 @@ describe("App", () => {
     await waitForText("host unreachable");
     expect(document.body.textContent).toContain("README.md");
     expect(document.body.textContent).toContain("docs");
+  });
+
+  it("shows file context menu on right-click", async () => {
+    installFetch();
+    await mountApp();
+    await waitForText("README.md");
+    const fileButton = findFileTreeButton("README.md");
+    if (!fileButton) throw new Error("no README.md button");
+    await act(async () => {
+      fireContextMenu(fileButton);
+    });
+    expect(findContextMenuItem("打开预览")).toBeTruthy();
+    expect(findContextMenuItem("重命名")).toBeTruthy();
+    expect(findContextMenuItem("移动到文件夹")).toBeTruthy();
+    expect(findContextMenuItem("删除")).toBeTruthy();
+  });
+
+  it("shows root folder context menu on right-click", async () => {
+    installFetch();
+    await mountApp();
+    await waitForText("README.md");
+    const rootButton = findFileTreeButton("工作空间");
+    if (!rootButton) throw new Error("no 工作空间 button");
+    await act(async () => {
+      fireContextMenu(rootButton);
+    });
+    expect(findContextMenuItem("全部展开")).toBeTruthy();
+    expect(findContextMenuItem("全部收起")).toBeTruthy();
+    expect(findContextMenuItem("新建文件")).toBeTruthy();
+    expect(findContextMenuItem("新建文件夹")).toBeTruthy();
+    expect(findContextMenuItem("移动到文件夹")).toBeFalsy();
+    expect(findContextMenuItem("删除")).toBeFalsy();
+  });
+
+  it("creates a file from the root context menu", async () => {
+    installFetch();
+    await mountApp();
+    await waitForText("README.md");
+    const rootButton = findFileTreeButton("工作空间");
+    if (!rootButton) throw new Error("no 工作空间 button");
+    await act(async () => {
+      fireContextMenu(rootButton);
+    });
+    const createItem = findContextMenuItem("新建文件");
+    if (!createItem) throw new Error("no 新建文件 item");
+    await act(async () => {
+      createItem.click();
+    });
+    const nameInput = document.querySelector(
+      ".file-action-dialog input",
+    ) as HTMLInputElement | null;
+    if (!nameInput) throw new Error("no name input");
+    await act(async () => {
+      const proto = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      );
+      proto?.set?.call(nameInput, "notes.md");
+      nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const confirm = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "创建",
+    ) as HTMLButtonElement | undefined;
+    if (!confirm) throw new Error("no 创建 button");
+    await act(async () => {
+      confirm.click();
+    });
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const createCall = fetchMock.mock.calls.find(([input, init]) => {
+      const url = requestUrl(input as RequestInfo | URL);
+      return (
+        url.includes("/v1/files/create") &&
+        (init as RequestInit | undefined)?.method === "POST"
+      );
+    });
+    expect(createCall).toBeTruthy();
+    const body = JSON.parse(String((createCall![1] as RequestInit).body)) as {
+      path: string;
+    };
+    expect(body.path).toBe("notes.md");
+  });
+
+  it("deletes a file after confirming from the context menu", async () => {
+    installFetch();
+    await mountApp();
+    await waitForText("README.md");
+    const fileButton = findFileTreeButton("README.md");
+    if (!fileButton) throw new Error("no README.md button");
+    await act(async () => {
+      fireContextMenu(fileButton);
+    });
+    const deleteItem = findContextMenuItem("删除");
+    if (!deleteItem) throw new Error("no 删除 item");
+    await act(async () => {
+      deleteItem.click();
+    });
+    const confirmBtn = Array.from(
+      document.querySelectorAll(".file-action-dialog button"),
+    ).find((b) => b.textContent === "删除") as HTMLButtonElement | undefined;
+    if (!confirmBtn) throw new Error("no confirm 删除 button");
+    await act(async () => {
+      confirmBtn.click();
+    });
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const deleteCall = fetchMock.mock.calls.find(([input, init]) => {
+      const url = requestUrl(input as RequestInfo | URL);
+      return (
+        url.includes("/v1/files") &&
+        (init as RequestInit | undefined)?.method === "DELETE"
+      );
+    });
+    expect(deleteCall).toBeTruthy();
+    expect(requestUrl(deleteCall![0] as RequestInfo | URL)).toContain(
+      "path=README.md",
+    );
+  });
+
+  it("shows folder context menu with move on right-click", async () => {
+    installFetch({
+      files: new Response(
+        JSON.stringify({
+          path: ".",
+          entries: [
+            { name: "docs", type: "dir" },
+            { name: "README.md", type: "file" },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    await waitForText("docs");
+    const docsButton = findFileTreeButton("docs");
+    if (!docsButton) throw new Error("no docs button");
+    await act(async () => {
+      fireContextMenu(docsButton);
+    });
+    expect(findContextMenuItem("展开")).toBeTruthy();
+    expect(findContextMenuItem("新建文件")).toBeTruthy();
+    expect(findContextMenuItem("新建子文件夹")).toBeTruthy();
+    expect(findContextMenuItem("重命名")).toBeTruthy();
+    expect(findContextMenuItem("移动到文件夹")).toBeTruthy();
+    expect(findContextMenuItem("删除")).toBeTruthy();
+  });
+
+  it("moves a file into a folder from the context menu", async () => {
+    installFetch({
+      files: new Response(
+        JSON.stringify({
+          path: ".",
+          entries: [
+            { name: "docs", type: "dir" },
+            { name: "README.md", type: "file" },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    await waitForText("README.md");
+    const fileButton = findFileTreeButton("README.md");
+    if (!fileButton) throw new Error("no README.md button");
+    await act(async () => {
+      fireContextMenu(fileButton);
+    });
+    const moveItem = findContextMenuItem("移动到文件夹");
+    if (!moveItem) throw new Error("no 移动到文件夹 item");
+    await act(async () => {
+      moveItem.click();
+    });
+    await waitForText("选择目标文件夹");
+    const docsTarget = Array.from(
+      document.querySelectorAll(".file-move-dialog button"),
+    ).find((b) => b.textContent?.includes("docs")) as HTMLButtonElement | undefined;
+    if (!docsTarget) throw new Error("no docs move target");
+    await act(async () => {
+      docsTarget.click();
+    });
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const renameCall = fetchMock.mock.calls.find(([input, init]) => {
+      const url = requestUrl(input as RequestInfo | URL);
+      return (
+        url.includes("/v1/files/rename") &&
+        (init as RequestInit | undefined)?.method === "POST"
+      );
+    });
+    expect(renameCall).toBeTruthy();
+    const body = JSON.parse(String((renameCall![1] as RequestInit).body)) as {
+      path: string;
+      to: string;
+    };
+    expect(body.path).toBe("README.md");
+    expect(body.to).toBe("docs/README.md");
+  });
+
+  it("moves a folder into another folder from the context menu", async () => {
+    installFetch({
+      files: new Response(
+        JSON.stringify({
+          path: ".",
+          entries: [
+            { name: "docs", type: "dir" },
+            { name: "md", type: "dir" },
+            { name: "README.md", type: "file" },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    await waitForText("docs");
+    const docsButton = findFileTreeButton("docs");
+    if (!docsButton) throw new Error("no docs button");
+    await act(async () => {
+      fireContextMenu(docsButton);
+    });
+    const moveItem = findContextMenuItem("移动到文件夹");
+    if (!moveItem) throw new Error("no 移动到文件夹 item");
+    await act(async () => {
+      moveItem.click();
+    });
+    await waitForText("选择目标文件夹");
+    const mdTarget = Array.from(
+      document.querySelectorAll(".file-move-dialog button"),
+    ).find((b) => b.textContent?.includes("md")) as HTMLButtonElement | undefined;
+    if (!mdTarget) throw new Error("no md move target");
+    await act(async () => {
+      mdTarget.click();
+    });
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const renameCall = fetchMock.mock.calls.find(([input, init]) => {
+      const url = requestUrl(input as RequestInfo | URL);
+      return (
+        url.includes("/v1/files/rename") &&
+        (init as RequestInit | undefined)?.method === "POST"
+      );
+    });
+    expect(renameCall).toBeTruthy();
+    const body = JSON.parse(String((renameCall![1] as RequestInit).body)) as {
+      path: string;
+      to: string;
+    };
+    expect(body.path).toBe("docs");
+    expect(body.to).toBe("md/docs");
   });
 
   it("shows 文件 and 知识库 tabs with 文件 default", async () => {
