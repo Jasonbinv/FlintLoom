@@ -23,6 +23,7 @@ export type FilePreview = {
     | "pptx"
     | "audio"
     | "video"
+    | "image"
     | "failed";
   text: string;
 };
@@ -209,6 +210,17 @@ function isPptxFileName(fileName: string): boolean {
 
 const AUDIO_EXTS = new Set([".mp3", ".wav", ".ogg", ".flac", ".aac", ".m4a"]);
 const VIDEO_EXTS = new Set([".mp4", ".webm", ".mov", ".avi", ".mkv"]);
+const IMAGE_EXTS = new Set([
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".bmp",
+  ".avif",
+  ".ico",
+  ".svg",
+]);
 
 const CONTENT_TYPE_BY_EXT: Record<string, string> = {
   ".mp3": "audio/mpeg",
@@ -222,12 +234,24 @@ const CONTENT_TYPE_BY_EXT: Record<string, string> = {
   ".mov": "video/quicktime",
   ".avi": "video/x-msvideo",
   ".mkv": "video/x-matroska",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".bmp": "image/bmp",
+  ".avif": "image/avif",
+  ".ico": "image/x-icon",
+  ".svg": "image/svg+xml",
 };
 
-export function mediaPreviewKind(fileName: string): "audio" | "video" | undefined {
+export function mediaPreviewKind(
+  fileName: string,
+): "audio" | "video" | "image" | undefined {
   const ext = extname(fileName).toLowerCase();
   if (AUDIO_EXTS.has(ext)) return "audio";
   if (VIDEO_EXTS.has(ext)) return "video";
+  if (IMAGE_EXTS.has(ext)) return "image";
   return undefined;
 }
 

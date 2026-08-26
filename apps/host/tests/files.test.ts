@@ -415,6 +415,33 @@ describe("GET /v1/files and /v1/files/preview", () => {
     expect(rawRes.headers.get("Content-Type")).toBe("video/mp4");
   });
 
+  it("previews png as image without converting to text", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-files-png-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-files-png-home-"));
+    writeFileSync(join(workspaceRoot, "photo.png"), "fake-png-bytes");
+    writeAssembly(workspaceRoot);
+
+    const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+    close = host.close;
+    const token = loadOrCreateToken(homeDir);
+
+    const previewRes = await fetch(
+      `${host.url}/v1/files/preview?path=${encodeURIComponent("photo.png")}`,
+      { headers: authHeaders(token) },
+    );
+    expect(previewRes.status).toBe(200);
+    const preview = (await previewRes.json()) as { kind: string; text: string };
+    expect(preview.kind).toBe("image");
+    expect(preview.text).toBe("");
+
+    const rawRes = await fetch(
+      `${host.url}/v1/files/raw?path=${encodeURIComponent("photo.png")}`,
+      { headers: authHeaders(token) },
+    );
+    expect(rawRes.status).toBe(200);
+    expect(rawRes.headers.get("Content-Type")).toBe("image/png");
+  });
+
   it("serves raw media byte ranges so players can seek", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-files-range-"));
     const homeDir = mkdtempSync(join(tmpdir(), "flintloom-files-range-home-"));
