@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FilePreviewCloseButton } from "./FilePreviewContent.tsx";
 import { fetchFileBytes, writeFileBytes } from "./files.ts";
 import { FileXlsxPreview, type FileXlsxPreviewHandle } from "./xlsx/FileXlsxPreview.tsx";
 
 type Props = {
   filePath: string;
   title: string;
+  onClose?: () => void;
+  onQuote?: () => void;
 };
 
 export function useXlsxPreviewSave(args: {
@@ -63,7 +66,7 @@ export function useXlsxPreviewSave(args: {
   return { dirty, saving, saveError, markDirty, discardEdit, saveEdit };
 }
 
-export function SpreadsheetPreview({ filePath, title }: Props) {
+export function SpreadsheetPreview({ filePath, title, onClose, onQuote }: Props) {
   const [arrayBuffer, setArrayBuffer] = useState<ArrayBuffer>();
   const [loadError, setLoadError] = useState<string>();
   const [loading, setLoading] = useState(true);
@@ -151,7 +154,18 @@ export function SpreadsheetPreview({ filePath, title }: Props) {
         </span>
         <div className="file-preview-header__actions">
           {headerActions}
+          {onQuote ? (
+            <button
+              type="button"
+              className="file-preview-header__action"
+              onClick={onQuote}
+              title="将文件路径插入输入框，供对话引用"
+            >
+              引用
+            </button>
+          ) : null}
           <span className="file-preview-header__badge">Excel</span>
+          {onClose ? <FilePreviewCloseButton onClose={onClose} /> : null}
         </div>
       </header>
       {loading ? (

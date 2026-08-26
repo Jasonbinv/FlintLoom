@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { FilePreviewCloseButton } from "./FilePreviewContent.tsx";
 import {
   fetchFileBytes,
   fetchOfficeMarkdown,
@@ -29,6 +30,8 @@ type Props = {
   filePath: string;
   title: string;
   kind: OfficeKind;
+  onClose?: () => void;
+  onQuote?: () => void;
 };
 
 const BADGE: Record<OfficeKind, string> = {
@@ -37,7 +40,7 @@ const BADGE: Record<OfficeKind, string> = {
   pptx: "PPT",
 };
 
-export function DocumentPreview({ filePath, title, kind }: Props) {
+export function DocumentPreview({ filePath, title, kind, onClose, onQuote }: Props) {
   const [tab, setTab] = useState<"preview" | "edit">("preview");
   const [arrayBuffer, setArrayBuffer] = useState<ArrayBuffer>();
   const [bytesError, setBytesError] = useState<string>();
@@ -239,7 +242,18 @@ export function DocumentPreview({ filePath, title, kind }: Props) {
               <span className="file-preview-header__action-error">{saveError}</span>
             ) : null}
           </div>
+          {onQuote ? (
+            <button
+              type="button"
+              className="file-preview-header__action"
+              onClick={onQuote}
+              title="将文件路径插入输入框，供对话引用"
+            >
+              引用
+            </button>
+          ) : null}
           <span className="file-preview-header__badge">{BADGE[kind]}</span>
+          {onClose ? <FilePreviewCloseButton onClose={onClose} /> : null}
         </div>
       </header>
       <div className="file-office-body">

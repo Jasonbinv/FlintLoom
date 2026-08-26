@@ -16,12 +16,14 @@ export const WORKSPACE_ROOT_NODE: FileTreeNode = {
 
 export type FileTreeNodeMenuActions = {
   onOpenFile?: (node: FileTreeNode) => void;
+  onQuoteFile?: (node: FileTreeNode) => void;
   onToggleFolder?: (node: FileTreeNode) => void;
   onCreateFile?: (node: FileTreeNode) => void;
   onCreateFolder?: (node: FileTreeNode) => void;
   onRename?: (node: FileTreeNode) => void;
   onMove?: (node: FileTreeNode) => void;
   onDelete?: (node: FileTreeNode) => void;
+  onRefresh?: (node: FileTreeNode) => void;
   onExpandAllFolders?: () => void;
   onCollapseAllFolders?: () => void;
 };
@@ -88,6 +90,9 @@ export function FileTreeNodeActionMenu({
             {folderExpanded ? "收起" : "展开"}
           </MenuButton>
         ) : null}
+        {actions.onRefresh ? (
+          <MenuButton onClick={closeAnd(actions.onRefresh)}>刷新</MenuButton>
+        ) : null}
         {actions.onCreateFile ? (
           <MenuButton onClick={closeAnd(actions.onCreateFile)}>新建文件</MenuButton>
         ) : null}
@@ -115,6 +120,9 @@ export function FileTreeNodeActionMenu({
     <>
       {actions.onOpenFile ? (
         <MenuButton onClick={closeAnd(actions.onOpenFile)}>打开预览</MenuButton>
+      ) : null}
+      {actions.onQuoteFile ? (
+        <MenuButton onClick={closeAnd(actions.onQuoteFile)}>引用到对话</MenuButton>
       ) : null}
       {actions.onRename ? (
         <MenuButton onClick={closeAnd(actions.onRename)}>重命名</MenuButton>

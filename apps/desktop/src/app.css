@@ -181,6 +181,10 @@ body,
 
 .sidebar {
   flex: 0 0 var(--sidebar-width);
+  width: var(--sidebar-width);
+  max-width: var(--sidebar-width);
+  min-width: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   background: var(--bg-secondary);
@@ -233,6 +237,7 @@ body,
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  min-width: 0;
 }
 
 .btn-pick-workspace {
@@ -484,7 +489,9 @@ body,
 
 .sidebar-history {
   flex: 1;
+  min-width: 0;
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   padding: var(--space-2) var(--space-3);
   border-top: 1px solid var(--border-subtle);
@@ -504,12 +511,14 @@ body,
   margin: 0;
   padding: 0;
   list-style: none;
+  min-width: 0;
 }
 
 .sidebar-history-row {
   display: flex;
   align-items: stretch;
   gap: 2px;
+  min-width: 0;
 }
 
 .sidebar-history-row .sidebar-history-item {
@@ -588,6 +597,7 @@ body,
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  min-width: 0;
 }
 
 .theme-toggle {
@@ -642,24 +652,28 @@ body,
   border: 1px solid var(--border-default);
   background: var(--bg-tertiary);
   color: var(--text-secondary);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .status-pill.ok {
-  border-color: color-mix(in srgb, var(--success) 35%, transparent);
+  border-color: color-mix(in srgb, var(--success) 40%, transparent);
   color: var(--success);
-  background: color-mix(in srgb, var(--success) 8%, #fff);
+  background: color-mix(in srgb, var(--success) 14%, var(--bg-elevated));
 }
 
 .status-pill.warn {
-  border-color: color-mix(in srgb, var(--warning) 35%, transparent);
+  border-color: color-mix(in srgb, var(--warning) 40%, transparent);
   color: var(--warning);
-  background: color-mix(in srgb, var(--warning) 8%, #fff);
+  background: color-mix(in srgb, var(--warning) 14%, var(--bg-elevated));
 }
 
 .status-pill.down {
-  border-color: color-mix(in srgb, var(--error) 35%, transparent);
+  border-color: color-mix(in srgb, var(--error) 40%, transparent);
   color: var(--error);
-  background: color-mix(in srgb, var(--error) 8%, #fff);
+  background: color-mix(in srgb, var(--error) 14%, var(--bg-elevated));
 }
 
 .status-pill.compact {
@@ -732,6 +746,7 @@ body,
   padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--border-subtle);
   text-align: left;
+  color: var(--text-primary);
 }
 
 .settings-table th {
@@ -798,12 +813,12 @@ body,
 
 .settings-source-pill.env {
   color: var(--accent);
-  background: color-mix(in srgb, var(--accent-primary) 10%, #fff);
+  background: color-mix(in srgb, var(--accent-primary) 14%, var(--bg-elevated));
 }
 
 .settings-source-pill.credentials {
   color: var(--ok);
-  background: color-mix(in srgb, var(--success) 10%, #fff);
+  background: color-mix(in srgb, var(--success) 14%, var(--bg-elevated));
 }
 
 .settings-masked-key {
@@ -897,11 +912,11 @@ body,
 }
 
 .models-row-guard td {
-  background: color-mix(in srgb, var(--accent-primary) 5%, #fff);
+  background: color-mix(in srgb, var(--accent-primary) 12%, var(--bg-secondary));
 }
 
 .models-row-media td {
-  background: color-mix(in srgb, var(--success) 5%, #fff);
+  background: color-mix(in srgb, var(--success) 10%, var(--bg-secondary));
 }
 
 .plugin-tag {
@@ -1099,6 +1114,12 @@ body,
   font-weight: 600;
 }
 
+.file-pane-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
 .icon-btn {
   border: none;
   background: transparent;
@@ -1148,6 +1169,10 @@ body,
 
 .file-pane-body--dragging {
   user-select: none;
+}
+
+.file-pane-body--preview-closed .file-tree-surface {
+  flex: 1 1 auto;
 }
 
 .file-pane-inner-drag-overlay {
@@ -1586,6 +1611,13 @@ body,
   background: var(--bg-tertiary);
 }
 
+.file-preview-header__close {
+  flex-shrink: 0;
+  font-size: 1.15rem;
+  line-height: 1;
+  padding: var(--space-1) var(--space-2);
+}
+
 .file-preview-prose {
   flex: 1 1 auto;
   overflow: auto;
@@ -1627,6 +1659,11 @@ body,
   padding: var(--space-3);
 }
 
+.file-preview-media--image {
+  overflow: auto;
+  background: color-mix(in srgb, var(--bg-tertiary) 55%, #000);
+}
+
 .file-preview-audio {
   width: min(100%, 36rem);
 }
@@ -1637,6 +1674,17 @@ body,
   max-height: 100%;
   background: #000;
   object-fit: contain;
+}
+
+.file-preview-image {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
 }
 
 .file-xlsx-fortune-wrap {
@@ -2313,7 +2361,7 @@ body,
 }
 
 .bubble.error {
-  background: color-mix(in srgb, var(--error) 8%, #fff);
+  background: color-mix(in srgb, var(--error) 12%, var(--bg-elevated));
   border: 1px solid color-mix(in srgb, var(--error) 25%, transparent);
   color: var(--error);
 }
@@ -2338,7 +2386,7 @@ body,
 
 .bubble.guard-steward.warn {
   border-color: color-mix(in srgb, var(--warning) 40%, transparent);
-  background: color-mix(in srgb, var(--warning) 6%, #fff);
+  background: color-mix(in srgb, var(--warning) 10%, var(--bg-elevated));
 }
 
 .guard-steward-label {
