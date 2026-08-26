@@ -1,7 +1,7 @@
 # FlintLoom 工作区文件树磁盘同步
 
 日期：2026-08-27  
-状态：待审阅草稿  
+状态：已批准  
 产品：FlintLoom — A real agent. / 真正的 Agent。  
 范围：工作区文件树与磁盘对齐。Agent 写入与资源管理器拷贝同等对待。不引入 SSE、不引入 chokidar、不改 `runTurn`。
 
@@ -29,6 +29,7 @@
 | 脏路径 | 每个可见变化的相对路径，把它自己（若是文件则其父目录）以及所有祖先（含 `"."`）记入 `dirs`（正斜杠，根为 `"."`）。变化的文件相对路径记入 `files`。 |
 | 唤醒后 | 把这一代的 `dirs`/`files` 发给所有等待者，然后清空脏集。 |
 | 忽略 | `isHiddenRelPath` 为真的路径；basename 以 `~$` 开头（Office 锁）。忽略的事件不 bump generation。 |
+| 空文件名 | `fs.watch` 回调 `filename` 为 `null`/`""` 时当作根变化：脏 `dirs` 含 `"."`，`files` 为空。 |
 | 监听失败 | watch 启动失败或 error：不崩溃。sync 仍可挂起到超时并返回空 dirs。↻ 仍可用。 |
 | 切换工作区 | `workspaceRootRef` 更新后关掉旧 watcher，`generation` 归 0，清空脏集，对新根再 watch。桌面已有 `filePaneKey` 会卸挂 FilePane，新实例从 `generation=0` 再挂。 |
 | 请求取消 | `req`/`res` `close` 时结束等待，不再 `writeHead`。 |
