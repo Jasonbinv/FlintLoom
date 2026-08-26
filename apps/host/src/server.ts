@@ -46,6 +46,7 @@ import { parseTurnBody } from "./turn-body.ts";
 import { loadOrCreateToken, readCredentials } from "./token.ts";
 import { readCredentialsStore, type CredentialsStore, resolveLayeredString, isLocalLlmBaseUrl } from "./credentials.ts";
 import { resolveWorkspaceRoot } from "./workspace.ts";
+import { createFileWatch, type FileWatch } from "./fileWatch.ts";
 
 export type PluginSnapshot = {
   id: string;
@@ -718,6 +719,7 @@ async function handleRequest(
     turns: Map<string, Session>;
     busy: Set<string>;
     reloadRuntime: () => Promise<void>;
+    fileWatch: FileWatch;
   },
 ): Promise<void> {
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -1282,6 +1284,33 @@ async function handleRequest(
     return;
   }
 
+  if (req.method === "GET" && pathname === "/v1/files/sync") {
+    const raw = url.searchParams.get("generation");
+    if (raw === null || raw === "" || !/^[0-9]+$/.test(raw)) {
+      send(res, 400);
+      return;
+    }
+    const n = Number(raw);
+    const ac = new AbortController();
+    const onClose = () => {
+      ac.abort();
+    };
+    req.on("close", onClose);
+    res.on("close", onClose);
+    try {
+      const payload = await opts.fileWatch.wait(n, ac.signal);
+      if (!res.destroyed && !res.writableEnded && !res.headersSent) {
+        sendJson(res, 200, payload);
+      }
+    } catch {
+      // client gone or workspace switched
+    } finally {
+      req.off("close", onClose);
+      res.off("close", onClose);
+    }
+    return;
+  }
+
   if (req.method === "GET" && pathname === "/v1/files") {
     const rel = normalizeRelPath(url.searchParams.get("path")) ?? ".";
     try {
@@ -1448,6 +1477,7 @@ export async function startHost(opts: {
   const controllers = new Map<string, AbortController>();
   const turns = new Map<string, Session>();
   let listenPort = opts.port ?? 7331;
+  const fileWatch = createFileWatch({ root: workspaceRootRef.current });
 
   const reloadRuntime = async (): Promise<void> => {
     runtimeRef.current.stop();
@@ -1455,6 +1485,7 @@ export async function startHost(opts: {
       pollChannels: true,
     });
     busyRef.current = runtimeRef.current.ctx.require<Set<string>>("turnBusy");
+    fileWatch.setRoot(workspaceRootRef.current);
   };
 
   const server = createServer((req, res) => {
@@ -1468,6 +1499,7 @@ export async function startHost(opts: {
       turns,
       busy: busyRef.current,
       reloadRuntime,
+      fileWatch,
     }).catch((err: unknown) => {
       if (!res.destroyed && !res.writableEnded && !res.headersSent) {
         res.writeHead(500, { "Content-Type": "text/plain" });
@@ -1502,6 +1534,7 @@ export async function startHost(opts: {
     url: `http://127.0.0.1:${address.port}`,
     close: () =>
       new Promise<void>((resolve, reject) => {
+        fileWatch.close();
         server.closeAllConnections();
         runtimeRef.current.stop();
         server.close((err) => {

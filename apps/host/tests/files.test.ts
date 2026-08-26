@@ -609,3 +609,91 @@ describe("workspace file mutations", () => {
     expect(readdirSync(join(workspaceRoot, "src"))).toContain("a.ts");
   });
 });
+
+describe("GET /v1/files/sync", () => {
+  let close: (() => Promise<void>) | undefined;
+  afterEach(async () => {
+    if (close) {
+      await close();
+      close = undefined;
+    }
+  });
+
+  async function startSyncHost() {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-sync-ws-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-sync-home-"));
+    writeAssembly(workspaceRoot);
+    writeFileSync(join(workspaceRoot, "README.md"), "# Hello\n");
+    const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+    close = host.close;
+    return {
+      url: host.url,
+      token: loadOrCreateToken(homeDir),
+      workspaceRoot,
+    };
+  }
+
+  function authHeaders(token: string): HeadersInit {
+    return { Authorization: `Bearer ${token}` };
+  }
+
+  it("wakes when a visible file is written while waiting", async () => {
+    const { url, token, workspaceRoot } = await startSyncHost();
+    const pending = fetch(`${url}/v1/files/sync?generation=0`, {
+      headers: authHeaders(token),
+    });
+    writeFileSync(join(workspaceRoot, "notes.md"), "from-disk\n");
+    const res = await pending;
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      generation: number;
+      dirs: string[];
+      files: string[];
+    };
+    expect(body.generation).toBeGreaterThan(0);
+    expect(body.dirs).toContain(".");
+    expect(body.files).toContain("notes.md");
+  });
+
+  it("returns catch-up immediately when generation is stale", async () => {
+    const { url, token, workspaceRoot } = await startSyncHost();
+    writeFileSync(join(workspaceRoot, "a.md"), "a\n");
+    const first = await fetch(`${url}/v1/files/sync?generation=0`, {
+      headers: authHeaders(token),
+    });
+    expect(first.status).toBe(200);
+    const firstBody = (await first.json()) as { generation: number };
+    expect(firstBody.generation).toBeGreaterThan(0);
+    const t0 = Date.now();
+    const second = await fetch(`${url}/v1/files/sync?generation=0`, {
+      headers: authHeaders(token),
+    });
+    expect(second.status).toBe(200);
+    expect(Date.now() - t0).toBeLessThan(500);
+    const body = (await second.json()) as {
+      generation: number;
+      dirs: string[];
+      files: string[];
+    };
+    expect(body.generation).toBe(firstBody.generation);
+    expect(body.dirs).toEqual(["."]);
+    expect(body.files).toEqual([]);
+  });
+
+  it("rejects missing bearer with 401", async () => {
+    const { url } = await startSyncHost();
+    const res = await fetch(`${url}/v1/files/sync?generation=0`);
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects missing or invalid generation with 400", async () => {
+    const { url, token } = await startSyncHost();
+    const headers = authHeaders(token);
+    const missing = await fetch(`${url}/v1/files/sync`, { headers });
+    expect(missing.status).toBe(400);
+    const bad = await fetch(`${url}/v1/files/sync?generation=foo`, { headers });
+    expect(bad.status).toBe(400);
+    const neg = await fetch(`${url}/v1/files/sync?generation=-1`, { headers });
+    expect(neg.status).toBe(400);
+  });
+});
