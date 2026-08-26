@@ -171,6 +171,37 @@ describe("forwardV1", () => {
     expect(text).toBe("[]");
   });
 
+  it("forwards Range and returns media length headers", async () => {
+    let seenRange: string | undefined;
+    const bound = await listenEphemeral((req, res) => {
+      seenRange = req.headers.range;
+      res.writeHead(206, {
+        "Content-Type": "audio/mpeg",
+        "Content-Length": "5",
+        "Accept-Ranges": "bytes",
+        "Content-Range": "bytes 4-8/20",
+      });
+      res.end("45678");
+    });
+    server = bound.server;
+
+    const result = await forwardV1({
+      upstreamOrigin: bound.origin,
+      token: "secret",
+      method: "GET",
+      path: "/v1/files/raw?path=song.mp3",
+      range: "bytes=4-8",
+    });
+
+    expect(seenRange).toBe("bytes=4-8");
+    expect(result.status).toBe(206);
+    expect(result.contentType).toBe("audio/mpeg");
+    expect(result.contentLength).toBe("5");
+    expect(result.acceptRanges).toBe("bytes");
+    expect(result.contentRange).toBe("bytes 4-8/20");
+    expect(await new Response(result.stream).text()).toBe("45678");
+  });
+
   it("rejects paths that do not start with /v1/", async () => {
     await expect(
       forwardV1({
