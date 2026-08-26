@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { join } from "node:path";
 import type { ChannelRegistry } from "@flintloom/channel";
@@ -15,14 +15,23 @@ import { handlePluginInstallRequest } from "./plugin-install.ts";
 import { handleWecomCallback } from "@flintloom/channel-wecom";
 import type { WecomConfig } from "@flintloom/channel-wecom";
 import {
+  contentTypeForFileName,
+  parseByteRangeHeader,
+  createWorkspaceDirectory,
+  createWorkspaceFile,
+  deleteWorkspaceEntry,
   listWorkspaceFiles,
   normalizeRelPath,
   previewWorkspaceFile,
+  rawFileMaxBytes,
   readWorkspaceFileBytes,
   readWorkspaceFileMarkdown,
+  renameWorkspaceEntry,
+  resolveWorkspaceReadableFile,
   writeWorkspaceFileBytes,
   writeWorkspaceFileFromMarkdown,
   FILE_RAW_MAX_BYTES,
+  type FileMutationResult,
 } from "./files.ts";
 import {
   buildSafeHtmlWrapperHtml,
@@ -520,6 +529,42 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
+function sendFileMutation(res: ServerResponse, result: FileMutationResult): void {
+  if (result === "ok") {
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+  if (result === "exists") {
+    send(res, 409, "exists");
+    return;
+  }
+  if (result === "invalid") {
+    send(res, 400, "invalid path");
+    return;
+  }
+  send(res, 404);
+}
+
+async function readJsonObject(
+  req: IncomingMessage,
+): Promise<Record<string, unknown> | "invalid"> {
+  const raw = await readBody(req);
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return "invalid";
+    }
+    return parsed as Record<string, unknown>;
+  } catch {
+    return "invalid";
+  }
+}
+
+function stringField(body: Record<string, unknown>, key: string): string | undefined {
+  const value = body[key];
+  return typeof value === "string" ? value : undefined;
+}
+
 function writeSse(res: ServerResponse, data: unknown): void {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
@@ -980,20 +1025,48 @@ async function handleRequest(
       return;
     }
     try {
-      const result = await readWorkspaceFileBytes(workspaceRoot, rel);
-      if (result === "not_found") {
+      const resolved = await resolveWorkspaceReadableFile(workspaceRoot, rel);
+      if (resolved === "not_found") {
         send(res, 404);
         return;
       }
-      if (result === "too_large") {
+      if (resolved.size > rawFileMaxBytes(resolved.fileName)) {
         send(res, 413);
         return;
       }
+      const contentType = contentTypeForFileName(resolved.fileName);
+      const rangeHeader =
+        typeof req.headers.range === "string" ? req.headers.range : undefined;
+      const parsed = parseByteRangeHeader(rangeHeader, resolved.size);
+      if (parsed.kind === "unsatisfiable") {
+        res.writeHead(416, {
+          "Content-Type": contentType,
+          "Content-Range": `bytes */${resolved.size}`,
+          "Accept-Ranges": "bytes",
+        });
+        res.end();
+        return;
+      }
+      if (parsed.kind === "range") {
+        const length = parsed.end - parsed.start + 1;
+        res.writeHead(206, {
+          "Content-Type": contentType,
+          "Content-Length": length,
+          "Accept-Ranges": "bytes",
+          "Content-Range": `bytes ${parsed.start}-${parsed.end}/${resolved.size}`,
+        });
+        createReadStream(resolved.absPath, {
+          start: parsed.start,
+          end: parsed.end,
+        }).pipe(res);
+        return;
+      }
       res.writeHead(200, {
-        "Content-Type": "application/octet-stream",
-        "Content-Length": result.byteLength,
+        "Content-Type": contentType,
+        "Content-Length": resolved.size,
+        "Accept-Ranges": "bytes",
       });
-      res.end(result);
+      createReadStream(resolved.absPath).pipe(res);
     } catch (err) {
       if (err instanceof WorkspaceEscapeError) {
         send(res, 400, err.message);
@@ -1111,6 +1184,97 @@ async function handleRequest(
       }
       if (err instanceof Error && err.message === "unreadable") {
         send(res, 400, "unreadable");
+        return;
+      }
+      throw err;
+    }
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/v1/files/mkdir") {
+    const body = await readJsonObject(req);
+    if (body === "invalid") {
+      send(res, 400, "invalid json");
+      return;
+    }
+    const rel = normalizeRelPath(stringField(body, "path") ?? null);
+    if (rel === undefined) {
+      send(res, 400);
+      return;
+    }
+    try {
+      sendFileMutation(res, await createWorkspaceDirectory(workspaceRoot, rel));
+    } catch (err) {
+      if (err instanceof WorkspaceEscapeError) {
+        send(res, 400, err.message);
+        return;
+      }
+      throw err;
+    }
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/v1/files/create") {
+    const body = await readJsonObject(req);
+    if (body === "invalid") {
+      send(res, 400, "invalid json");
+      return;
+    }
+    const rel = normalizeRelPath(stringField(body, "path") ?? null);
+    if (rel === undefined) {
+      send(res, 400);
+      return;
+    }
+    try {
+      sendFileMutation(res, await createWorkspaceFile(workspaceRoot, rel));
+    } catch (err) {
+      if (err instanceof WorkspaceEscapeError) {
+        send(res, 400, err.message);
+        return;
+      }
+      throw err;
+    }
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/v1/files/rename") {
+    const body = await readJsonObject(req);
+    if (body === "invalid") {
+      send(res, 400, "invalid json");
+      return;
+    }
+    const fromRel = normalizeRelPath(stringField(body, "path") ?? null);
+    const toRel = normalizeRelPath(stringField(body, "to") ?? null);
+    if (fromRel === undefined || toRel === undefined) {
+      send(res, 400);
+      return;
+    }
+    try {
+      sendFileMutation(
+        res,
+        await renameWorkspaceEntry(workspaceRoot, fromRel, toRel),
+      );
+    } catch (err) {
+      if (err instanceof WorkspaceEscapeError) {
+        send(res, 400, err.message);
+        return;
+      }
+      throw err;
+    }
+    return;
+  }
+
+  if (req.method === "DELETE" && pathname === "/v1/files") {
+    const rel = normalizeRelPath(url.searchParams.get("path"));
+    if (rel === undefined) {
+      send(res, 400);
+      return;
+    }
+    try {
+      sendFileMutation(res, await deleteWorkspaceEntry(workspaceRoot, rel));
+    } catch (err) {
+      if (err instanceof WorkspaceEscapeError) {
+        send(res, 400, err.message);
         return;
       }
       throw err;

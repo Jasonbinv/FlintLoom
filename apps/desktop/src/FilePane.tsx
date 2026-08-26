@@ -1,15 +1,33 @@
-import { useEffect, useRef, useState } from "react";
-import {
-  childPath,
-  fetchFiles,
-  fetchPreview,
-  type FileEntry,
-} from "./files.ts";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { FileActionDialog } from "./FileActionDialog.tsx";
 import { FileIcon } from "./FileIcon.tsx";
+import { FileMoveDialog } from "./FileMoveDialog.tsx";
 import { FilePaneResizeHandle } from "./FilePaneResizeHandle.tsx";
 import { FilePreviewContent } from "./FilePreviewContent.tsx";
+import { FileTreeContextMenu } from "./FileTreeContextMenu.tsx";
+import {
+  FileTreeNodeActionMenu,
+  WORKSPACE_ROOT_NODE,
+  type FileTreeNode,
+  type FileTreeNodeMenuActions,
+} from "./FileTreeNodeActions.tsx";
 import { KnowledgePane } from "./KnowledgePane.tsx";
 import { useFilePaneTreeResize } from "./useFilePaneTreeResize.ts";
+import {
+  childPath,
+  createWorkspaceDirectory,
+  createWorkspaceFile,
+  deleteWorkspaceEntry,
+  fetchFiles,
+  fetchPreview,
+  buildFileMoveTargets,
+  isValidEntryName,
+  parentPath,
+  renameWorkspaceEntry,
+  type FileEntry,
+  type FileMoveTarget,
+  type FilePreview,
+} from "./files.ts";
 
 const TREE_INDENT_PX = 16;
 const TREE_BASE_INDENT_PX = 12;
@@ -52,12 +70,25 @@ export function FilePane({
   const [treeError, setTreeError] = useState(false);
   const [dirErrors, setDirErrors] = useState<Set<string>>(() => new Set());
   const [previewText, setPreviewText] = useState("");
-  const [previewKind, setPreviewKind] = useState<
-    "markdown" | "text" | "failed" | "svg" | "spreadsheet" | "pdf" | "docx" | "pptx"
-  >("text");
+  const [previewKind, setPreviewKind] = useState<FilePreview["kind"]>("text");
   const [previewError, setPreviewError] = useState(false);
   const previewAc = useRef<AbortController | undefined>(undefined);
   const filePaneBodyRef = useRef<HTMLDivElement>(null);
+  const [treeContextMenu, setTreeContextMenu] = useState<{
+    node: FileTreeNode;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [fileAction, setFileAction] = useState<
+    | { kind: "create-file"; parent: string }
+    | { kind: "create-dir"; parent: string }
+    | { kind: "rename"; node: FileTreeNode }
+    | { kind: "move"; node: FileTreeNode; targets: FileMoveTarget[] }
+    | { kind: "delete"; node: FileTreeNode }
+    | null
+  >(null);
+  const [fileActionName, setFileActionName] = useState("");
+  const [fileActionError, setFileActionError] = useState<string>();
   const {
     width: treeWidth,
     dragging: treeDragging,
@@ -180,6 +211,243 @@ export function FilePane({
     await previewFile(filePath, true);
   }
 
+  async function reloadDir(dirPath: string) {
+    const list = await fetchFiles(dirPath);
+    if (dirPath === ROOT_TREE_PATH) {
+      setRootEntries(list.entries);
+      return;
+    }
+    setChildren((prev) => ({ ...prev, [dirPath]: list.entries }));
+  }
+
+  function closeTreeMenu() {
+    setTreeContextMenu(null);
+  }
+
+  function isTreeRowTarget(target: EventTarget | null): boolean {
+    return Boolean((target as HTMLElement | null)?.closest(".file-tree__row"));
+  }
+
+  function openNodeMenu(node: FileTreeNode, event: MouseEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    setTreeContextMenu({ node, x: event.clientX, y: event.clientY });
+  }
+
+  async function expandAllFolders() {
+    const nextExpanded = new Set(expanded);
+    const nextChildren: Record<string, FileEntry[]> = { ...children };
+    async function walk(dirPath: string, entries: FileEntry[]) {
+      nextExpanded.add(dirPath);
+      for (const entry of entries) {
+        if (entry.type !== "dir") continue;
+        const path = childPath(dirPath, entry.name);
+        if (!nextChildren[path]) {
+          try {
+            const list = await fetchFiles(path);
+            nextChildren[path] = list.entries;
+          } catch {
+            setDirErrors((prev) => new Set(prev).add(path));
+            continue;
+          }
+        }
+        await walk(path, nextChildren[path] ?? []);
+      }
+    }
+    await walk(ROOT_TREE_PATH, rootEntries);
+    setExpanded(nextExpanded);
+    setChildren(nextChildren);
+  }
+
+  function collapseAllFolders() {
+    setExpanded(new Set([ROOT_TREE_PATH]));
+  }
+
+  function startCreateFile(node: FileTreeNode) {
+    setFileAction({ kind: "create-file", parent: node.path });
+    setFileActionName("");
+    setFileActionError(undefined);
+  }
+
+  function startCreateFolder(node: FileTreeNode) {
+    setFileAction({ kind: "create-dir", parent: node.path });
+    setFileActionName("");
+    setFileActionError(undefined);
+  }
+
+  function startRename(node: FileTreeNode) {
+    setFileAction({ kind: "rename", node });
+    setFileActionName(node.name);
+    setFileActionError(undefined);
+  }
+
+  function startDelete(node: FileTreeNode) {
+    setFileAction({ kind: "delete", node });
+    setFileActionError(undefined);
+  }
+
+  async function collectDirectoryTargets(): Promise<FileMoveTarget[]> {
+    const dirs: FileMoveTarget[] = [{ path: ROOT_TREE_PATH, label: "工作空间" }];
+    const nextChildren: Record<string, FileEntry[]> = { ...children };
+    async function walk(dirPath: string, entries: FileEntry[], prefix: string) {
+      for (const entry of sortFileEntries(entries)) {
+        if (entry.type !== "dir") continue;
+        const path = childPath(dirPath, entry.name);
+        const label = prefix ? `${prefix}/${entry.name}` : entry.name;
+        dirs.push({ path, label });
+        if (!nextChildren[path]) {
+          try {
+            const list = await fetchFiles(path);
+            nextChildren[path] = list.entries;
+          } catch {
+            continue;
+          }
+        }
+        await walk(path, nextChildren[path] ?? [], label);
+      }
+    }
+    await walk(ROOT_TREE_PATH, rootEntries, "");
+    setChildren(nextChildren);
+    return dirs;
+  }
+
+  function startMove(node: FileTreeNode) {
+    void collectDirectoryTargets().then((directories) => {
+      setFileAction({
+        kind: "move",
+        node,
+        targets: buildFileMoveTargets(node.path, node.type === "dir", directories),
+      });
+      setFileActionError(undefined);
+    });
+  }
+
+  function dropSubtree(path: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      for (const item of next) {
+        if (item === path || item.startsWith(`${path}/`)) next.delete(item);
+      }
+      return next;
+    });
+    setChildren((prev) => {
+      const next = { ...prev };
+      for (const item of Object.keys(next)) {
+        if (item === path || item.startsWith(`${path}/`)) delete next[item];
+      }
+      return next;
+    });
+  }
+
+  async function submitMove(dest: string) {
+    if (fileAction?.kind !== "move") return;
+    const node = fileAction.node;
+    const to = childPath(dest, node.name);
+    try {
+      await renameWorkspaceEntry(node.path, to);
+      if (selectedFile && pathIsInside(node.path, selectedFile)) {
+        const suffix = selectedFile.slice(node.path.length);
+        setSelectedFile(`${to}${suffix}`);
+      }
+      if (node.type === "dir") dropSubtree(node.path);
+      await reloadDir(parentPath(node.path));
+      await reloadDir(dest);
+      if (dest !== ROOT_TREE_PATH) {
+        await ensureDirExpanded(dest);
+      }
+      setFileAction(null);
+    } catch (err) {
+      setFileActionError(
+        err instanceof Error && err.message === "exists"
+          ? "目标文件夹中已存在同名文件或文件夹"
+          : "移动失败",
+      );
+    }
+  }
+
+  function pathIsInside(parent: string, target: string): boolean {
+    if (parent === ROOT_TREE_PATH) return true;
+    return target === parent || target.startsWith(`${parent}/`);
+  }
+
+  async function submitFileAction() {
+    if (!fileAction) return;
+    try {
+      if (fileAction.kind === "delete") {
+        await deleteWorkspaceEntry(fileAction.node.path);
+        if (selectedFile && pathIsInside(fileAction.node.path, selectedFile)) {
+          setSelectedFile(undefined);
+          setPreviewText("");
+          setPreviewKind("text");
+        }
+        await reloadDir(parentPath(fileAction.node.path));
+        setFileAction(null);
+        return;
+      }
+
+      const name = fileActionName.trim();
+      if (!isValidEntryName(name)) {
+        setFileActionError("名称无效");
+        return;
+      }
+
+      if (fileAction.kind === "create-file") {
+        const path = childPath(fileAction.parent, name);
+        await createWorkspaceFile(path);
+        await reloadDir(fileAction.parent);
+        if (fileAction.parent !== ROOT_TREE_PATH) {
+          await ensureDirExpanded(fileAction.parent);
+        }
+        setFileAction(null);
+        return;
+      }
+
+      if (fileAction.kind === "create-dir") {
+        const path = childPath(fileAction.parent, name);
+        await createWorkspaceDirectory(path);
+        await reloadDir(fileAction.parent);
+        if (fileAction.parent !== ROOT_TREE_PATH) {
+          await ensureDirExpanded(fileAction.parent);
+        }
+        setFileAction(null);
+        return;
+      }
+
+      const to = childPath(parentPath(fileAction.node.path), name);
+      await renameWorkspaceEntry(fileAction.node.path, to);
+      if (selectedFile && pathIsInside(fileAction.node.path, selectedFile)) {
+        const suffix = selectedFile.slice(fileAction.node.path.length);
+        setSelectedFile(`${to}${suffix}`);
+      }
+      await reloadDir(parentPath(fileAction.node.path));
+      setFileAction(null);
+    } catch (err) {
+      setFileActionError(
+        err instanceof Error && err.message === "exists"
+          ? "已存在同名文件或文件夹"
+          : "操作失败",
+      );
+    }
+  }
+
+  const treeMenuActions: FileTreeNodeMenuActions = {
+    onOpenFile: (node) => {
+      void previewFile(node.path, false);
+    },
+    onToggleFolder: (node) => {
+      void toggleDir(node.path);
+    },
+    onCreateFile: startCreateFile,
+    onCreateFolder: startCreateFolder,
+    onRename: startRename,
+    onMove: startMove,
+    onDelete: startDelete,
+    onExpandAllFolders: () => {
+      void expandAllFolders();
+    },
+    onCollapseAllFolders: collapseAllFolders,
+  };
+
   useEffect(() => {
     if (!requestedPath || previewRequest === undefined) return;
     void previewFile(requestedPath, false);
@@ -201,6 +469,9 @@ export function FilePane({
               className="file-tree__row file-tree__row--folder"
               style={{ ["--file-tree-indent" as string]: `${indent}px` }}
               onClick={() => void toggleDir(path)}
+              onContextMenu={(event) =>
+                openNodeMenu({ path, name: entry.name, type: "dir" }, event)
+              }
             >
               <span className="file-tree__lead">
                 <span className="file-tree__chevron" aria-hidden>
@@ -241,6 +512,9 @@ export function FilePane({
             className={`file-tree__row${isActive ? " file-tree__row--active" : ""}`}
             style={{ ["--file-tree-indent" as string]: `${indent}px` }}
             onClick={() => void openFile(path)}
+            onContextMenu={(event) =>
+              openNodeMenu({ path, name: entry.name, type: "file" }, event)
+            }
           >
             <span className="file-tree__lead">
               <span
@@ -308,7 +582,19 @@ export function FilePane({
           ref={filePaneBodyRef}
         >
           {treeDragging ? <div className="file-pane-inner-drag-overlay" /> : null}
-          <div className="file-tree-surface" style={{ width: `${treeWidth}px` }}>
+          <div
+            className="file-tree-surface"
+            style={{ width: `${treeWidth}px` }}
+            onContextMenu={(event) => {
+              if (isTreeRowTarget(event.target)) return;
+              event.preventDefault();
+              setTreeContextMenu({
+                node: WORKSPACE_ROOT_NODE,
+                x: event.clientX,
+                y: event.clientY,
+              });
+            }}
+          >
             <div className="file-tree" role="tree" aria-label="工作空间文件">
               {treeError ? (
                 <div className="file-tree__state file-tree__state--error">
@@ -336,6 +622,9 @@ export function FilePane({
                           return next;
                         });
                       }}
+                      onContextMenu={(event) =>
+                        openNodeMenu(WORKSPACE_ROOT_NODE, event)
+                      }
                     >
                       <span className="file-tree__lead">
                         <span className="file-tree__chevron" aria-hidden>
@@ -408,6 +697,72 @@ export function FilePane({
       ) : (
         <KnowledgePane selectedPath={selectedFile} />
       )}
+      {treeContextMenu ? (
+        <FileTreeContextMenu
+          open
+          x={treeContextMenu.x}
+          y={treeContextMenu.y}
+          onClose={closeTreeMenu}
+        >
+          <FileTreeNodeActionMenu
+            node={treeContextMenu.node}
+            folderExpanded={expanded.has(treeContextMenu.node.path)}
+            actions={treeMenuActions}
+            onClose={closeTreeMenu}
+          />
+        </FileTreeContextMenu>
+      ) : null}
+      {fileAction?.kind === "move" ? (
+        <FileMoveDialog
+          targets={fileAction.targets}
+          error={fileActionError}
+          onPick={(dest) => void submitMove(dest)}
+          onCancel={() => setFileAction(null)}
+        />
+      ) : null}
+      {fileAction && fileAction.kind !== "move" ? (
+        <FileActionDialog
+          title={
+            fileAction.kind === "create-file"
+              ? "新建文件"
+              : fileAction.kind === "create-dir"
+                ? "新建文件夹"
+                : fileAction.kind === "rename"
+                  ? "重命名"
+                  : "删除"
+          }
+          hint={
+            fileAction.kind === "delete"
+              ? `确定删除「${fileAction.node.name}」？此操作不可撤销。`
+              : undefined
+          }
+          inputLabel={
+            fileAction.kind === "delete"
+              ? undefined
+              : fileAction.kind === "create-file"
+                ? "文件名称"
+                : "名称"
+          }
+          inputValue={fileAction.kind === "delete" ? undefined : fileActionName}
+          onInputChange={
+            fileAction.kind === "delete" ? undefined : setFileActionName
+          }
+          confirmLabel={
+            fileAction.kind === "delete"
+              ? "删除"
+              : fileAction.kind === "rename"
+                ? "确定"
+                : "创建"
+          }
+          danger={fileAction.kind === "delete"}
+          error={fileActionError}
+          confirmDisabled={
+            fileAction.kind !== "delete" && !isValidEntryName(fileActionName)
+          }
+          onConfirm={() => void submitFileAction()}
+          onCancel={() => setFileAction(null)}
+        />
+      ) : null}
     </aside>
   );
 }

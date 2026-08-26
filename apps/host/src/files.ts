@@ -1,6 +1,6 @@
 import { realpathSync } from "node:fs";
 import { extname, join, relative } from "node:path";
-import { readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { detectType, parse, buildDocument, formatFromOutRelPath, GENERATE_MAX_CHARS } from "@flintloom/docforge";
 import {
   isInfographicRelPath,
@@ -21,11 +21,14 @@ export type FilePreview = {
     | "pdf"
     | "docx"
     | "pptx"
+    | "audio"
+    | "video"
     | "failed";
   text: string;
 };
 
 export const FILE_RAW_MAX_BYTES = 30 * 1024 * 1024;
+export const FILE_MEDIA_MAX_BYTES = 512 * 1024 * 1024;
 export const FILE_MAX_DOCX_PREVIEW_BYTES = 20 * 1024 * 1024;
 export const FILE_MAX_PPTX_PREVIEW_BYTES = 50 * 1024 * 1024;
 
@@ -78,6 +81,63 @@ function isNotFound(err: unknown): boolean {
     "code" in err &&
     (err as { code: string }).code === "ENOENT"
   );
+}
+
+function isAlreadyExists(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    (err as { code: string }).code === "EEXIST"
+  );
+}
+
+export type FileMutationResult =
+  | "ok"
+  | "not_found"
+  | "exists"
+  | "invalid"
+  | "hidden";
+
+function isInvalidPathSegment(name: string): boolean {
+  if (name.length === 0) {
+    return true;
+  }
+  return /[\\/:*?"<>|]/.test(name);
+}
+
+function hasInvalidRelPath(relPath: string): boolean {
+  const parts = relPath.replaceAll("\\", "/").split("/");
+  const segments = parts.filter((part) => part.length > 0 && part !== ".");
+  if (segments.length === 0) {
+    return true;
+  }
+  return segments.some(isInvalidPathSegment);
+}
+
+async function pathKind(
+  absPath: string,
+): Promise<"missing" | "file" | "dir"> {
+  let st;
+  try {
+    st = await stat(absPath);
+  } catch (err) {
+    if (isNotFound(err)) {
+      return "missing";
+    }
+    throw err;
+  }
+  return st.isDirectory() ? "dir" : "file";
+}
+
+function mutableRelPathError(relPath: string): FileMutationResult | undefined {
+  if (hasInvalidRelPath(relPath) || relPath === ".") {
+    return "invalid";
+  }
+  if (isHiddenRelPath(relPath)) {
+    return "hidden";
+  }
+  return undefined;
 }
 
 export function relFromWorkspace(workspaceRoot: string, absPath: string): string {
@@ -147,6 +207,87 @@ function isPptxFileName(fileName: string): boolean {
   return lower.endsWith(".pptx") || lower.endsWith(".ppt");
 }
 
+const AUDIO_EXTS = new Set([".mp3", ".wav", ".ogg", ".flac", ".aac", ".m4a"]);
+const VIDEO_EXTS = new Set([".mp4", ".webm", ".mov", ".avi", ".mkv"]);
+
+const CONTENT_TYPE_BY_EXT: Record<string, string> = {
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".ogg": "audio/ogg",
+  ".flac": "audio/flac",
+  ".aac": "audio/aac",
+  ".m4a": "audio/mp4",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
+  ".mov": "video/quicktime",
+  ".avi": "video/x-msvideo",
+  ".mkv": "video/x-matroska",
+};
+
+export function mediaPreviewKind(fileName: string): "audio" | "video" | undefined {
+  const ext = extname(fileName).toLowerCase();
+  if (AUDIO_EXTS.has(ext)) return "audio";
+  if (VIDEO_EXTS.has(ext)) return "video";
+  return undefined;
+}
+
+export function contentTypeForFileName(fileName: string): string {
+  const ext = extname(fileName).toLowerCase();
+  return CONTENT_TYPE_BY_EXT[ext] ?? "application/octet-stream";
+}
+
+export type ParsedByteRange =
+  | { kind: "none" }
+  | { kind: "unsatisfiable" }
+  | { kind: "range"; start: number; end: number };
+
+export function parseByteRangeHeader(
+  header: string | undefined,
+  size: number,
+): ParsedByteRange {
+  if (!header) {
+    return { kind: "none" };
+  }
+  const trimmed = header.trim();
+  if (trimmed.length === 0 || trimmed.includes(",")) {
+    return { kind: "none" };
+  }
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(trimmed);
+  if (!match) {
+    return { kind: "none" };
+  }
+  const startRaw = match[1] ?? "";
+  const endRaw = match[2] ?? "";
+  if (startRaw === "" && endRaw === "") {
+    return { kind: "none" };
+  }
+
+  if (startRaw === "") {
+    const suffix = Number(endRaw);
+    if (!Number.isSafeInteger(suffix) || suffix <= 0 || size === 0) {
+      return { kind: "unsatisfiable" };
+    }
+    return { kind: "range", start: Math.max(0, size - suffix), end: size - 1 };
+  }
+
+  const start = Number(startRaw);
+  if (!Number.isSafeInteger(start) || start < 0) {
+    return { kind: "none" };
+  }
+  if (start >= size) {
+    return { kind: "unsatisfiable" };
+  }
+
+  if (endRaw === "") {
+    return { kind: "range", start, end: size - 1 };
+  }
+  const end = Number(endRaw);
+  if (!Number.isSafeInteger(end) || end < start) {
+    return { kind: "none" };
+  }
+  return { kind: "range", start, end: Math.min(end, size - 1) };
+}
+
 function officePreviewKind(fileName: string): FilePreview["kind"] | undefined {
   if (isPdfFileName(fileName)) return "pdf";
   if (isWordFileName(fileName)) return "docx";
@@ -160,10 +301,10 @@ function officePreviewMaxBytes(fileName: string): number {
   return FILE_RAW_MAX_BYTES;
 }
 
-export async function readWorkspaceFileBytes(
+export async function resolveWorkspaceReadableFile(
   workspaceRoot: string,
   relPath: string,
-): Promise<"not_found" | "too_large" | Buffer> {
+): Promise<"not_found" | { absPath: string; size: number; fileName: string }> {
   if (isHiddenRelPath(relPath)) {
     return "not_found";
   }
@@ -186,11 +327,26 @@ export async function readWorkspaceFileBytes(
   if (!st.isFile()) {
     return "not_found";
   }
-  if (st.size > FILE_RAW_MAX_BYTES) {
+  return { absPath, size: st.size, fileName: fileNameOf(relPath) };
+}
+
+export function rawFileMaxBytes(fileName: string): number {
+  return mediaPreviewKind(fileName) ? FILE_MEDIA_MAX_BYTES : FILE_RAW_MAX_BYTES;
+}
+
+export async function readWorkspaceFileBytes(
+  workspaceRoot: string,
+  relPath: string,
+): Promise<"not_found" | "too_large" | Buffer> {
+  const resolved = await resolveWorkspaceReadableFile(workspaceRoot, relPath);
+  if (resolved === "not_found") {
+    return "not_found";
+  }
+  if (resolved.size > rawFileMaxBytes(resolved.fileName)) {
     return "too_large";
   }
 
-  return await readFile(absPath);
+  return await readFile(resolved.absPath);
 }
 
 export async function writeWorkspaceFileBytes(
@@ -397,6 +553,14 @@ export async function previewWorkspaceFile(
     return { path: relPath, kind: "spreadsheet", text: "" };
   }
 
+  const mediaKind = mediaPreviewKind(fileName);
+  if (mediaKind) {
+    if (st.size > FILE_MEDIA_MAX_BYTES) {
+      return { path: relPath, kind: "failed", text: "failed: too large" };
+    }
+    return { path: relPath, kind: mediaKind, text: "" };
+  }
+
   const officeKind = officePreviewKind(fileName);
   if (officeKind) {
     if (st.size > officePreviewMaxBytes(fileName)) {
@@ -442,4 +606,142 @@ export async function previewWorkspaceFile(
     kind: "failed",
     text: "failed: unsupported type",
   };
+}
+
+export async function createWorkspaceDirectory(
+  workspaceRoot: string,
+  relPath: string,
+): Promise<FileMutationResult> {
+  const prepared = mutableRelPathError(relPath);
+  if (prepared) {
+    return prepared;
+  }
+
+  const absPath = resolveInside(workspaceRoot, relPath);
+  if (isHiddenRelPath(relFromWorkspace(workspaceRoot, absPath))) {
+    return "hidden";
+  }
+
+  try {
+    await mkdir(absPath);
+  } catch (err) {
+    if (isAlreadyExists(err)) {
+      return "exists";
+    }
+    if (isNotFound(err)) {
+      return "not_found";
+    }
+    throw err;
+  }
+  return "ok";
+}
+
+export async function createWorkspaceFile(
+  workspaceRoot: string,
+  relPath: string,
+): Promise<FileMutationResult> {
+  const prepared = mutableRelPathError(relPath);
+  if (prepared) {
+    return prepared;
+  }
+
+  const absPath = resolveInside(workspaceRoot, relPath);
+  if (isHiddenRelPath(relFromWorkspace(workspaceRoot, absPath))) {
+    return "hidden";
+  }
+
+  try {
+    await writeFile(absPath, Buffer.alloc(0), { flag: "wx" });
+  } catch (err) {
+    if (isAlreadyExists(err)) {
+      return "exists";
+    }
+    if (isNotFound(err)) {
+      return "not_found";
+    }
+    throw err;
+  }
+  return "ok";
+}
+
+export async function renameWorkspaceEntry(
+  workspaceRoot: string,
+  fromRelPath: string,
+  toRelPath: string,
+): Promise<FileMutationResult> {
+  const fromPrepared = mutableRelPathError(fromRelPath);
+  if (fromPrepared) {
+    return fromPrepared;
+  }
+  const toPrepared = mutableRelPathError(toRelPath);
+  if (toPrepared) {
+    return toPrepared;
+  }
+
+  const fromAbs = resolveInside(workspaceRoot, fromRelPath);
+  const toAbs = resolveInside(workspaceRoot, toRelPath);
+  if (
+    isHiddenRelPath(relFromWorkspace(workspaceRoot, fromAbs)) ||
+    isHiddenRelPath(relFromWorkspace(workspaceRoot, toAbs))
+  ) {
+    return "hidden";
+  }
+
+  const fromKind = await pathKind(fromAbs);
+  if (fromKind === "missing") {
+    return "not_found";
+  }
+  const toKind = await pathKind(toAbs);
+  if (toKind !== "missing") {
+    return "exists";
+  }
+
+  const fromNorm = fromAbs.replaceAll("\\", "/").toLowerCase();
+  const toNorm = toAbs.replaceAll("\\", "/").toLowerCase();
+  if (fromKind === "dir" && toNorm.startsWith(`${fromNorm}/`)) {
+    return "invalid";
+  }
+
+  try {
+    await rename(fromAbs, toAbs);
+  } catch (err) {
+    if (isNotFound(err)) {
+      return "not_found";
+    }
+    if (isAlreadyExists(err)) {
+      return "exists";
+    }
+    throw err;
+  }
+  return "ok";
+}
+
+export async function deleteWorkspaceEntry(
+  workspaceRoot: string,
+  relPath: string,
+): Promise<FileMutationResult> {
+  const prepared = mutableRelPathError(relPath);
+  if (prepared) {
+    return prepared;
+  }
+
+  const absPath = resolveInside(workspaceRoot, relPath);
+  if (isHiddenRelPath(relFromWorkspace(workspaceRoot, absPath))) {
+    return "hidden";
+  }
+
+  const kind = await pathKind(absPath);
+  if (kind === "missing") {
+    return "not_found";
+  }
+
+  try {
+    await rm(absPath, { recursive: kind === "dir", force: false });
+  } catch (err) {
+    if (isNotFound(err)) {
+      return "not_found";
+    }
+    throw err;
+  }
+  return "ok";
 }

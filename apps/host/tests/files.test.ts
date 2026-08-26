@@ -1,4 +1,13 @@
-import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -349,5 +358,254 @@ describe("GET /v1/files and /v1/files/preview", () => {
     expect(previewRes.status).toBe(200);
     const preview = (await previewRes.json()) as { kind: string };
     expect(preview.kind).toBe("pdf");
+  });
+
+  it("previews mp3 as audio without converting to text", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-files-mp3-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-files-mp3-home-"));
+    writeFileSync(join(workspaceRoot, "song.mp3"), "ID3-fake-bytes");
+    writeAssembly(workspaceRoot);
+
+    const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+    close = host.close;
+    const token = loadOrCreateToken(homeDir);
+
+    const previewRes = await fetch(
+      `${host.url}/v1/files/preview?path=${encodeURIComponent("song.mp3")}`,
+      { headers: authHeaders(token) },
+    );
+    expect(previewRes.status).toBe(200);
+    const preview = (await previewRes.json()) as { kind: string; text: string };
+    expect(preview.kind).toBe("audio");
+    expect(preview.text).toBe("");
+
+    const rawRes = await fetch(
+      `${host.url}/v1/files/raw?path=${encodeURIComponent("song.mp3")}`,
+      { headers: authHeaders(token) },
+    );
+    expect(rawRes.status).toBe(200);
+    expect(rawRes.headers.get("Content-Type")).toBe("audio/mpeg");
+    expect(await rawRes.text()).toBe("ID3-fake-bytes");
+  });
+
+  it("previews mp4 as video without converting to text", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-files-mp4-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-files-mp4-home-"));
+    writeFileSync(join(workspaceRoot, "clip.mp4"), "ftyp-fake-bytes");
+    writeAssembly(workspaceRoot);
+
+    const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+    close = host.close;
+    const token = loadOrCreateToken(homeDir);
+
+    const previewRes = await fetch(
+      `${host.url}/v1/files/preview?path=${encodeURIComponent("clip.mp4")}`,
+      { headers: authHeaders(token) },
+    );
+    expect(previewRes.status).toBe(200);
+    const preview = (await previewRes.json()) as { kind: string; text: string };
+    expect(preview.kind).toBe("video");
+    expect(preview.text).toBe("");
+
+    const rawRes = await fetch(
+      `${host.url}/v1/files/raw?path=${encodeURIComponent("clip.mp4")}`,
+      { headers: authHeaders(token) },
+    );
+    expect(rawRes.status).toBe(200);
+    expect(rawRes.headers.get("Content-Type")).toBe("video/mp4");
+  });
+
+  it("serves raw media byte ranges so players can seek", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-files-range-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-files-range-home-"));
+    writeFileSync(join(workspaceRoot, "song.mp3"), "0123456789abcdefghij");
+    writeAssembly(workspaceRoot);
+
+    const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+    close = host.close;
+    const token = loadOrCreateToken(homeDir);
+    const url = `${host.url}/v1/files/raw?path=${encodeURIComponent("song.mp3")}`;
+
+    const fullRes = await fetch(url, { headers: authHeaders(token) });
+    expect(fullRes.status).toBe(200);
+    expect(fullRes.headers.get("Accept-Ranges")).toBe("bytes");
+    expect(fullRes.headers.get("Content-Length")).toBe("20");
+
+    const rangedRes = await fetch(url, {
+      headers: { ...authHeaders(token), Range: "bytes=4-8" },
+    });
+    expect(rangedRes.status).toBe(206);
+    expect(rangedRes.headers.get("Accept-Ranges")).toBe("bytes");
+    expect(rangedRes.headers.get("Content-Range")).toBe("bytes 4-8/20");
+    expect(rangedRes.headers.get("Content-Length")).toBe("5");
+    expect(rangedRes.headers.get("Content-Type")).toBe("audio/mpeg");
+    expect(await rangedRes.text()).toBe("45678");
+  });
+});
+
+describe("workspace file mutations", () => {
+  let close: (() => Promise<void>) | undefined;
+  let workspaceRoot: string;
+
+  afterEach(async () => {
+    if (close) {
+      await close();
+      close = undefined;
+    }
+  });
+
+  async function startWorkspace(): Promise<{ url: string; token: string }> {
+    workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-files-mut-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-files-mut-home-"));
+    writeFileSync(join(workspaceRoot, "README.md"), "# Hello\n");
+    mkdirSync(join(workspaceRoot, "src"));
+    writeFileSync(join(workspaceRoot, "src", "a.ts"), "export const n = 1\n");
+    writeAssembly(workspaceRoot);
+    const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+    close = host.close;
+    return { url: host.url, token: loadOrCreateToken(homeDir) };
+  }
+
+  function authHeaders(token: string): HeadersInit {
+    return {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    };
+  }
+
+  it("creates a folder then lists it", async () => {
+    const { url, token } = await startWorkspace();
+    const res = await fetch(`${url}/v1/files/mkdir`, {
+      method: "POST",
+      headers: authHeaders(token),
+      body: JSON.stringify({ path: "notes" }),
+    });
+    expect(res.status).toBe(200);
+    expect(existsSync(join(workspaceRoot, "notes"))).toBe(true);
+
+    const list = await fetch(`${url}/v1/files?path=.`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const body = (await list.json()) as { entries: { name: string }[] };
+    expect(body.entries.map((e) => e.name)).toContain("notes");
+  });
+
+  it("creates an empty file in an existing folder", async () => {
+    const { url, token } = await startWorkspace();
+    const res = await fetch(`${url}/v1/files/create`, {
+      method: "POST",
+      headers: authHeaders(token),
+      body: JSON.stringify({ path: "src/new.ts" }),
+    });
+    expect(res.status).toBe(200);
+    expect(readFileSync(join(workspaceRoot, "src", "new.ts"), "utf8")).toBe("");
+  });
+
+  it("renames a file within the workspace", async () => {
+    const { url, token } = await startWorkspace();
+    const res = await fetch(`${url}/v1/files/rename`, {
+      method: "POST",
+      headers: authHeaders(token),
+      body: JSON.stringify({ path: "README.md", to: "INTRO.md" }),
+    });
+    expect(res.status).toBe(200);
+    expect(existsSync(join(workspaceRoot, "README.md"))).toBe(false);
+    expect(readFileSync(join(workspaceRoot, "INTRO.md"), "utf8")).toBe("# Hello\n");
+  });
+
+  it("moves a file into a folder", async () => {
+    const { url, token } = await startWorkspace();
+    const res = await fetch(`${url}/v1/files/rename`, {
+      method: "POST",
+      headers: authHeaders(token),
+      body: JSON.stringify({ path: "README.md", to: "src/README.md" }),
+    });
+    expect(res.status).toBe(200);
+    expect(existsSync(join(workspaceRoot, "README.md"))).toBe(false);
+    expect(readFileSync(join(workspaceRoot, "src", "README.md"), "utf8")).toBe(
+      "# Hello\n",
+    );
+  });
+
+  it("moves a folder into another folder", async () => {
+    const { url, token } = await startWorkspace();
+    mkdirSync(join(workspaceRoot, "notes"));
+    const res = await fetch(`${url}/v1/files/rename`, {
+      method: "POST",
+      headers: authHeaders(token),
+      body: JSON.stringify({ path: "src", to: "notes/src" }),
+    });
+    expect(res.status).toBe(200);
+    expect(existsSync(join(workspaceRoot, "src"))).toBe(false);
+    expect(readFileSync(join(workspaceRoot, "notes", "src", "a.ts"), "utf8")).toBe(
+      "export const n = 1\n",
+    );
+  });
+
+  it("rejects moving a folder into itself", async () => {
+    const { url, token } = await startWorkspace();
+    const res = await fetch(`${url}/v1/files/rename`, {
+      method: "POST",
+      headers: authHeaders(token),
+      body: JSON.stringify({ path: "src", to: "src/nested" }),
+    });
+    expect(res.status).toBe(400);
+    expect(existsSync(join(workspaceRoot, "src", "a.ts"))).toBe(true);
+  });
+
+  it("deletes a file", async () => {
+    const { url, token } = await startWorkspace();
+    const res = await fetch(
+      `${url}/v1/files?path=${encodeURIComponent("README.md")}`,
+      {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(existsSync(join(workspaceRoot, "README.md"))).toBe(false);
+  });
+
+  it("deletes a directory recursively", async () => {
+    const { url, token } = await startWorkspace();
+    const res = await fetch(`${url}/v1/files?path=${encodeURIComponent("src")}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+    expect(existsSync(join(workspaceRoot, "src"))).toBe(false);
+  });
+
+  it("rejects creating a hidden path", async () => {
+    const { url, token } = await startWorkspace();
+    const res = await fetch(`${url}/v1/files/create`, {
+      method: "POST",
+      headers: authHeaders(token),
+      body: JSON.stringify({ path: ".env" }),
+    });
+    expect(res.status).toBe(404);
+    expect(existsSync(join(workspaceRoot, ".env"))).toBe(false);
+  });
+
+  it("rejects a rename that escapes the workspace", async () => {
+    const { url, token } = await startWorkspace();
+    const res = await fetch(`${url}/v1/files/rename`, {
+      method: "POST",
+      headers: authHeaders(token),
+      body: JSON.stringify({ path: "README.md", to: "../secret.md" }),
+    });
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain("Path escapes workspace");
+  });
+
+  it("returns 409 when creating a path that already exists", async () => {
+    const { url, token } = await startWorkspace();
+    const res = await fetch(`${url}/v1/files/mkdir`, {
+      method: "POST",
+      headers: authHeaders(token),
+      body: JSON.stringify({ path: "src" }),
+    });
+    expect(res.status).toBe(409);
+    expect(readdirSync(join(workspaceRoot, "src"))).toContain("a.ts");
   });
 });
