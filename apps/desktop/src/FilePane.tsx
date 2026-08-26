@@ -3,7 +3,8 @@ import { FileActionDialog } from "./FileActionDialog.tsx";
 import { FileIcon } from "./FileIcon.tsx";
 import { FileMoveDialog } from "./FileMoveDialog.tsx";
 import { FilePaneResizeHandle } from "./FilePaneResizeHandle.tsx";
-import { FilePreviewCloseButton, FilePreviewContent } from "./FilePreviewContent.tsx";import { FileTreeContextMenu } from "./FileTreeContextMenu.tsx";
+import { FilePreviewCloseButton, FilePreviewContent } from "./FilePreviewContent.tsx";
+import { FileTreeContextMenu } from "./FileTreeContextMenu.tsx";
 import {
   FileTreeNodeActionMenu,
   WORKSPACE_ROOT_NODE,
@@ -247,7 +248,11 @@ export function FilePane({
   }
 
   async function openFile(filePath: string) {
-    await previewFile(filePath, true);
+    await previewFile(filePath, false);
+  }
+
+  function quoteFile(filePath: string) {
+    onInsertPath(filePath);
   }
 
   async function reloadDir(dirPath: string) {
@@ -572,6 +577,9 @@ export function FilePane({
     onOpenFile: (node) => {
       void previewFile(node.path, false);
     },
+    onQuoteFile: (node) => {
+      quoteFile(node.path);
+    },
     onToggleFolder: (node) => {
       void toggleDir(node.path);
     },
@@ -837,6 +845,16 @@ export function FilePane({
                         {selectedFile ? selectedFile.split("/").pop() : "预览"}
                       </span>
                       <div className="file-preview-header__actions">
+                        {selectedFile ? (
+                          <button
+                            type="button"
+                            className="file-preview-header__action"
+                            onClick={() => quoteFile(selectedFile)}
+                            title="将文件路径插入输入框，供对话引用"
+                          >
+                            引用
+                          </button>
+                        ) : null}
                         <span className="file-preview-header__badge">SVG</span>
                         <FilePreviewCloseButton onClose={closeFilePreview} />
                       </div>
@@ -854,6 +872,9 @@ export function FilePane({
                     kind={previewError ? "error" : previewKind}
                     text={previewError ? "host unreachable" : previewText}
                     onClose={closeFilePreview}
+                    onQuote={
+                      selectedFile ? () => quoteFile(selectedFile) : undefined
+                    }
                   />
                 )}
               </div>

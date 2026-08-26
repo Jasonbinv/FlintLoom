@@ -570,7 +570,7 @@ describe("App", () => {
     expect(document.body.textContent).not.toContain(result);
   });
 
-  it("shows file tree and preview and inserts path once", async () => {
+  it("shows file tree and preview without inserting path on click", async () => {
     installFetch();
     await mountApp();
     await waitForText("README.md");
@@ -580,15 +580,29 @@ describe("App", () => {
 
     const fileButton = findFileTreeButton("README.md");
     if (!fileButton) throw new Error("no README.md button");
-    await act(async () => {
-      fileButton.click();
-    });
     const textarea = document.querySelector("textarea");
     if (!textarea) throw new Error("no textarea");
-    expect(textarea.value).toBe("README.md");
+    expect(textarea.value).toBe("");
 
     await act(async () => {
       fileButton.click();
+    });
+    expect(textarea.value).toBe("");
+    expect(document.querySelector(".file-preview-surface")).toBeTruthy();
+
+    const quoteButton = document.querySelector(
+      ".file-preview-header__action",
+    ) as HTMLButtonElement | null;
+    if (!quoteButton || quoteButton.textContent !== "引用") {
+      throw new Error("no quote button");
+    }
+    await act(async () => {
+      quoteButton.click();
+    });
+    expect(textarea.value).toBe("README.md");
+
+    await act(async () => {
+      quoteButton.click();
     });
     expect(textarea.value).toBe("README.md");
   });
