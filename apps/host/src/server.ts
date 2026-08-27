@@ -1060,6 +1060,7 @@ async function handleRequest(
           "Content-Length": length,
           "Accept-Ranges": "bytes",
           "Content-Range": `bytes ${parsed.start}-${parsed.end}/${resolved.size}`,
+          "Cache-Control": "no-store",
         });
         createReadStream(resolved.absPath, {
           start: parsed.start,
@@ -1071,6 +1072,7 @@ async function handleRequest(
         "Content-Type": contentType,
         "Content-Length": resolved.size,
         "Accept-Ranges": "bytes",
+        "Cache-Control": "no-store",
       });
       createReadStream(resolved.absPath).pipe(res);
     } catch (err) {

@@ -22,6 +22,7 @@ import {
   fetchFilesSync,
   fetchPreview,
   buildFileMoveTargets,
+  isImageFilePath,
   isValidEntryName,
   parentPath,
   renameWorkspaceEntry,
@@ -92,6 +93,8 @@ export function FilePane({
   const [previewText, setPreviewText] = useState("");
   const [previewKind, setPreviewKind] = useState<FilePreview["kind"]>("text");
   const [previewError, setPreviewError] = useState(false);
+  const [previewErrorText, setPreviewErrorText] = useState("host unreachable");
+  const [previewNonce, setPreviewNonce] = useState(0);
   const previewAc = useRef<AbortController | undefined>(undefined);
   const filePaneBodyRef = useRef<HTMLDivElement>(null);
   const [treeContextMenu, setTreeContextMenu] = useState<{
@@ -128,6 +131,7 @@ export function FilePane({
     setPreviewText("");
     setPreviewKind("text");
     setPreviewError(false);
+    setPreviewErrorText("host unreachable");
   }, []);
 
   useEffect(() => {
@@ -140,6 +144,12 @@ export function FilePane({
   }, [closeFilePreview, previewOpen]);
 
   async function loadPreview(filePath: string, signal: AbortSignal) {
+    const imageFile = isImageFilePath(filePath);
+    if (imageFile) {
+      setPreviewKind("image");
+      setPreviewText("");
+      setPreviewError(false);
+    }
     try {
       const preview = await fetchPreview(filePath, signal);
       if (signal.aborted) return;
@@ -149,7 +159,11 @@ export function FilePane({
     } catch (err) {
       if (signal.aborted) return;
       if (err instanceof DOMException && err.name === "AbortError") return;
+      if (imageFile) return;
       setPreviewError(true);
+      setPreviewErrorText(
+        err instanceof Error ? err.message : "host unreachable",
+      );
     }
   }
 
@@ -157,6 +171,7 @@ export function FilePane({
     previewAc.current?.abort();
     const ac = new AbortController();
     previewAc.current = ac;
+    setPreviewNonce((n) => n + 1);
     return loadPreview(filePath, ac.signal);
   }
 
@@ -870,7 +885,8 @@ export function FilePane({
                   <FilePreviewContent
                     filePath={selectedFile}
                     kind={previewError ? "error" : previewKind}
-                    text={previewError ? "host unreachable" : previewText}
+                    text={previewError ? previewErrorText : previewText}
+                    cacheKey={previewNonce}
                     onClose={closeFilePreview}
                     onQuote={
                       selectedFile ? () => quoteFile(selectedFile) : undefined

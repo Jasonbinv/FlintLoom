@@ -859,6 +859,32 @@ describe("App", () => {
     expect(document.body.textContent).not.toContain("无法预览");
   });
 
+  it("still shows png image preview when preview json is 404", async () => {
+    installFetch({
+      files: new Response(
+        JSON.stringify({
+          path: ".",
+          entries: [{ name: "sales_chart.png", type: "file" }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+      preview: new Response("missing", { status: 404 }),
+    });
+    await mountApp();
+    await waitForText("sales_chart.png");
+    const fileButton = findFileTreeButton("sales_chart.png");
+    if (!fileButton) throw new Error("no sales_chart.png button");
+    await act(async () => {
+      fileButton.click();
+    });
+    const image = document.querySelector("img.file-preview-image");
+    expect(image).toBeTruthy();
+    expect(image?.getAttribute("src")).toBe(
+      "/v1/files/raw?path=sales_chart.png",
+    );
+    expect(document.body.textContent).not.toContain("host unreachable");
+  });
+
   it("renders office documents with preview and edit tabs", async () => {
     installFetch({
       files: new Response(

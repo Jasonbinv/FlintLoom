@@ -440,6 +440,7 @@ describe("GET /v1/files and /v1/files/preview", () => {
     );
     expect(rawRes.status).toBe(200);
     expect(rawRes.headers.get("Content-Type")).toBe("image/png");
+    expect(rawRes.headers.get("Cache-Control")).toBe("no-store");
   });
 
   it("serves raw media byte ranges so players can seek", async () => {

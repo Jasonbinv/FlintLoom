@@ -15,6 +15,7 @@ type Props = {
   filePath?: string;
   kind: PreviewKind;
   text: string;
+  cacheKey?: number | string;
   onClose?: () => void;
   onQuote?: () => void;
 };
@@ -133,6 +134,61 @@ export function FilePreviewCloseButton({ onClose }: { onClose: () => void }) {
   );
 }
 
+function ImageFilePreview({
+  filePath,
+  title,
+  badge,
+  cacheKey,
+  onClose,
+  onQuote,
+}: {
+  filePath: string;
+  title: string;
+  badge: string;
+  cacheKey?: number | string;
+  onClose?: () => void;
+  onQuote?: () => void;
+}) {
+  const [failed, setFailed] = useState(false);
+  const src = `/v1/files/raw?path=${encodeURIComponent(filePath)}`;
+
+  useEffect(() => {
+    setFailed(false);
+  }, [filePath, cacheKey]);
+
+  return (
+    <div className="file-preview file-preview--image">
+      <PreviewHeader
+        title={title}
+        filePath={filePath}
+        badge={badge}
+        onClose={onClose}
+        onQuote={onQuote}
+      />
+      {failed ? (
+        <div className="file-preview-empty">
+          <p className="file-preview-empty__title">无法加载预览</p>
+          <p className="file-preview-empty__hint">
+            图片无法显示，文件可能尚未写完、不是有效 PNG，或 host 暂时不可用
+          </p>
+        </div>
+      ) : (
+        <div className="file-preview-media file-preview-media--image">
+          <img
+            key={`${filePath}:${cacheKey ?? ""}`}
+            className="file-preview-image"
+            src={src}
+            alt={title}
+            loading="lazy"
+            decoding="async"
+            onError={() => setFailed(true)}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SafeHtmlInlinePreview({ filePath }: { filePath: string }) {
   const [contentSrc, setContentSrc] = useState<string>();
   const [loadError, setLoadError] = useState<string>();
@@ -219,7 +275,14 @@ function SafeHtmlOpenButton({ filePath }: { filePath: string }) {
   );
 }
 
-export function FilePreviewContent({ filePath, kind, text, onClose, onQuote }: Props) {
+export function FilePreviewContent({
+  filePath,
+  kind,
+  text,
+  cacheKey,
+  onClose,
+  onQuote,
+}: Props) {
   const title = filePath ? basename(filePath) : "文件预览";
   const badge = previewBadge(filePath, kind);
   const isHtml = filePath ? isHtmlFilePath(filePath) : false;
@@ -258,20 +321,15 @@ export function FilePreviewContent({ filePath, kind, text, onClose, onQuote }: P
   }
 
   if (kind === "image" && filePath) {
-    const src = `/v1/files/raw?path=${encodeURIComponent(filePath)}`;
     return (
-      <div className="file-preview file-preview--image">
-        <PreviewHeader title={title} filePath={filePath} badge={badge} onClose={onClose} onQuote={onQuote} />
-        <div className="file-preview-media file-preview-media--image">
-          <img
-            className="file-preview-image"
-            src={src}
-            alt={title}
-            loading="lazy"
-            decoding="async"
-          />
-        </div>
-      </div>
+      <ImageFilePreview
+        filePath={filePath}
+        title={title}
+        badge={badge}
+        cacheKey={cacheKey}
+        onClose={onClose}
+        onQuote={onQuote}
+      />
     );
   }
 

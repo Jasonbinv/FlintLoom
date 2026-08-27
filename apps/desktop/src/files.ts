@@ -35,6 +35,13 @@ export function fileNameOf(path: string): string {
   return parts.at(-1) ?? path;
 }
 
+const IMAGE_FILE_EXT_RE =
+  /\.(png|jpe?g|gif|webp|bmp|avif|ico|svg)$/i;
+
+export function isImageFilePath(path: string): boolean {
+  return IMAGE_FILE_EXT_RE.test(fileNameOf(path));
+}
+
 export function isValidEntryName(name: string): boolean {
   const trimmed = name.trim();
   if (trimmed.length === 0 || trimmed === "." || trimmed === "..") {
@@ -105,8 +112,9 @@ export async function fetchPreview(
 ): Promise<FilePreview> {
   const res = await fetch(
     `/v1/files/preview?path=${encodeURIComponent(path)}`,
-    { signal },
+    { signal, cache: "no-store" },
   );
+  if (res.status === 404) throw new Error("文件不存在或尚未写完");
   if (!res.ok) throw new Error("host unreachable");
   return (await res.json()) as FilePreview;
 }
