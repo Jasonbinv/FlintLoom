@@ -94,6 +94,14 @@ function computeTurnStats(
   const guard = emptyGuardStats();
   let steps = 0;
   let toolCalls = 0;
+  let llmMs = 0;
+  let toolMs = 0;
+  let ttftMs = 0;
+  let ttftSteps = 0;
+  let decodeMs = 0;
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let cacheReadTokens = 0;
   let inTurn = false;
 
   for (const event of session.events()) {
@@ -110,8 +118,24 @@ function computeTurnStats(
     if (event.type === "step/start" && event.turnId === turnId) {
       steps += 1;
     }
+    if (event.type === "step/stats" && event.turnId === turnId) {
+      llmMs += event.llmMs;
+      inputTokens += event.inputTokens;
+      outputTokens += event.outputTokens;
+      cacheReadTokens += event.cacheReadTokens;
+      if (event.ttftMs !== undefined) {
+        ttftMs += event.ttftMs;
+        ttftSteps += 1;
+      }
+      if (event.decodeMs !== undefined) {
+        decodeMs += event.decodeMs;
+      }
+    }
     if (event.type === "tool/call") {
       toolCalls += 1;
+    }
+    if (event.type === "tool/result" && event.durationMs !== undefined) {
+      toolMs += event.durationMs;
     }
     if (event.type === "guard/decision") {
       if (event.decision === "allow") guard.allow += 1;
@@ -136,6 +160,14 @@ function computeTurnStats(
     steps,
     toolCalls,
     durationMs: Math.max(0, Date.now() - startedAt),
+    llmMs,
+    toolMs,
+    ttftMs,
+    ttftSteps,
+    decodeMs,
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
     guard,
   };
 }
@@ -359,6 +391,7 @@ async function executeToolCall(
     args: call.args,
   });
 
+  const toolStartedAt = Date.now();
   let resultText: string;
   try {
     resultText = await tools.execute(call.name, parseToolArgs(call.args), {
@@ -397,6 +430,7 @@ async function executeToolCall(
     }
     resultText = err instanceof Error ? err.message : String(err);
   }
+  const durationMs = Math.max(0, Date.now() - toolStartedAt);
 
   if (!resultText.startsWith("guard denied:")) {
     await maybeAppendGuardSteward(
@@ -418,6 +452,7 @@ async function executeToolCall(
     callId: call.id,
     name: call.name,
     text: resultText,
+    durationMs,
   });
 
   if (call.name === "a2ui_emit") {
@@ -476,6 +511,36 @@ async function runStepIterations(input: RunStepsInput): Promise<RunTurnResult> {
     }
 
     appendEvent(session, onEvent, { type: "step/start", turnId, step: step + 1 });
+    const stepNumber = step + 1;
+    const stepStartedAt = Date.now();
+    let firstTokenAt: number | undefined;
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let cacheReadTokens = 0;
+
+    const emitStepStats = (): void => {
+      const endedAt = Date.now();
+      const stats: Extract<SessionEvent, { type: "step/stats" }> = {
+        type: "step/stats",
+        turnId,
+        step: stepNumber,
+        llmMs: Math.max(0, endedAt - stepStartedAt),
+        inputTokens,
+        outputTokens,
+        cacheReadTokens,
+      };
+      if (firstTokenAt !== undefined) {
+        stats.ttftMs = Math.max(0, firstTokenAt - stepStartedAt);
+        stats.decodeMs = Math.max(0, endedAt - firstTokenAt);
+      }
+      appendEvent(session, onEvent, stats);
+    };
+
+    const markFirstToken = (): void => {
+      if (firstTokenAt === undefined) {
+        firstTokenAt = Date.now();
+      }
+    };
 
     let chatProvider;
     let modelKind: "chat" | "omni" = "chat";
@@ -485,8 +550,10 @@ async function runStepIterations(input: RunStepsInput): Promise<RunTurnResult> {
       modelKind = resolved.kind;
     } catch (err) {
       if (signal.aborted) {
+        emitStepStats();
         return await finish("cancelled");
       }
+      emitStepStats();
       if (err instanceof ModelKindMissingError) {
         return await failChat(session, onEvent, finish, err, err.kind);
       }
@@ -507,11 +574,13 @@ async function runStepIterations(input: RunStepsInput): Promise<RunTurnResult> {
         signal,
       )) {
         if (signal.aborted) {
+          emitStepStats();
           return await finish("cancelled");
         }
 
         switch (chunk.type) {
           case "text":
+            markFirstToken();
             accumulatedText += chunk.text;
             appendEvent(session, onEvent, {
               type: "assistant/chunk",
@@ -519,15 +588,23 @@ async function runStepIterations(input: RunStepsInput): Promise<RunTurnResult> {
             });
             break;
           case "reasoning":
+            markFirstToken();
             appendEvent(session, onEvent, {
               type: "assistant/reasoning-chunk",
               text: chunk.text,
             });
             break;
           case "tool_call":
+            markFirstToken();
             toolCalls.push(chunk);
             break;
+          case "usage":
+            inputTokens += chunk.inputTokens;
+            outputTokens += chunk.outputTokens;
+            cacheReadTokens += chunk.cacheReadTokens;
+            break;
           case "error":
+            emitStepStats();
             appendEvent(session, onEvent, {
               type: "model/error",
               kind: modelKind,
@@ -538,14 +615,19 @@ async function runStepIterations(input: RunStepsInput): Promise<RunTurnResult> {
       }
     } catch (err) {
       if (signal.aborted) {
+        emitStepStats();
         return await finish("cancelled");
       }
+      emitStepStats();
       return await failChat(session, onEvent, finish, err);
     }
 
     if (signal.aborted) {
+      emitStepStats();
       return await finish("cancelled");
     }
+
+    emitStepStats();
 
     if (toolCalls.length === 0) {
       appendEvent(session, onEvent, {
@@ -636,6 +718,7 @@ export async function continueGuardTurn(
   });
 
   let resultText: string;
+  const toolStartedAt = Date.now();
   if (decision === "deny") {
     resultText = `guard denied: ${call.name}`;
   } else {
@@ -664,6 +747,7 @@ export async function continueGuardTurn(
     callId,
     name: call.name,
     text: resultText,
+    durationMs: Math.max(0, Date.now() - toolStartedAt),
   });
 
   const stepWait = { value: false };

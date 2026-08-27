@@ -21,11 +21,18 @@ export interface ChatChunkError {
   type: "error";
   message: string;
 }
+export interface ChatChunkUsage {
+  type: "usage";
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+}
 export type ChatChunk =
   | ChatChunkText
   | ChatChunkReasoning
   | ChatChunkToolCall
-  | ChatChunkError;
+  | ChatChunkError
+  | ChatChunkUsage;
 
 export interface ChatRequest {
   messages: ChatMessage[];

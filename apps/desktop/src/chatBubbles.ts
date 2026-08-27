@@ -1,5 +1,5 @@
 import type { UserImage, WorkbenchEvent } from "./types.ts";
-import type { TurnStats } from "./turnStats.ts";
+import { turnStatsFromEvent, type TurnStats } from "./turnStats.ts";
 import {
   toolResultState,
   truncateToolResult,
@@ -113,20 +113,14 @@ export function buildBubblesFromEvents(
       continue;
     }
     if (event.type === "turn/stats") {
-      pendingTurnStats = {
-        turnId: event.turnId,
-        steps: event.steps,
-        toolCalls: event.toolCalls,
-        durationMs: event.durationMs,
-        guard: { ...event.guard },
-      };
+      pendingTurnStats = turnStatsFromEvent(event);
       continue;
     }
     if (event.type === "turn/end") {
       flushTurnFooter(event.status);
       continue;
     }
-    if (event.type === "turn/start" || event.type === "guard/decision" || event.type === "guard/response") {
+    if (event.type === "turn/start" || event.type === "guard/decision" || event.type === "guard/response" || event.type === "step/stats") {
       continue;
     }
     if (event.type === "assistant/reasoning-chunk") {
@@ -193,13 +187,7 @@ export function statsFromEvents(events: WorkbenchEvent[]): TurnStats[] {
   let pending: TurnStats | undefined;
   for (const event of events) {
     if (event.type === "turn/stats") {
-      pending = {
-        turnId: event.turnId,
-        steps: event.steps,
-        toolCalls: event.toolCalls,
-        durationMs: event.durationMs,
-        guard: { ...event.guard },
-      };
+      pending = turnStatsFromEvent(event);
     }
     if (event.type === "turn/end" && pending !== undefined) {
       stats.push({ ...pending, status: event.status });

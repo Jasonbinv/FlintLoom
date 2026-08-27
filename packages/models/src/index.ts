@@ -9,6 +9,7 @@ export {
   type ChatChunkReasoning,
   type ChatChunkText,
   type ChatChunkToolCall,
+  type ChatChunkUsage,
   type ChatProvider,
   type ChatRequest,
   type GuardDecision,

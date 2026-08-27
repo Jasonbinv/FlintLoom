@@ -5,6 +5,7 @@ import { FilePane } from "./FilePane.tsx";
 import { FilePaneResizeHandle } from "./FilePaneResizeHandle.tsx";
 import { FILE_PANE_COLLAPSED_WIDTH } from "./filePaneWidth.ts";
 import { useFilePaneResize } from "./useFilePaneResize.ts";
+import { useChatLogFollow } from "./useChatLogFollow.ts";
 import { ModelsPane } from "./ModelsPane.tsx";
 import { PluginsPane } from "./PluginsPane.tsx";
 import { SettingsPane } from "./SettingsPane.tsx";
@@ -24,7 +25,7 @@ import { ReasoningRow } from "./ReasoningRow.tsx";
 import { SessionStatsLine } from "./SessionStatsLine.tsx";
 import { ToolCallRow } from "./ToolCallRow.tsx";
 import { TurnFooter } from "./TurnFooter.tsx";
-import type { TurnStats } from "./turnStats.ts";
+import { turnStatsFromEvent, type TurnStats } from "./turnStats.ts";
 import type { UserImage, WorkbenchEvent } from "./types.ts";
 import {
   applyTheme,
@@ -161,6 +162,14 @@ export function App() {
     stageRef: workbenchBodyRef,
     enabled: page === "chat" && !filePaneCollapsed,
   });
+  const logRef = useRef<HTMLElement | null>(null);
+  const { onScroll: onLogScroll, onWheel: onLogWheel, pinToBottom } = useChatLogFollow({
+    logRef,
+    bubbles,
+    draft,
+    reasoningDraft,
+    sending,
+  });
 
   function openFileFromChat(path: string) {
     setFilePaneCollapsed(false);
@@ -212,6 +221,7 @@ export function App() {
     setSending(false);
     turnIdRef.current = undefined;
     setPage("chat");
+    pinToBottom();
     const session = await fetchSession(targetId);
     if (!session) return;
     setBubbles(buildBubblesFromEvents(session.events, allocId));
@@ -237,6 +247,7 @@ export function App() {
     setSending(false);
     turnIdRef.current = undefined;
     setPage("chat");
+    pinToBottom();
   }
 
   function deleteSession(targetId: string) {
@@ -311,14 +322,11 @@ export function App() {
       currentStepRef.current = event.step;
       return;
     }
+    if (event.type === "step/stats") {
+      return;
+    }
     if (event.type === "turn/stats") {
-      pendingTurnStatsRef.current = {
-        turnId: event.turnId,
-        steps: event.steps,
-        toolCalls: event.toolCalls,
-        durationMs: event.durationMs,
-        guard: { ...event.guard },
-      };
+      pendingTurnStatsRef.current = turnStatsFromEvent(event);
       return;
     }
     if (event.type === "end") {
@@ -507,6 +515,7 @@ export function App() {
     setReasoningDraft("");
     turnIdRef.current = undefined;
     cancelWantedRef.current = false;
+    pinToBottom();
     try {
       await postTurn(sid.current, text, handleEvent, undefined, images);
     } finally {
@@ -717,7 +726,7 @@ export function App() {
               {waitingAction ? <span className="chat-status">等待操作</span> : null}
             </div>
           </header>
-          <main className="log">
+          <main className="log" ref={logRef} onScroll={onLogScroll} onWheel={onLogWheel}>
             {bubbles.length === 0 && !draft && !reasoningDraft ? (
               <div className="log-empty">
                 <p className="log-empty-title">今天我能帮你做什么？</p>

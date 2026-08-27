@@ -2254,6 +2254,7 @@ body,
 .log {
   flex: 1;
   overflow: auto;
+  overflow-anchor: none;
   padding: var(--space-5);
   display: flex;
   flex-direction: column;

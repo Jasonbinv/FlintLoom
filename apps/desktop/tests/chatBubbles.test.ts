@@ -63,6 +63,14 @@ describe("buildBubblesFromEvents", () => {
         steps: 1,
         toolCalls: 1,
         durationMs: 2500,
+        llmMs: 1800,
+        toolMs: 400,
+        ttftMs: 300,
+        ttftSteps: 1,
+        decodeMs: 1500,
+        inputTokens: 80,
+        outputTokens: 40,
+        cacheReadTokens: 10,
         guard: { allow: 1, deny: 0, ask: 0, suspicious: 0 },
       },
       { type: "turn/end", turnId: "t1", status: "ok" },
@@ -77,8 +85,8 @@ describe("buildBubblesFromEvents", () => {
     expect(footer?.kind).toBe("turn-footer");
     if (footer?.kind === "turn-footer") {
       expect(footer.stats.steps).toBe(1);
-      expect(footer.stats.durationMs).toBe(2500);
-      expect(footer.stats.status).toBe("ok");
+      expect(footer.stats.llmMs).toBe(1800);
+      expect(footer.stats.ttftMs).toBe(300);
     }
   });
 

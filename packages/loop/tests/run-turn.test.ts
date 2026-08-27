@@ -108,6 +108,64 @@ describe("runTurn", () => {
     });
   });
 
+  it("records LLM timing, TTFT, usage and tool duration on turn/stats", async () => {
+    const fakeChat: ChatProvider = {
+      async *stream() {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        yield { type: "text", text: "ok" };
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        yield {
+          type: "usage",
+          inputTokens: 12,
+          outputTokens: 4,
+          cacheReadTokens: 3,
+        };
+      },
+    };
+
+    const ctx = boot();
+    ctx.require<ModelRegistry>("models").registerChat("fake", fakeChat);
+    ctx.require<ModelRegistry>("models").setDefault("chat", "fake");
+
+    const session = new Session("s-metrics");
+    const result = await runTurn({
+      ctx,
+      session,
+      text: "hello",
+      workspaceRoot: process.cwd(),
+      channel: "test",
+      signal: new AbortController().signal,
+    });
+
+    expect(result.status).toBe("ok");
+    const stepStats = session.events().find((e) => e.type === "step/stats");
+    expect(stepStats).toMatchObject({
+      type: "step/stats",
+      step: 1,
+      inputTokens: 12,
+      outputTokens: 4,
+      cacheReadTokens: 3,
+    });
+    if (stepStats?.type === "step/stats") {
+      expect(stepStats.llmMs).toBeGreaterThanOrEqual(30);
+      expect(stepStats.ttftMs).toBeGreaterThanOrEqual(15);
+      expect(stepStats.decodeMs).toBeGreaterThanOrEqual(15);
+    }
+    const turnStats = session.events().find((e) => e.type === "turn/stats");
+    expect(turnStats).toMatchObject({
+      type: "turn/stats",
+      steps: 1,
+      toolCalls: 0,
+      inputTokens: 12,
+      outputTokens: 4,
+      cacheReadTokens: 3,
+    });
+    if (turnStats?.type === "turn/stats") {
+      expect(turnStats.llmMs).toBeGreaterThanOrEqual(30);
+      expect(turnStats.ttftSteps).toBe(1);
+    }
+  });
+
   it("fails and ends turn when chat stream throws", async () => {
     const fakeChat: ChatProvider = {
       async *stream() {
