@@ -6,6 +6,7 @@ export {
   type AsrProvider,
   type ChatChunk,
   type ChatChunkError,
+  type ChatChunkReasoning,
   type ChatChunkText,
   type ChatChunkToolCall,
   type ChatProvider,

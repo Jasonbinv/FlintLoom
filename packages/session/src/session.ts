@@ -1,5 +1,10 @@
 import type { ChatContentPart, ChatMessage, SessionEvent, UserImage } from "./events.ts";
 
+export type SessionOptions = {
+  preload?: readonly SessionEvent[];
+  persist?: (event: SessionEvent) => void;
+};
+
 export function userMessageContent(text: string, images?: UserImage[]): string | ChatContentPart[] {
   if (images === undefined || images.length === 0) {
     return text;
@@ -16,11 +21,18 @@ export function userMessageContent(text: string, images?: UserImage[]): string |
 
 export class Session {
   readonly #events: SessionEvent[] = [];
+  readonly #persist?: (event: SessionEvent) => void;
 
-  constructor(readonly id: string) {}
+  constructor(readonly id: string, opts?: SessionOptions) {
+    if (opts?.preload !== undefined) {
+      this.#events.push(...opts.preload);
+    }
+    this.#persist = opts?.persist;
+  }
 
   append(event: SessionEvent): void {
     this.#events.push(event);
+    this.#persist?.(event);
   }
 
   events(): readonly SessionEvent[] {

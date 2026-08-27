@@ -46,6 +46,7 @@ import { parseTurnBody } from "./turn-body.ts";
 import { loadOrCreateToken, readCredentials } from "./token.ts";
 import { readCredentialsStore, type CredentialsStore, resolveLayeredString, isLocalLlmBaseUrl } from "./credentials.ts";
 import { resolveWorkspaceRoot } from "./workspace.ts";
+import { workspaceSessionsDir } from "./sessionsDir.ts";
 import { createFileWatch, type FileWatch } from "./fileWatch.ts";
 
 export type PluginSnapshot = {
@@ -422,6 +423,9 @@ export async function createRuntime(
   }
   runtimeConfigById.knowledge = {
     dbPath: join(homeDir, ".flintloom", "knowledge.sqlite"),
+  };
+  runtimeConfigById.session = {
+    sessionsDir: workspaceSessionsDir(homeDir, workspaceRoot),
   };
   runtimeConfigById.skill = {
     homeDir,

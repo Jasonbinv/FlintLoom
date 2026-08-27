@@ -2352,12 +2352,222 @@ body,
 }
 
 .bubble.tool-call,
-.bubble.tool-result {
+.bubble.tool-result,
+.bubble.tool-step,
+.bubble.reasoning,
+.bubble.turn-status {
   background: var(--bg-tertiary);
   color: var(--text-muted);
-  font-family: ui-monospace, Consolas, monospace;
   font-size: 0.8rem;
   border: 1px solid var(--border-subtle);
+}
+
+.bubble.tool-step,
+.bubble.reasoning {
+  padding: var(--space-2) var(--space-3);
+}
+
+.bubble.turn-status {
+  color: var(--text-secondary);
+  font-style: italic;
+  animation: turn-status-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes turn-status-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.disclosure-row {
+  width: 100%;
+}
+
+.disclosure-row-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.disclosure-row-header:disabled {
+  cursor: default;
+}
+
+.disclosure-row-icon {
+  flex: 0 0 auto;
+  width: 1rem;
+  text-align: center;
+}
+
+.disclosure-row-title {
+  flex: 0 0 auto;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.disclosure-row-sep {
+  flex: 0 0 auto;
+  opacity: 0.5;
+}
+
+.disclosure-row-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.disclosure-row-summary.is-error {
+  color: var(--error);
+}
+
+.disclosure-row-chevron {
+  flex: 0 0 auto;
+  opacity: 0.6;
+  font-size: 0.75rem;
+}
+
+.disclosure-row-body {
+  margin-top: var(--space-2);
+  padding-left: calc(1rem + var(--space-2));
+}
+
+.reasoning-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.reasoning-row.is-running .disclosure-row-summary,
+.tool-row.is-running .disclosure-row-summary {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--accent-primary) 18%, transparent) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: disclosure-sweep 1.2s linear infinite;
+}
+
+@keyframes disclosure-sweep {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.tool-row-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.tool-io-section {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-2);
+  align-items: start;
+}
+
+.tool-io-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  padding-top: 0.15rem;
+}
+
+.tool-io-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.tool-io-text.is-error {
+  color: var(--error);
+}
+
+.message-turn.message-turn-footer {
+  align-self: center;
+  max-width: 100%;
+  margin-top: var(--space-1);
+  margin-bottom: var(--space-2);
+}
+
+.message-turn.message-turn-footer .bubble {
+  background: transparent;
+  padding: 0;
+  flex: none;
+}
+
+.turn-footer {
+  display: block;
+  text-align: center;
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.turn-footer-sep,
+.session-stats-sep {
+  margin: 0 0.35rem;
+  color: var(--border-default);
+}
+
+.disclosure-row-step {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+.session-stats-line {
+  display: block;
+  text-align: center;
+  max-width: 52rem;
+  width: 100%;
+  margin: 0 auto var(--space-2);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-stats-sep {
+  margin: 0 0.5rem;
+}
+
+.message-turn.message-tool-step .bubble,
+.message-turn.message-reasoning .bubble,
+.message-turn.message-turn-status .bubble {
+  background: var(--bg-tertiary);
 }
 
 .bubble.error {

@@ -12,6 +12,19 @@ import { ImageInput } from "./ImageInput.tsx";
 import { VoiceInput } from "./VoiceInput.tsx";
 import { TtsPlay } from "./TtsPlay.tsx";
 import { insertPath } from "./files.ts";
+import {
+  applyToolCall,
+  applyToolResult,
+  buildBubblesFromEvents,
+  bubbleFromHistory,
+  statsFromEvents,
+  type Bubble,
+} from "./chatBubbles.ts";
+import { ReasoningRow } from "./ReasoningRow.tsx";
+import { SessionStatsLine } from "./SessionStatsLine.tsx";
+import { ToolCallRow } from "./ToolCallRow.tsx";
+import { TurnFooter } from "./TurnFooter.tsx";
+import type { TurnStats } from "./turnStats.ts";
 import type { UserImage, WorkbenchEvent } from "./types.ts";
 import {
   applyTheme,
@@ -47,22 +60,6 @@ const SESSION_KEY = "flintloom.sessionId";
 
 type Page = "chat" | "plugins" | "models" | "settings";
 
-type Bubble =
-  | { id: string; kind: "user"; text: string; images?: UserImage[] }
-  | { id: string; kind: "assistant"; text: string }
-  | { id: string; kind: "tool-call"; name: string; argsText: string }
-  | { id: string; kind: "tool-result"; text: string }
-  | { id: string; kind: "error"; message: string }
-  | { id: string; kind: "a2ui"; surfaceId: string; messages: unknown[]; turnId: string }
-  | { id: string; kind: "guard-ask"; tool: string; callId: string; turnId: string }
-  | {
-      id: string;
-      kind: "guard-steward";
-      tool: string;
-      verdict: "ok" | "suspicious";
-      summary: string;
-    };
-
 function sessionId(): string {
   let id = sessionStorage.getItem(SESSION_KEY);
   if (!id) {
@@ -70,63 +67,6 @@ function sessionId(): string {
     sessionStorage.setItem(SESSION_KEY, id);
   }
   return id;
-}
-
-function bubbleFromHistory(event: WorkbenchEvent, id: string): Bubble | undefined {
-  switch (event.type) {
-    case "user/message":
-      return {
-        id,
-        kind: "user",
-        text: event.text,
-        images: event.images,
-      };
-    case "assistant/message":
-      return { id, kind: "assistant", text: event.text };
-    case "tool/call":
-      return {
-        id,
-        kind: "tool-call",
-        name: event.name,
-        argsText: JSON.stringify(event.args).slice(0, 200),
-      };
-    case "tool/result": {
-      const truncated =
-        event.text.length > 2000 ? `${event.text.slice(0, 2000)}…` : event.text;
-      return { id, kind: "tool-result", text: truncated };
-    }
-    case "model/error":
-      return { id, kind: "error", message: event.message };
-    case "a2ui/surface":
-      return {
-        id,
-        kind: "a2ui",
-        surfaceId: event.surfaceId,
-        messages: event.messages,
-        turnId: event.turnId,
-      };
-    case "guard/ask":
-      return {
-        id,
-        kind: "guard-ask",
-        tool: event.tool,
-        callId: event.callId,
-        turnId: event.turnId,
-      };
-    case "guard/steward":
-      if (event.verdict === "ok" && event.summary.length === 0) {
-        return undefined;
-      }
-      return {
-        id,
-        kind: "guard-steward",
-        tool: event.tool,
-        verdict: event.verdict,
-        summary: event.summary,
-      };
-    default:
-      return undefined;
-  }
 }
 
 function waitingTurnId(events: WorkbenchEvent[]): string | undefined {
@@ -176,6 +116,8 @@ export function App() {
   const turnIdRef = useRef<string | undefined>();
   const cancelWantedRef = useRef(false);
   const submittingActionRef = useRef(false);
+  const currentStepRef = useRef<number | undefined>();
+  const pendingTurnStatsRef = useRef<TurnStats | undefined>();
   const [hostDown, setHostDown] = useState(false);
   const [chatConfigured, setChatConfigured] = useState<boolean | undefined>();
   const [guardConfigured, setGuardConfigured] = useState<boolean | undefined>();
@@ -185,6 +127,8 @@ export function App() {
   const [pendingImages, setPendingImages] = useState<UserImage[]>([]);
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
   const [draft, setDraft] = useState("");
+  const [reasoningDraft, setReasoningDraft] = useState("");
+  const [turnStatsList, setTurnStatsList] = useState<TurnStats[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [waitingAction, setWaitingAction] = useState(false);
@@ -260,6 +204,8 @@ export function App() {
     sessionStorage.setItem(SESSION_KEY, targetId);
     setBubbles([]);
     setDraft("");
+    setReasoningDraft("");
+    setTurnStatsList([]);
     setInput("");
     setPendingImages([]);
     setWaitingAction(false);
@@ -268,12 +214,8 @@ export function App() {
     setPage("chat");
     const session = await fetchSession(targetId);
     if (!session) return;
-    const loaded: Bubble[] = [];
-    for (const event of session.events) {
-      const bubble = bubbleFromHistory(event, allocId());
-      if (bubble) loaded.push(bubble);
-    }
-    setBubbles(loaded);
+    setBubbles(buildBubblesFromEvents(session.events, allocId));
+    setTurnStatsList(statsFromEvents(session.events));
     const waiting = waitingTurnId(session.events);
     if (waiting) {
       setWaitingAction(true);
@@ -287,6 +229,8 @@ export function App() {
     sid.current = id;
     setBubbles([]);
     setDraft("");
+    setReasoningDraft("");
+    setTurnStatsList([]);
     setInput("");
     setPendingImages([]);
     setWaitingAction(false);
@@ -351,6 +295,8 @@ export function App() {
     if (event.type === "user/message") return;
     if (event.type === "turn/start") {
       turnIdRef.current = event.turnId;
+      currentStepRef.current = undefined;
+      pendingTurnStatsRef.current = undefined;
       if (cancelWantedRef.current) {
         void cancelTurn(event.turnId).then((ok) => {
           if (ok) {
@@ -361,7 +307,38 @@ export function App() {
       }
       return;
     }
+    if (event.type === "step/start") {
+      currentStepRef.current = event.step;
+      return;
+    }
+    if (event.type === "turn/stats") {
+      pendingTurnStatsRef.current = {
+        turnId: event.turnId,
+        steps: event.steps,
+        toolCalls: event.toolCalls,
+        durationMs: event.durationMs,
+        guard: { ...event.guard },
+      };
+      return;
+    }
     if (event.type === "end") {
+      if (
+        event.status === "ok" ||
+        event.status === "failed" ||
+        event.status === "cancelled"
+      ) {
+        const pending = pendingTurnStatsRef.current;
+        if (pending !== undefined) {
+          const stats: TurnStats = { ...pending, status: event.status };
+          setBubbles((prev) => [
+            ...prev,
+            { id: allocId(), kind: "turn-footer", stats },
+          ]);
+          setTurnStatsList((prev) => [...prev, stats]);
+          pendingTurnStatsRef.current = undefined;
+        }
+        currentStepRef.current = undefined;
+      }
       if (event.status === "awaiting_action") {
         setWaitingAction(true);
         setSending(false);
@@ -377,16 +354,44 @@ export function App() {
       }
       return;
     }
+    if (event.type === "assistant/reasoning-chunk") {
+      setReasoningDraft((current) => current + event.text);
+      return;
+    }
     if (event.type === "assistant/chunk") {
       setDraft((current) => current + event.text);
       return;
     }
     if (event.type === "assistant/message") {
       setDraft("");
-      setBubbles((prev) => [
-        ...prev,
-        { id: allocId(), kind: "assistant", text: event.text },
-      ]);
+      setReasoningDraft((reasoningText) => {
+        setBubbles((prev) => {
+          const next: Bubble[] = [...prev];
+          if (reasoningText.length > 0) {
+            next.push({ id: allocId(), kind: "reasoning", text: reasoningText });
+          }
+          next.push({ id: allocId(), kind: "assistant", text: event.text });
+          return next;
+        });
+        return "";
+      });
+      return;
+    }
+    if (event.type === "tool/call") {
+      setReasoningDraft((reasoningText) => {
+        setBubbles((prev) => {
+          let next: Bubble[] = [...prev];
+          if (reasoningText.length > 0) {
+            next.push({ id: allocId(), kind: "reasoning", text: reasoningText });
+          }
+          return applyToolCall(next, event, allocId(), currentStepRef.current);
+        });
+        return "";
+      });
+      return;
+    }
+    if (event.type === "tool/result") {
+      setBubbles((prev) => applyToolResult(prev, event));
       return;
     }
     if (event.type === "a2ui/surface") {
@@ -460,12 +465,9 @@ export function App() {
       });
     void fetchSession(sid.current).then((session) => {
       if (!session) return;
-      const loaded: Bubble[] = [];
-      for (const event of session.events) {
-        const bubble = bubbleFromHistory(event, allocId());
-        if (bubble) loaded.push(bubble);
-      }
+      const loaded = buildBubblesFromEvents(session.events, allocId);
       setBubbles(loaded);
+      setTurnStatsList(statsFromEvents(session.events));
       if (
         loaded.some(
           (b) => b.kind === "user" && b.text.trim().length > 0,
@@ -502,6 +504,7 @@ export function App() {
     });
     setSending(true);
     setDraft("");
+    setReasoningDraft("");
     turnIdRef.current = undefined;
     cancelWantedRef.current = false;
     try {
@@ -715,7 +718,7 @@ export function App() {
             </div>
           </header>
           <main className="log">
-            {bubbles.length === 0 && !draft ? (
+            {bubbles.length === 0 && !draft && !reasoningDraft ? (
               <div className="log-empty">
                 <p className="log-empty-title">今天我能帮你做什么？</p>
                 <p className="log-empty-hint">向工作区说一句话，开始你的任务</p>
@@ -723,7 +726,7 @@ export function App() {
             ) : null}
             {bubbles.map((bubble) => (
               <div key={bubble.id} className={`message-turn message-${bubble.kind}`}>
-                {bubble.kind !== "user" ? (
+                {bubble.kind !== "user" && bubble.kind !== "turn-footer" ? (
                   <div className="message-avatar assistant" aria-hidden>AI</div>
                 ) : null}
                 <div className={`bubble ${bubble.kind}`}>
@@ -750,18 +753,23 @@ export function App() {
                     {ttsConfigured ? <TtsPlay text={bubble.text} /> : null}
                   </div>
                 )}
-                {bubble.kind === "error" && bubble.message}
-                {bubble.kind === "tool-call" &&
-                  `${bubble.name} ${bubble.argsText}`}
-                {bubble.kind === "tool-result" && (
-                  <div className="tool-result-row">
-                    <span>{bubble.text}</span>
-                    <MessageFileCards
-                      text={bubble.text}
-                      onOpenFile={openFileFromChat}
-                    />
-                  </div>
+                {bubble.kind === "reasoning" && (
+                  <ReasoningRow text={bubble.text} />
                 )}
+                {bubble.kind === "tool-step" && (
+                  <ToolCallRow
+                    name={bubble.name}
+                    args={bubble.args}
+                    result={bubble.result}
+                    state={bubble.state}
+                    step={bubble.step}
+                    onOpenFile={openFileFromChat}
+                  />
+                )}
+                {bubble.kind === "turn-footer" && (
+                  <TurnFooter stats={bubble.stats} />
+                )}
+                {bubble.kind === "error" && bubble.message}
                 {bubble.kind === "a2ui" && (
                   <A2uiSurface
                     messages={bubble.messages}
@@ -825,14 +833,29 @@ export function App() {
                 ) : null}
               </div>
             ))}
+            {reasoningDraft ? (
+              <div className="message-turn message-reasoning">
+                <div className="message-avatar assistant" aria-hidden>AI</div>
+                <div className="bubble reasoning">
+                  <ReasoningRow text={reasoningDraft} running />
+                </div>
+              </div>
+            ) : null}
             {draft ? (
               <div className="message-turn message-assistant">
                 <div className="message-avatar assistant" aria-hidden>AI</div>
                 <div className="bubble assistant draft">{draft}</div>
               </div>
             ) : null}
+            {sending && !draft && !reasoningDraft ? (
+              <div className="message-turn message-turn-status">
+                <div className="message-avatar assistant" aria-hidden>AI</div>
+                <div className="bubble turn-status">Deep diving…</div>
+              </div>
+            ) : null}
           </main>
           <footer className="composer">
+            <SessionStatsLine stats={turnStatsList} />
             <div className="composer-box">
               {pendingImages.length > 0 ? (
                 <div className="composer-images" aria-label="待发送图片">

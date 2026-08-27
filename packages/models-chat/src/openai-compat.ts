@@ -155,7 +155,21 @@ function handleSseLine(
   }
 
   const chunks: ChatChunk[] = [];
-  const content = (delta as { content?: unknown }).content;
+  const deltaRec = delta as {
+    content?: unknown;
+    reasoning_content?: unknown;
+    reasoning?: unknown;
+  };
+  const reasoning =
+    typeof deltaRec.reasoning_content === "string"
+      ? deltaRec.reasoning_content
+      : typeof deltaRec.reasoning === "string"
+        ? deltaRec.reasoning
+        : "";
+  if (reasoning !== "") {
+    chunks.push({ type: "reasoning", text: reasoning });
+  }
+  const content = deltaRec.content;
   if (typeof content === "string" && content !== "") {
     chunks.push({ type: "text", text: content });
   }

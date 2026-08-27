@@ -547,9 +547,8 @@ describe("App", () => {
     expect(document.body.textContent).not.toContain("from sse");
   });
 
-  it("truncates tool/call args and long tool/result", async () => {
+  it("shows tool call row with truncated result in expanded body", async () => {
     const args = { blob: "x".repeat(250) };
-    const argsShown = JSON.stringify(args).slice(0, 200);
     const result = "r".repeat(2001);
     const toolSse =
       `data: ${JSON.stringify({ type: "tool/call", callId: "c1", name: "fs", args })}\n\n` +
@@ -563,9 +562,12 @@ describe("App", () => {
     });
     await mountApp();
     await typeAndSend("use tool");
-    await waitForText("fs");
-    expect(document.body.textContent).toContain(argsShown);
-    expect(document.body.textContent).not.toContain(JSON.stringify(args));
+    await waitForText("File");
+    const toolHeader = document.querySelector(".tool-row .disclosure-row-header");
+    if (!toolHeader) throw new Error("no tool row");
+    await act(async () => {
+      (toolHeader as HTMLButtonElement).click();
+    });
     expect(document.body.textContent).toContain(`${result.slice(0, 2000)}…`);
     expect(document.body.textContent).not.toContain(result);
   });

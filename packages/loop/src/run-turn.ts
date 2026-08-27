@@ -65,6 +65,7 @@ type RunStepsInput = {
   ctx: Context;
   session: Session;
   turnId: string;
+  startedAt: number;
   workspaceRoot: string;
   channel: string;
   signal: AbortSignal;
@@ -74,6 +75,80 @@ type RunStepsInput = {
 
 type TurnEndStatus = Exclude<RunTurnResult["status"], "awaiting_action">;
 
+type TurnGuardStats = {
+  allow: number;
+  deny: number;
+  ask: number;
+  suspicious: number;
+};
+
+function emptyGuardStats(): TurnGuardStats {
+  return { allow: 0, deny: 0, ask: 0, suspicious: 0 };
+}
+
+function computeTurnStats(
+  session: Session,
+  turnId: string,
+  startedAt: number,
+): Extract<SessionEvent, { type: "turn/stats" }> {
+  const guard = emptyGuardStats();
+  let steps = 0;
+  let toolCalls = 0;
+  let inTurn = false;
+
+  for (const event of session.events()) {
+    if (event.type === "turn/start" && event.turnId === turnId) {
+      inTurn = true;
+      continue;
+    }
+    if (!inTurn) {
+      continue;
+    }
+    if (event.type === "turn/end" && event.turnId === turnId) {
+      break;
+    }
+    if (event.type === "step/start" && event.turnId === turnId) {
+      steps += 1;
+    }
+    if (event.type === "tool/call") {
+      toolCalls += 1;
+    }
+    if (event.type === "guard/decision") {
+      if (event.decision === "allow") guard.allow += 1;
+      if (event.decision === "deny") guard.deny += 1;
+      if (event.decision === "ask") guard.ask += 1;
+    }
+    if (event.type === "guard/response") {
+      if (event.decision === "allow") guard.allow += 1;
+      else guard.deny += 1;
+    }
+    if (event.type === "guard/steward" && event.verdict === "suspicious") {
+      guard.suspicious += 1;
+    }
+    if (event.type === "tool/result" && event.text.startsWith("guard denied:")) {
+      guard.deny += 1;
+    }
+  }
+
+  return {
+    type: "turn/stats",
+    turnId,
+    steps,
+    toolCalls,
+    durationMs: Math.max(0, Date.now() - startedAt),
+    guard,
+  };
+}
+
+function emitTurnStats(
+  session: Session,
+  onEvent: RunTurnInput["onEvent"],
+  turnId: string,
+  startedAt: number,
+): void {
+  appendEvent(session, onEvent, computeTurnStats(session, turnId, startedAt));
+}
+
 function appendEvent(
   session: Session,
   onEvent: RunTurnInput["onEvent"],
@@ -81,6 +156,15 @@ function appendEvent(
 ): void {
   session.append(event);
   onEvent?.(event);
+}
+
+function turnStartedAt(session: Session, turnId: string): number {
+  for (const event of session.events()) {
+    if (event.type === "turn/start" && event.turnId === turnId) {
+      return event.startedAt;
+    }
+  }
+  return Date.now();
 }
 
 function parseToolArgs(args: unknown): Record<string, unknown> {
@@ -380,6 +464,7 @@ async function runStepIterations(input: RunStepsInput): Promise<RunTurnResult> {
   } = input;
 
   const finish = async (status: TurnEndStatus): Promise<RunTurnResult> => {
+    emitTurnStats(session, onEvent, turnId, input.startedAt);
     appendEvent(session, onEvent, { type: "turn/end", turnId, status });
     await maybeDeliver(input.ctx, channel, session, turnId, signal);
     return { turnId, status };
@@ -389,6 +474,8 @@ async function runStepIterations(input: RunStepsInput): Promise<RunTurnResult> {
     if (signal.aborted) {
       return await finish("cancelled");
     }
+
+    appendEvent(session, onEvent, { type: "step/start", turnId, step: step + 1 });
 
     let chatProvider;
     let modelKind: "chat" | "omni" = "chat";
@@ -428,6 +515,12 @@ async function runStepIterations(input: RunStepsInput): Promise<RunTurnResult> {
             accumulatedText += chunk.text;
             appendEvent(session, onEvent, {
               type: "assistant/chunk",
+              text: chunk.text,
+            });
+            break;
+          case "reasoning":
+            appendEvent(session, onEvent, {
+              type: "assistant/reasoning-chunk",
               text: chunk.text,
             });
             break;
@@ -502,14 +595,15 @@ export async function runTurn(input: RunTurnInput): Promise<RunTurnResult> {
   } = input;
 
   const turnId = crypto.randomUUID();
-  appendEvent(session, onEvent, { type: "turn/start", turnId });
+  const startedAt = Date.now();
+  appendEvent(session, onEvent, { type: "turn/start", turnId, startedAt });
   if (images !== undefined && images.length > 0) {
     appendEvent(session, onEvent, { type: "user/message", text, images });
   } else {
     appendEvent(session, onEvent, { type: "user/message", text });
   }
 
-  return runStepIterations({ ...input, turnId });
+  return runStepIterations({ ...input, turnId, startedAt });
 }
 
 export async function continueGuardTurn(
@@ -531,6 +625,8 @@ export async function continueGuardTurn(
   if (call === undefined) {
     throw new Error("not waiting");
   }
+
+  const startedAt = turnStartedAt(session, turnId);
 
   appendEvent(session, onEvent, {
     type: "guard/response",
@@ -573,7 +669,7 @@ export async function continueGuardTurn(
   const stepWait = { value: false };
   for (const remaining of ask.remainingCalls) {
     const paused = await executeToolCall(
-      { ...input, turnId },
+      { ...input, turnId, startedAt },
       {
         type: "tool_call",
         id: remaining.id,
@@ -584,6 +680,7 @@ export async function continueGuardTurn(
     );
     if (paused !== undefined) {
       if (paused.status === "cancelled") {
+        emitTurnStats(session, onEvent, turnId, startedAt);
         appendEvent(session, onEvent, { type: "turn/end", turnId, status: "cancelled" });
         await maybeDeliver(input.ctx, input.channel, session, turnId, input.signal);
         return paused;
@@ -596,7 +693,7 @@ export async function continueGuardTurn(
     return { turnId, status: "awaiting_action" };
   }
 
-  return runStepIterations({ ...input, turnId });
+  return runStepIterations({ ...input, turnId, startedAt });
 }
 
 export async function continueTurn(input: ContinueTurnInput): Promise<RunTurnResult> {
@@ -626,5 +723,9 @@ export async function continueTurn(input: ContinueTurnInput): Promise<RunTurnRes
     ...(action.data !== undefined ? { data: action.data } : {}),
   });
 
-  return runStepIterations({ ...input, turnId });
+  return runStepIterations({
+    ...input,
+    turnId,
+    startedAt: turnStartedAt(session, turnId),
+  });
 }
