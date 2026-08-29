@@ -6,6 +6,7 @@ import {
   isHtmlFilePath,
   openSafeHtmlInBrowser,
 } from "./safeHtmlPreview.ts";
+import { ExportFormatButton } from "./ExportFormatButton.tsx";
 import { SpreadsheetPreview } from "./SpreadsheetPreview.tsx";
 import { DocumentPreview } from "./DocumentPreview.tsx";
 
@@ -18,6 +19,7 @@ type Props = {
   cacheKey?: number | string;
   onClose?: () => void;
   onQuote?: () => void;
+  onExported?: (path: string) => void;
 };
 
 const EXT_LABELS: Record<string, string> = {
@@ -282,15 +284,33 @@ export function FilePreviewContent({
   cacheKey,
   onClose,
   onQuote,
+  onExported,
 }: Props) {
   const title = filePath ? basename(filePath) : "文件预览";
   const badge = previewBadge(filePath, kind);
   const isHtml = filePath ? isHtmlFilePath(filePath) : false;
+  const exportAction = filePath ? (
+    <ExportFormatButton filePath={filePath} onExported={onExported} />
+  ) : null;
   const safeHtmlAction =
     isHtml && filePath ? <SafeHtmlOpenButton filePath={filePath} /> : null;
+  const headerActions = (
+    <>
+      {exportAction}
+      {safeHtmlAction}
+    </>
+  );
 
   if (kind === "spreadsheet" && filePath) {
-    return <SpreadsheetPreview filePath={filePath} title={title} onClose={onClose} onQuote={onQuote} />;
+    return (
+      <SpreadsheetPreview
+        filePath={filePath}
+        title={title}
+        onClose={onClose}
+        onQuote={onQuote}
+        onExported={onExported}
+      />
+    );
   }
 
   if ((kind === "audio" || kind === "video") && filePath) {
@@ -342,7 +362,9 @@ export function FilePreviewContent({
         filePath={filePath}
         title={title}
         kind={kind}
-        onClose={onClose} onQuote={onQuote}
+        onClose={onClose}
+        onQuote={onQuote}
+        onExported={onExported}
       />
     );
   }
@@ -362,7 +384,7 @@ export function FilePreviewContent({
   if (kind === "failed") {
     return (
       <div className="file-preview file-preview--failed">
-        <PreviewHeader title={title} filePath={filePath} badge={badge} actions={safeHtmlAction} onClose={onClose} onQuote={onQuote} />
+        <PreviewHeader title={title} filePath={filePath} badge={badge} actions={headerActions} onClose={onClose} onQuote={onQuote} />
         <div className="file-preview-empty">
           <p className="file-preview-empty__title">此文件暂不支持内嵌预览</p>
           <p className="file-preview-empty__hint">{text}</p>
@@ -389,7 +411,7 @@ export function FilePreviewContent({
           title={title}
           filePath={filePath}
           badge={badge}
-          actions={safeHtmlAction}
+          actions={headerActions}
           onClose={onClose} onQuote={onQuote}
         />
         <SafeHtmlInlinePreview filePath={filePath} />
@@ -405,7 +427,7 @@ export function FilePreviewContent({
           title={title}
           filePath={filePath}
           badge={badge}
-          actions={safeHtmlAction}
+          actions={headerActions}
           onClose={onClose} onQuote={onQuote}
         />
         <article
@@ -422,7 +444,7 @@ export function FilePreviewContent({
         title={title}
         filePath={filePath}
         badge={badge}
-        actions={safeHtmlAction}
+        actions={headerActions}
         onClose={onClose} onQuote={onQuote}
       />
       <pre className="file-preview-code">

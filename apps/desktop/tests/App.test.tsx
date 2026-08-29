@@ -190,6 +190,18 @@ function installFetch(opts: {
         headers: { "Content-Type": "application/json" },
       });
     }
+    if (url.includes("/v1/files/convert")) {
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          source: "README.md",
+          out: "README.html",
+          format: "html",
+          loss: "images skipped; emphasis flattened",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
     if (url.includes("/v1/files/raw")) {
       if (init?.method === "PUT") {
         return new Response(JSON.stringify({ ok: true }), {
@@ -448,6 +460,22 @@ function findFileTreeButton(name: string): HTMLButtonElement | undefined {
   return label?.closest("button") as HTMLButtonElement | undefined;
 }
 
+function fileListOf(files: File[]): FileList {
+  const list = Object.assign([...files], {
+    item: (index: number) => files[index] ?? null,
+  });
+  return list as unknown as FileList;
+}
+
+async function clickFileTreeItem(name: string): Promise<HTMLButtonElement> {
+  const fileButton = findFileTreeButton(name);
+  if (!fileButton) throw new Error(`no ${name} button`);
+  await act(async () => {
+    fileButton.click();
+  });
+  return fileButton;
+}
+
 function fireContextMenu(el: Element, clientX = 48, clientY = 96) {
   el.dispatchEvent(
     new MouseEvent("contextmenu", {
@@ -572,30 +600,46 @@ describe("App", () => {
     expect(document.body.textContent).not.toContain(result);
   });
 
+  it("does not auto-open file preview and stacks it below the tree", async () => {
+    installFetch();
+    await mountApp();
+    await waitForText("README.md");
+    expect(document.querySelector(".file-preview-surface")).toBeNull();
+
+    await clickFileTreeItem("README.md");
+    await waitForText("Hello");
+    expect(document.querySelector(".file-preview-surface")).toBeTruthy();
+
+    const tree = document.querySelector(".file-tree-surface") as HTMLElement | null;
+    expect(tree?.style.height).toMatch(/^\d+px$/);
+    expect(tree?.style.width).toBe("");
+    expect(
+      document
+        .querySelector(".file-pane-inner-split-handle")
+        ?.getAttribute("aria-orientation"),
+    ).toBe("horizontal");
+  });
+
   it("shows file tree and preview without inserting path on click", async () => {
     installFetch();
     await mountApp();
     await waitForText("README.md");
-    await waitForText("Hello");
     expect(container!.textContent).toContain("README.md");
-    expect(container!.textContent).toContain("Hello");
+    expect(document.querySelector(".file-preview-surface")).toBeNull();
 
-    const fileButton = findFileTreeButton("README.md");
-    if (!fileButton) throw new Error("no README.md button");
     const textarea = document.querySelector("textarea");
     if (!textarea) throw new Error("no textarea");
     expect(textarea.value).toBe("");
 
-    await act(async () => {
-      fileButton.click();
-    });
+    await clickFileTreeItem("README.md");
+    await waitForText("Hello");
     expect(textarea.value).toBe("");
     expect(document.querySelector(".file-preview-surface")).toBeTruthy();
 
-    const quoteButton = document.querySelector(
-      ".file-preview-header__action",
-    ) as HTMLButtonElement | null;
-    if (!quoteButton || quoteButton.textContent !== "引用") {
+    const quoteButton = Array.from(
+      document.querySelectorAll(".file-preview-header__action"),
+    ).find((btn) => btn.textContent === "引用") as HTMLButtonElement | undefined;
+    if (!quoteButton) {
       throw new Error("no quote button");
     }
     await act(async () => {
@@ -613,6 +657,7 @@ describe("App", () => {
     installFetch();
     await mountApp();
     await waitForText("README.md");
+    await clickFileTreeItem("README.md");
     await waitForText("Hello");
     expect(document.querySelector(".file-preview-surface")).toBeTruthy();
 
@@ -634,6 +679,7 @@ describe("App", () => {
     installFetch();
     await mountApp();
     await waitForText("README.md");
+    await clickFileTreeItem("README.md");
     await waitForText("Hello");
 
     const closeBtn = document.querySelector(
@@ -1526,11 +1572,8 @@ describe("App", () => {
     await waitForText("README.md");
     await waitForText("notes.txt");
 
-    const notesButton = findFileTreeButton("notes.txt");
-    if (!notesButton) throw new Error("no notes.txt button");
-    await act(async () => {
-      notesButton.click();
-    });
+    await clickFileTreeItem("README.md");
+    await clickFileTreeItem("notes.txt");
     await waitForText("FRESH-PREVIEW-TEXT");
 
     await act(async () => {
@@ -1542,7 +1585,7 @@ describe("App", () => {
     expect(document.body.textContent).not.toContain("STALE-PREVIEW-TEXT");
   });
 
-  it("renders a2ui surface and waits with send disabled and cancel visible", async () => {
+  it("renders a2ui surface and waits with composer in cancel state", async () => {
     installFetch({
       turn: new Response(SURFACE_SSE, {
         status: 200,
@@ -1558,11 +1601,9 @@ describe("App", () => {
     expect(okButton).toBeTruthy();
     const sendButton = document.querySelector(".btn-send") as HTMLButtonElement | null;
     expect(sendButton).toBeTruthy();
-    expect(sendButton!.disabled).toBe(true);
-    const cancelButton = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "取消",
-    );
-    expect(cancelButton).toBeTruthy();
+    expect(sendButton!.disabled).toBe(false);
+    expect(sendButton!.classList.contains("btn-send--stop")).toBe(true);
+    expect(sendButton!.getAttribute("aria-label")).toBe("取消");
   });
 
   it("posts confirm action to /actions with surfaceId main", async () => {
@@ -1630,7 +1671,7 @@ describe("App", () => {
     expect(actionCalls).toHaveLength(1);
   });
 
-  it("renders guard ask with tool name only and disables send", async () => {
+  it("renders guard ask with tool name only and composer in cancel state", async () => {
     installFetch({
       turn: new Response(GUARD_SSE, {
         status: 200,
@@ -1643,7 +1684,8 @@ describe("App", () => {
     expect(document.body.textContent).toContain("允许执行工具");
     expect(document.body.textContent).not.toContain("call-touch");
     const sendButton = document.querySelector(".btn-send") as HTMLButtonElement | null;
-    expect(sendButton?.disabled).toBe(true);
+    expect(sendButton?.classList.contains("btn-send--stop")).toBe(true);
+    expect(sendButton?.getAttribute("aria-label")).toBe("取消");
     const allowButton = Array.from(document.querySelectorAll("button")).find(
       (b) => b.textContent === "允许",
     );
@@ -1750,7 +1792,8 @@ describe("App", () => {
     await mountApp();
     await waitForText("touch");
     const sendButton = document.querySelector(".btn-send") as HTMLButtonElement | null;
-    expect(sendButton?.disabled).toBe(true);
+    expect(sendButton?.classList.contains("btn-send--stop")).toBe(true);
+    expect(sendButton?.getAttribute("aria-label")).toBe("取消");
   });
 
   it("hydrates guard/steward events from session", async () => {
@@ -1977,7 +2020,7 @@ describe("App", () => {
     expect(body.data.color).toBe("red");
   });
 
-  it("keeps send disabled when cancel is not HTTP 200", async () => {
+  it("keeps composer in cancel state when cancel is not HTTP 200", async () => {
     installFetch({
       turn: new Response(SURFACE_SSE, {
         status: 200,
@@ -1999,16 +2042,15 @@ describe("App", () => {
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
     });
     const sendButton = document.querySelector(".btn-send") as HTMLButtonElement | null;
-    expect(sendButton?.disabled).toBe(true);
-    const cancelButton = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "取消",
-    );
-    if (!cancelButton) throw new Error("no cancel");
+    expect(sendButton?.classList.contains("btn-send--stop")).toBe(true);
+    expect(sendButton?.disabled).toBe(false);
+    if (!sendButton) throw new Error("no cancel");
     await act(async () => {
-      cancelButton.click();
+      sendButton.click();
       await Promise.resolve();
     });
-    expect(sendButton?.disabled).toBe(true);
+    expect(sendButton.classList.contains("btn-send--stop")).toBe(true);
+    expect(sendButton.getAttribute("aria-label")).toBe("取消");
   });
 
   it("shows empty log copy as a paragraph", async () => {
@@ -2129,19 +2171,20 @@ describe("App", () => {
     const readme = findFileTreeButton("README.md");
     const docs = findFileTreeButton("docs");
     if (!readme || !docs) throw new Error("missing tree buttons");
-    expect(readme.classList.contains("selected")).toBe(false);
+    expect(readme.getAttribute("aria-selected")).not.toBe("true");
     await act(async () => {
       docs.click();
     });
-    expect(docs.classList.contains("selected")).toBe(false);
+    expect(docs.classList.contains("file-tree__row--active")).toBe(false);
     await act(async () => {
       readme.click();
     });
-    expect(readme.classList.contains("selected")).toBe(true);
-    expect(docs.classList.contains("selected")).toBe(false);
+    expect(readme.getAttribute("aria-selected")).toBe("true");
+    expect(readme.classList.contains("file-tree__row--active")).toBe(true);
+    expect(docs.classList.contains("file-tree__row--active")).toBe(false);
   });
 
-  it("tags send as primary and cancel as ghost", async () => {
+  it("uses one composer action button for send and cancel states", async () => {
     installFetch({
       turn: new Response(SURFACE_SSE, {
         status: 200,
@@ -2151,12 +2194,17 @@ describe("App", () => {
     await mountApp();
     const send = document.querySelector(".btn-send");
     expect(send?.classList.contains("btn-send")).toBe(true);
+    expect(send?.classList.contains("btn-send--stop")).toBe(false);
+    expect(send?.getAttribute("aria-label")).toBe("发送");
+    expect(send?.querySelector(".btn-send-arrow")).toBeTruthy();
     await typeAndSend("hi");
     await waitForText("OK");
-    const cancel = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "取消",
-    );
-    expect(cancel?.classList.contains("composer-tool-btn")).toBe(true);
+    const action = document.querySelector(".btn-send");
+    expect(action?.classList.contains("btn-send--stop")).toBe(true);
+    expect(action?.getAttribute("aria-label")).toBe("取消");
+    expect(
+      Array.from(document.querySelectorAll("button")).some((b) => b.textContent === "取消"),
+    ).toBe(false);
   });
 
   it("shows plugin list on Plugins page", async () => {
@@ -2268,7 +2316,214 @@ describe("App", () => {
     expect(document.body.textContent).toContain("omni 已配置");
   });
 
-  it("shows image button when omni is configured", async () => {
+  it("shows attachment button even when omni is not configured", async () => {
+    installFetch({
+      models: new Response(
+        JSON.stringify([{ kind: "chat", configured: true, defaultId: "default" }]),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    await waitForText("附件");
+    expect(
+      Array.from(document.querySelectorAll("button")).some((btn) => btn.textContent === "附件"),
+    ).toBe(true);
+  });
+
+  it("shows an output format button next to attachments", async () => {
+    installFetch();
+    await mountApp();
+    await waitForText("输出");
+    expect(
+      Array.from(document.querySelectorAll(".composer-tools button")).some(
+        (btn) => btn.textContent === "输出",
+      ),
+    ).toBe(true);
+  });
+
+  it("sends a pptx generate constraint and clears the chip after send", async () => {
+    installFetch();
+    await mountApp();
+    await waitForText("输出");
+    const outputBtn = Array.from(
+      document.querySelectorAll(".composer-tools button"),
+    ).find((btn) => btn.textContent === "输出") as HTMLButtonElement | undefined;
+    if (!outputBtn) throw new Error("no 输出 button");
+    await act(async () => {
+      outputBtn.click();
+    });
+    const pptBtn = Array.from(document.querySelectorAll("button")).find(
+      (btn) => btn.textContent === "PPT",
+    );
+    if (!pptBtn) throw new Error("no PPT option");
+    await act(async () => {
+      pptBtn.click();
+    });
+    await waitForText("将写成 PPT");
+    await typeAndSend("做一份三国介绍");
+    await waitForText("hello");
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const turnCall = fetchMock.mock.calls.find(([input, init]) => {
+      const url = requestUrl(input as RequestInfo | URL);
+      return url.includes("/v1/turns") && (init as RequestInit | undefined)?.method === "POST";
+    });
+    const body = JSON.parse(String((turnCall![1] as RequestInit).body)) as {
+      text: string;
+    };
+    expect(body.text).toContain("做一份三国介绍");
+    expect(body.text).toContain(".pptx");
+    expect(body.text).toContain("doc_generate");
+    expect(document.body.textContent).not.toContain("将写成 PPT");
+  });
+
+  it("opens the generated file when doc_generate matches the selected format", async () => {
+    const generateSse =
+      `data: ${JSON.stringify({
+        type: "tool/call",
+        callId: "g1",
+        name: "doc_generate",
+        args: { source: "draft.md", out: "talk.pptx" },
+      })}\n\n` +
+      `data: ${JSON.stringify({
+        type: "tool/result",
+        callId: "g1",
+        name: "doc_generate",
+        text: JSON.stringify({
+          status: "ok",
+          source: "draft.md",
+          out: "talk.pptx",
+          format: "pptx",
+        }),
+      })}\n\n` +
+      `data: {"type":"assistant/message","text":"写好了"}\n\n` +
+      `data: {"type":"end","status":"ok"}\n\n`;
+    installFetch({
+      turn: new Response(generateSse, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    });
+    await mountApp();
+    await waitForText("输出");
+    const outputBtn = Array.from(
+      document.querySelectorAll(".composer-tools button"),
+    ).find((btn) => btn.textContent === "输出") as HTMLButtonElement | undefined;
+    if (!outputBtn) throw new Error("no 输出 button");
+    await act(async () => {
+      outputBtn.click();
+    });
+    const pptBtn = Array.from(document.querySelectorAll("button")).find(
+      (btn) => btn.textContent === "PPT",
+    );
+    if (!pptBtn) throw new Error("no PPT option");
+    await act(async () => {
+      pptBtn.click();
+    });
+    await typeAndSend("做一份三国介绍");
+    await waitForText("写好了");
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const previewCall = fetchMock.mock.calls.find(([input]) =>
+      requestUrl(input as RequestInfo | URL).includes(
+        "/v1/files/preview?path=talk.pptx",
+      ),
+    );
+    expect(previewCall).toBeTruthy();
+  });
+
+  it("exports a markdown preview to html", async () => {
+    installFetch();
+    await mountApp();
+    await waitForText("README.md");
+    await clickFileTreeItem("README.md");
+    await waitForText("导出");
+    const exportBtn = Array.from(document.querySelectorAll("button")).find(
+      (btn) => btn.textContent === "导出",
+    );
+    if (!exportBtn) throw new Error("no 导出 button");
+    await act(async () => {
+      exportBtn.click();
+    });
+    const htmlBtn = Array.from(document.querySelectorAll("button")).find(
+      (btn) => btn.textContent === "HTML",
+    );
+    if (!htmlBtn) throw new Error("no HTML export option");
+    await act(async () => {
+      htmlBtn.click();
+    });
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const convertCall = fetchMock.mock.calls.find(([input, init]) => {
+      const url = requestUrl(input as RequestInfo | URL);
+      return (
+        url.includes("/v1/files/convert") &&
+        (init as RequestInit | undefined)?.method === "POST"
+      );
+    });
+    expect(convertCall).toBeTruthy();
+    expect(JSON.parse(String((convertCall![1] as RequestInit).body))).toEqual({
+      source: "README.md",
+      out: "README.html",
+    });
+  });
+
+  it("writes attached files into uploads and sends their paths", async () => {
+    installFetch();
+    await mountApp();
+    await waitForText("附件");
+    const fileInput = document.querySelector(
+      ".composer-tools input[type=file]",
+    ) as HTMLInputElement | null;
+    if (!fileInput) throw new Error("no file input");
+    const file = new File(["hello notes"], "notes.txt", { type: "text/plain" });
+    await act(async () => {
+      Object.defineProperty(fileInput, "files", {
+        configurable: true,
+        value: fileListOf([file]),
+      });
+      fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await waitForText("uploads/notes.txt");
+    const sendButton = document.querySelector(".btn-send") as HTMLButtonElement | null;
+    expect(sendButton?.disabled).toBe(false);
+    await act(async () => {
+      sendButton!.click();
+    });
+    await waitForText("hello");
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const mkdirCall = fetchMock.mock.calls.find(([input]) =>
+      requestUrl(input as RequestInfo | URL).includes("/v1/files/mkdir"),
+    );
+    expect(mkdirCall).toBeTruthy();
+    expect(JSON.parse(String((mkdirCall![1] as RequestInit).body))).toEqual({
+      path: "uploads",
+    });
+    const createCall = fetchMock.mock.calls.find(([input]) =>
+      requestUrl(input as RequestInfo | URL).includes("/v1/files/create"),
+    );
+    expect(JSON.parse(String((createCall![1] as RequestInit).body))).toEqual({
+      path: "uploads/notes.txt",
+    });
+    const rawPut = fetchMock.mock.calls.find(([input, init]) => {
+      const url = requestUrl(input as RequestInfo | URL);
+      return url.includes("/v1/files/raw") && (init as RequestInit | undefined)?.method === "PUT";
+    });
+    expect(rawPut).toBeTruthy();
+    expect(requestUrl(rawPut![0] as RequestInfo | URL)).toContain(
+      "path=uploads%2Fnotes.txt",
+    );
+    const turnCall = fetchMock.mock.calls.find(([input, init]) => {
+      const url = requestUrl(input as RequestInfo | URL);
+      return url.includes("/v1/turns") && (init as RequestInit | undefined)?.method === "POST";
+    });
+    expect(turnCall).toBeTruthy();
+    const body = JSON.parse(String((turnCall![1] as RequestInit).body)) as {
+      text: string;
+      images?: unknown;
+    };
+    expect(body.text).toContain("uploads/notes.txt");
+    expect(body.images).toBeUndefined();
+  });
+
+  it("sends attached images as vision parts when omni is configured", async () => {
     installFetch({
       models: new Response(
         JSON.stringify([
@@ -2279,24 +2534,39 @@ describe("App", () => {
       ),
     });
     await mountApp();
-    await waitForText("图片");
-    expect(
-      Array.from(document.querySelectorAll("button")).some((btn) => btn.textContent === "图片"),
-    ).toBe(true);
-  });
-
-  it("hides image button when omni is not configured", async () => {
-    installFetch({
-      models: new Response(
-        JSON.stringify([{ kind: "chat", configured: true, defaultId: "default" }]),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
+    await waitForText("附件");
+    const fileInput = document.querySelector(
+      ".composer-tools input[type=file]",
+    ) as HTMLInputElement | null;
+    if (!fileInput) throw new Error("no file input");
+    const file = new File([new Uint8Array([1, 2, 3, 4])], "photo.png", {
+      type: "image/png",
     });
-    await mountApp();
-    await waitForText("chat 已配置");
-    expect(
-      Array.from(document.querySelectorAll("button")).some((btn) => btn.textContent === "图片"),
-    ).toBe(false);
+    await act(async () => {
+      Object.defineProperty(fileInput, "files", {
+        configurable: true,
+        value: fileListOf([file]),
+      });
+      fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await waitForText("uploads/photo.png");
+    const sendButton = document.querySelector(".btn-send") as HTMLButtonElement | null;
+    expect(sendButton?.disabled).toBe(false);
+    await act(async () => {
+      sendButton!.click();
+    });
+    await waitForText("hello");
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const turnCall = fetchMock.mock.calls.find(([input, init]) => {
+      const url = requestUrl(input as RequestInfo | URL);
+      return url.includes("/v1/turns") && (init as RequestInit | undefined)?.method === "POST";
+    });
+    const body = JSON.parse(String((turnCall![1] as RequestInit).body)) as {
+      text: string;
+      images?: { mime: string; data: string }[];
+    };
+    expect(body.text).toContain("uploads/photo.png");
+    expect(body.images).toEqual([{ mime: "image/png", data: expect.any(String) }]);
   });
 
   it("shows voice button when asr is configured", async () => {
@@ -2631,6 +2901,169 @@ describe("App", () => {
     expect(document.body.textContent).toContain("Jan");
   });
 
+  it("renders a2ui radar and heatmap charts", async () => {
+    const messages = [
+      {
+        version: "v0.9" as const,
+        createSurface: { surfaceId: "main", catalogId: "flintloom:a2ui:core" },
+      },
+      {
+        version: "v0.9" as const,
+        updateComponents: {
+          surfaceId: "main",
+          components: [
+            { id: "root", component: "Column", children: ["radar", "heat"] },
+            {
+              id: "radar",
+              component: "Chart",
+              kind: "radar",
+              labels: ["Attack", "Defense", "Speed"],
+              values: [80, 60, 90],
+            },
+            {
+              id: "heat",
+              component: "Chart",
+              kind: "heatmap",
+              xLabels: ["Mon", "Tue"],
+              yLabels: ["AM", "PM"],
+              values: [
+                [1, 2],
+                [3, 4],
+              ],
+            },
+          ],
+        },
+      },
+    ];
+    const sse =
+      `data: {"type":"turn/start","turnId":"t-radar-heat"}\n\n` +
+      `data: ${JSON.stringify({
+        type: "a2ui/surface",
+        turnId: "t-radar-heat",
+        surfaceId: "main",
+        wait: false,
+        messages,
+      })}\n\n` +
+      `data: {"type":"assistant/message","text":"charts"}\n\n` +
+      `data: {"type":"end","status":"ok"}\n\n`;
+    installFetch({
+      turn: new Response(sse, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    });
+    await mountApp();
+    await typeAndSend("show radar heatmap");
+    await waitForText("Attack");
+    const svgs = Array.from(document.querySelectorAll(".a2ui-chart-svg"));
+    expect(svgs).toHaveLength(2);
+    expect(svgs.some((el) => el.getAttribute("aria-label") === "radar chart")).toBe(true);
+    expect(svgs.some((el) => el.getAttribute("aria-label") === "heatmap chart")).toBe(true);
+    expect(document.body.textContent).toContain("Mon");
+    expect(document.body.textContent).toContain("AM");
+  });
+
+  it("keeps live reasoning, tool step, a2ui chart, and footer in event order", async () => {
+    const messages = [
+      {
+        version: "v0.9" as const,
+        createSurface: { surfaceId: "main", catalogId: "flintloom:a2ui:core" },
+      },
+      {
+        version: "v0.9" as const,
+        updateComponents: {
+          surfaceId: "main",
+          components: [
+            { id: "root", component: "Column", children: ["radar"] },
+            {
+              id: "radar",
+              component: "Chart",
+              kind: "radar",
+              labels: ["OrderProbeAtk", "OrderProbeDef", "OrderProbeSpd"],
+              values: [80, 60, 90],
+            },
+          ],
+        },
+      },
+    ];
+    const sse =
+      `data: {"type":"turn/start","turnId":"t-order"}\n\n` +
+      `data: {"type":"step/start","turnId":"t-order","step":1}\n\n` +
+      `data: ${JSON.stringify({
+        type: "assistant/reasoning-chunk",
+        text: "will-draw-order-probe",
+      })}\n\n` +
+      `data: {"type":"step/start","turnId":"t-order","step":2}\n\n` +
+      `data: ${JSON.stringify({
+        type: "tool/call",
+        callId: "c-a2ui",
+        name: "a2ui_emit",
+        args: { messages },
+      })}\n\n` +
+      `data: ${JSON.stringify({
+        type: "tool/result",
+        callId: "c-a2ui",
+        name: "a2ui_emit",
+        text: JSON.stringify({ status: "ok", emitId: "e1", wait: false, surfaceId: "main" }),
+      })}\n\n` +
+      `data: ${JSON.stringify({
+        type: "a2ui/surface",
+        turnId: "t-order",
+        surfaceId: "main",
+        wait: false,
+        messages,
+      })}\n\n` +
+      `data: ${JSON.stringify({
+        type: "assistant/reasoning-chunk",
+        text: "already-emitted-order-probe",
+      })}\n\n` +
+      `data: ${JSON.stringify({
+        type: "turn/stats",
+        turnId: "t-order",
+        steps: 2,
+        toolCalls: 1,
+        durationMs: 12400,
+        llmMs: 12400,
+        ttftMs: 3200,
+        ttftSteps: 1,
+        decodeMs: 9000,
+        outputTokens: 750,
+        guard: { allow: 0, deny: 0, ask: 0, suspicious: 0 },
+      })}\n\n` +
+      `data: {"type":"end","status":"ok"}\n\n`;
+    installFetch({
+      turn: new Response(sse, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    });
+    await mountApp();
+    await typeAndSend("draw radar");
+    await waitForText("already-emitted-order-probe");
+    await waitForText("2 steps");
+    const kinds = Array.from(document.querySelectorAll(".log > .message-turn")).map((el) => {
+      const cls = [...el.classList].find((c) => c.startsWith("message-") && c !== "message-turn");
+      return cls?.slice("message-".length) ?? "";
+    });
+    expect(kinds).toEqual([
+      "user",
+      "reasoning",
+      "tool-step",
+      "a2ui",
+      "reasoning",
+      "turn-footer",
+    ]);
+    expect(document.querySelectorAll(".log > .message-tool-step")).toHaveLength(1);
+    expect(document.querySelector(".a2ui-chart-svg")).toBeTruthy();
+    const reasoningTexts = Array.from(
+      document.querySelectorAll(".log > .message-reasoning .reasoning-body, .log > .message-reasoning .disclosure-row-summary"),
+    ).map((el) => el.textContent);
+    expect(reasoningTexts.some((t) => t?.includes("will-draw-order-probe"))).toBe(true);
+    expect(reasoningTexts.some((t) => t?.includes("already-emitted-order-probe"))).toBe(true);
+    const last = kinds[kinds.length - 1];
+    expect(last).toBe("turn-footer");
+  });
+
   it("renders a2ui Infographic from inline document", async () => {
     const messages = [
       {
@@ -2835,5 +3268,48 @@ describe("App", () => {
       localStorage.getItem("flintloom.workspace.recent") ?? "[]",
     ) as { path: string }[];
     expect(recent[0]?.path).toBe("C:/workspace/other");
+  });
+
+  it("shows a sticky web search toggle and sends webSearch only when on", async () => {
+    installFetch();
+    await mountApp();
+    await waitForText("联网");
+    const toggle = Array.from(
+      document.querySelectorAll(".composer-tools button"),
+    ).find((btn) => btn.textContent === "联网") as HTMLButtonElement | undefined;
+    if (!toggle) throw new Error("no 联网 button");
+    expect(toggle.className).not.toContain("composer-tool-btn--active");
+
+    await act(async () => {
+      toggle.click();
+    });
+    expect(toggle.className).toContain("composer-tool-btn--active");
+    await typeAndSend("今天天气");
+    await waitForText("hello");
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const turnCall = fetchMock.mock.calls.find(([input, init]) => {
+      const url = requestUrl(input as RequestInfo | URL);
+      return url.includes("/v1/turns") && (init as RequestInit | undefined)?.method === "POST";
+    });
+    const body = JSON.parse(String((turnCall![1] as RequestInit).body)) as {
+      text: string;
+      webSearch?: boolean;
+    };
+    expect(body.text).toBe("今天天气");
+    expect(body.webSearch).toBe(true);
+
+    await act(async () => {
+      toggle.click();
+    });
+    await typeAndSend("第二轮");
+    await waitForText("hello");
+    const second = [...fetchMock.mock.calls].reverse().find(([input, init]) => {
+      const url = requestUrl(input as RequestInfo | URL);
+      return url.includes("/v1/turns") && (init as RequestInit | undefined)?.method === "POST";
+    });
+    const body2 = JSON.parse(String((second![1] as RequestInit).body)) as {
+      webSearch?: boolean;
+    };
+    expect(body2).not.toHaveProperty("webSearch");
   });
 });

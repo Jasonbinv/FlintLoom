@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FilePreviewCloseButton } from "./FilePreviewContent.tsx";
+import { ExportFormatButton } from "./ExportFormatButton.tsx";
 import { fetchFileBytes, writeFileBytes } from "./files.ts";
 import { FileXlsxPreview, type FileXlsxPreviewHandle } from "./xlsx/FileXlsxPreview.tsx";
 
@@ -8,6 +9,7 @@ type Props = {
   title: string;
   onClose?: () => void;
   onQuote?: () => void;
+  onExported?: (path: string) => void;
 };
 
 export function useXlsxPreviewSave(args: {
@@ -66,7 +68,7 @@ export function useXlsxPreviewSave(args: {
   return { dirty, saving, saveError, markDirty, discardEdit, saveEdit };
 }
 
-export function SpreadsheetPreview({ filePath, title, onClose, onQuote }: Props) {
+export function SpreadsheetPreview({ filePath, title, onClose, onQuote, onExported }: Props) {
   const [arrayBuffer, setArrayBuffer] = useState<ArrayBuffer>();
   const [loadError, setLoadError] = useState<string>();
   const [loading, setLoading] = useState(true);
@@ -153,6 +155,7 @@ export function SpreadsheetPreview({ filePath, title, onClose, onQuote }: Props)
           {title}
         </span>
         <div className="file-preview-header__actions">
+          <ExportFormatButton filePath={filePath} onExported={onExported} />
           {headerActions}
           {onQuote ? (
             <button

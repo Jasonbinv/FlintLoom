@@ -9,10 +9,29 @@ import { useChatLogFollow } from "./useChatLogFollow.ts";
 import { ModelsPane } from "./ModelsPane.tsx";
 import { PluginsPane } from "./PluginsPane.tsx";
 import { SettingsPane } from "./SettingsPane.tsx";
-import { ImageInput } from "./ImageInput.tsx";
+import { AttachmentInput } from "./AttachmentInput.tsx";
+import { OutputFormatInput } from "./OutputFormatInput.tsx";
+import { WebSearchToggle } from "./WebSearchToggle.tsx";
 import { VoiceInput } from "./VoiceInput.tsx";
 import { TtsPlay } from "./TtsPlay.tsx";
-import { insertPath } from "./files.ts";
+import { insertPath, writeNewWorkspaceFile } from "./files.ts";
+import {
+  appendAttachmentPaths,
+  MAX_ATTACHMENTS,
+  nextAttachmentPath,
+  previewUrlForFile,
+  revokeAttachmentPreview,
+  type PendingAttachment,
+  UPLOADS_DIR,
+  visionImagesFrom,
+} from "./attachments.ts";
+import {
+  appendOutputFormatConstraint,
+  outPathFromToolResult,
+  outputFormatOf,
+  type OutputFormat,
+} from "./outputFormat.ts";
+import { FileIcon } from "./FileIcon.tsx";
 import {
   applyToolCall,
   applyToolResult,
@@ -26,7 +45,7 @@ import { SessionStatsLine } from "./SessionStatsLine.tsx";
 import { ToolCallRow } from "./ToolCallRow.tsx";
 import { TurnFooter } from "./TurnFooter.tsx";
 import { turnStatsFromEvent, type TurnStats } from "./turnStats.ts";
-import type { UserImage, WorkbenchEvent } from "./types.ts";
+import type { WorkbenchEvent } from "./types.ts";
 import {
   applyTheme,
   loadTheme,
@@ -125,10 +144,17 @@ export function App() {
   const [asrConfigured, setAsrConfigured] = useState(false);
   const [omniConfigured, setOmniConfigured] = useState(false);
   const [ttsConfigured, setTtsConfigured] = useState(false);
-  const [pendingImages, setPendingImages] = useState<UserImage[]>([]);
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+  const pendingAttachmentsRef = useRef<PendingAttachment[]>([]);
+  pendingAttachmentsRef.current = pendingAttachments;
+  const [outputFormat, setOutputFormat] = useState<OutputFormat | undefined>();
+  const outputFormatForTurnRef = useRef<OutputFormat | undefined>();
+  const [webSearch, setWebSearch] = useState(false);
+  const [attachError, setAttachError] = useState<string>();
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
   const [draft, setDraft] = useState("");
   const [reasoningDraft, setReasoningDraft] = useState("");
+  const reasoningDraftRef = useRef("");
   const [turnStatsList, setTurnStatsList] = useState<TurnStats[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -184,6 +210,58 @@ export function App() {
     applyTheme(next);
   }
 
+  function clearPendingAttachments() {
+    for (const item of pendingAttachmentsRef.current) {
+      revokeAttachmentPreview(item);
+    }
+    pendingAttachmentsRef.current = [];
+    setPendingAttachments([]);
+  }
+
+  function removePendingAttachment(id: string) {
+    setPendingAttachments((current) => {
+      const found = current.find((item) => item.id === id);
+      if (found) revokeAttachmentPreview(found);
+      return current.filter((item) => item.id !== id);
+    });
+  }
+
+  function addPendingFiles(files: File[]) {
+    void addPendingFilesAsync(files);
+  }
+
+  async function addPendingFilesAsync(files: File[]) {
+    const used = new Set(pendingAttachmentsRef.current.map((item) => item.path));
+    const room = MAX_ATTACHMENTS - pendingAttachmentsRef.current.length;
+    const batch = files.slice(0, room);
+    const added: PendingAttachment[] = [];
+    let failed = 0;
+    for (const file of batch) {
+      try {
+        const dest = nextAttachmentPath(UPLOADS_DIR, file.name, used);
+        const path = await writeNewWorkspaceFile(dest, file);
+        used.add(path);
+        added.push({
+          id: crypto.randomUUID(),
+          file,
+          path,
+          previewUrl: previewUrlForFile(file),
+        });
+      } catch {
+        failed += 1;
+      }
+    }
+    if (added.length === 0) {
+      if (failed > 0) setAttachError("附件未能写入工作区 uploads/ 目录");
+      return;
+    }
+    setAttachError(undefined);
+    setPendingAttachments((current) => [...current, ...added]);
+    setFilePaneCollapsed(false);
+    const last = added[added.length - 1];
+    if (last) openFileFromChat(last.path);
+  }
+
   const taskTitle =
     bubbles.find((b) => b.kind === "user" && b.text.trim().length > 0)?.text ??
     "新对话";
@@ -213,10 +291,13 @@ export function App() {
     sessionStorage.setItem(SESSION_KEY, targetId);
     setBubbles([]);
     setDraft("");
+    reasoningDraftRef.current = "";
     setReasoningDraft("");
     setTurnStatsList([]);
     setInput("");
-    setPendingImages([]);
+    clearPendingAttachments();
+    setOutputFormat(undefined);
+    outputFormatForTurnRef.current = undefined;
     setWaitingAction(false);
     setSending(false);
     turnIdRef.current = undefined;
@@ -239,10 +320,13 @@ export function App() {
     sid.current = id;
     setBubbles([]);
     setDraft("");
+    reasoningDraftRef.current = "";
     setReasoningDraft("");
     setTurnStatsList([]);
     setInput("");
-    setPendingImages([]);
+    clearPendingAttachments();
+    setOutputFormat(undefined);
+    outputFormatForTurnRef.current = undefined;
     setWaitingAction(false);
     setSending(false);
     turnIdRef.current = undefined;
@@ -302,6 +386,23 @@ export function App() {
     setWorkspaceDialog(null);
   }
 
+  function takeReasoningText(): string {
+    const text = reasoningDraftRef.current;
+    if (text.length === 0) return "";
+    reasoningDraftRef.current = "";
+    setReasoningDraft("");
+    return text;
+  }
+
+  function bubblesWithReasoning(prev: Bubble[], reasoning: string, extra: Bubble[]): Bubble[] {
+    const next = [...prev];
+    if (reasoning.length > 0) {
+      next.push({ id: allocId(), kind: "reasoning", text: reasoning });
+    }
+    next.push(...extra);
+    return next;
+  }
+
   function handleEvent(event: WorkbenchEvent) {
     if (event.type === "user/message") return;
     if (event.type === "turn/start") {
@@ -330,22 +431,35 @@ export function App() {
       return;
     }
     if (event.type === "end") {
+      if (event.status !== "awaiting_action") {
+        outputFormatForTurnRef.current = undefined;
+      }
       if (
         event.status === "ok" ||
         event.status === "failed" ||
         event.status === "cancelled"
       ) {
         const pending = pendingTurnStatsRef.current;
+        const reasoning = takeReasoningText();
+        setBubbles((prev) => {
+          const extra: Bubble[] = [];
+          if (pending !== undefined) {
+            extra.push({
+              id: allocId(),
+              kind: "turn-footer",
+              stats: { ...pending, status: event.status },
+            });
+          }
+          return bubblesWithReasoning(prev, reasoning, extra);
+        });
         if (pending !== undefined) {
-          const stats: TurnStats = { ...pending, status: event.status };
-          setBubbles((prev) => [
-            ...prev,
-            { id: allocId(), kind: "turn-footer", stats },
-          ]);
-          setTurnStatsList((prev) => [...prev, stats]);
+          setTurnStatsList((prev) => [...prev, { ...pending, status: event.status }]);
           pendingTurnStatsRef.current = undefined;
         }
         currentStepRef.current = undefined;
+      } else {
+        const leftover = takeReasoningText();
+        setBubbles((prev) => bubblesWithReasoning(prev, leftover, []));
       }
       if (event.status === "awaiting_action") {
         setWaitingAction(true);
@@ -363,7 +477,8 @@ export function App() {
       return;
     }
     if (event.type === "assistant/reasoning-chunk") {
-      setReasoningDraft((current) => current + event.text);
+      reasoningDraftRef.current += event.text;
+      setReasoningDraft(reasoningDraftRef.current);
       return;
     }
     if (event.type === "assistant/chunk") {
@@ -372,34 +487,29 @@ export function App() {
     }
     if (event.type === "assistant/message") {
       setDraft("");
-      setReasoningDraft((reasoningText) => {
-        setBubbles((prev) => {
-          const next: Bubble[] = [...prev];
-          if (reasoningText.length > 0) {
-            next.push({ id: allocId(), kind: "reasoning", text: reasoningText });
-          }
-          next.push({ id: allocId(), kind: "assistant", text: event.text });
-          return next;
-        });
-        return "";
-      });
+      const reasoning = takeReasoningText();
+      setBubbles((prev) =>
+        bubblesWithReasoning(prev, reasoning, [
+          { id: allocId(), kind: "assistant", text: event.text },
+        ]),
+      );
       return;
     }
     if (event.type === "tool/call") {
-      setReasoningDraft((reasoningText) => {
-        setBubbles((prev) => {
-          let next: Bubble[] = [...prev];
-          if (reasoningText.length > 0) {
-            next.push({ id: allocId(), kind: "reasoning", text: reasoningText });
-          }
-          return applyToolCall(next, event, allocId(), currentStepRef.current);
-        });
-        return "";
+      const reasoning = takeReasoningText();
+      setBubbles((prev) => {
+        const next = bubblesWithReasoning(prev, reasoning, []);
+        return applyToolCall(next, event, allocId(), currentStepRef.current);
       });
       return;
     }
     if (event.type === "tool/result") {
       setBubbles((prev) => applyToolResult(prev, event));
+      const expected = outputFormatForTurnRef.current;
+      if (expected) {
+        const out = outPathFromToolResult(event.name, event.text, expected);
+        if (out) openFileFromChat(out);
+      }
       return;
     }
     if (event.type === "a2ui/surface") {
@@ -409,7 +519,10 @@ export function App() {
       turnIdRef.current = event.turnId;
     }
     const bubble = bubbleFromHistory(event, allocId());
-    if (bubble) setBubbles((prev) => [...prev, bubble]);
+    if (bubble) {
+      const reasoning = takeReasoningText();
+      setBubbles((prev) => bubblesWithReasoning(prev, reasoning, [bubble]));
+    }
   }
 
   function refreshModelStatus() {
@@ -433,6 +546,14 @@ export function App() {
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
+
+  useEffect(() => {
+    return () => {
+      for (const item of pendingAttachmentsRef.current) {
+        revokeAttachmentPreview(item);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     return registerWorkspacePathDialog(({ initialPath }) => {
@@ -495,11 +616,35 @@ export function App() {
   }, []);
 
   async function send() {
-    const text = input.trim();
-    const images = pendingImages.length > 0 ? pendingImages : undefined;
-    if ((!text && !images) || sending || waitingAction) return;
+    const typed = input.trim();
+    const pending = pendingAttachments;
+    if ((!typed && pending.length === 0) || sending || waitingAction) return;
+    setSending(true);
+    let text = typed;
+    let images = undefined;
+    try {
+      if (pending.length > 0) {
+        const paths = pending.map((item) => item.path);
+        text = appendAttachmentPaths(typed, paths);
+        if (omniConfigured) {
+          images = await visionImagesFrom(pending);
+        }
+      }
+    } catch {
+      setSending(false);
+      return;
+    }
+    if (outputFormat) {
+      text = appendOutputFormatConstraint(text, outputFormat);
+    }
+    outputFormatForTurnRef.current = outputFormat;
+    setOutputFormat(undefined);
+    if (!text && images === undefined) {
+      setSending(false);
+      return;
+    }
     setInput("");
-    setPendingImages([]);
+    clearPendingAttachments();
     setBubbles((prev) => {
       const next: Bubble[] = [
         ...prev,
@@ -510,14 +655,14 @@ export function App() {
       );
       return next;
     });
-    setSending(true);
     setDraft("");
+    reasoningDraftRef.current = "";
     setReasoningDraft("");
     turnIdRef.current = undefined;
     cancelWantedRef.current = false;
     pinToBottom();
     try {
-      await postTurn(sid.current, text, handleEvent, undefined, images);
+      await postTurn(sid.current, text, handleEvent, undefined, images, webSearch || undefined);
     } finally {
       setSending(false);
     }
@@ -570,6 +715,7 @@ export function App() {
     }
   }
 
+  const composerBusy = sending || waitingAction;
   const navItems: { id: Page; label: string; icon: string }[] = [
     { id: "chat", label: "对话", icon: "💬" },
     { id: "plugins", label: "插件", icon: "🧩" },
@@ -750,6 +896,10 @@ export function App() {
                       />
                     ))}
                     {bubble.text ? <span>{bubble.text}</span> : null}
+                    <MessageFileCards
+                      text={bubble.text}
+                      onOpenFile={openFileFromChat}
+                    />
                   </div>
                 )}
                 {bubble.kind === "assistant" && (
@@ -866,23 +1016,72 @@ export function App() {
           <footer className="composer">
             <SessionStatsLine stats={turnStatsList} />
             <div className="composer-box">
-              {pendingImages.length > 0 ? (
-                <div className="composer-images" aria-label="待发送图片">
-                  {pendingImages.map((image, index) => (
-                    <img
-                      key={index}
-                      className="composer-image-thumb"
-                      alt=""
-                      src={`data:${image.mime};base64,${image.data}`}
-                    />
+              {attachError ? (
+                <p className="composer-attach-error">{attachError}</p>
+              ) : null}
+              {pendingAttachments.length > 0 ? (
+                <div className="composer-attachments" aria-label="待发送附件">
+                  {pendingAttachments.map((item) => (
+                    <span key={item.id} className="composer-attach-chip">
+                      <button
+                        type="button"
+                        className="composer-attach-open"
+                        title={`已保存到 ${item.path}`}
+                        onClick={() => {
+                          setFilePaneCollapsed(false);
+                          openFileFromChat(item.path);
+                        }}
+                      >
+                        {item.previewUrl ? (
+                          <img
+                            className="composer-image-thumb"
+                            alt={item.file.name}
+                            src={item.previewUrl}
+                          />
+                        ) : (
+                          <FileIcon name={item.file.name} />
+                        )}
+                        <span className="composer-attach-meta">
+                          <span className="composer-attach-name">{item.file.name}</span>
+                          <span className="composer-attach-path">{item.path}</span>
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className="composer-attach-remove"
+                        aria-label={`移除 ${item.file.name}`}
+                        onClick={() => removePendingAttachment(item.id)}
+                      >
+                        ×
+                      </button>
+                    </span>
                   ))}
                   <button
                     type="button"
                     className="composer-tool-btn"
-                    onClick={() => setPendingImages([])}
+                    onClick={() => clearPendingAttachments()}
                   >
                     清除
                   </button>
+                </div>
+              ) : null}
+              {outputFormat ? (
+                <div className="composer-attachments" aria-label="输出格式">
+                  <span className="composer-attach-chip">
+                    <span className="composer-attach-meta">
+                      <span className="composer-attach-name">
+                        将写成 {outputFormatOf(outputFormat).label}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      className="composer-attach-remove"
+                      aria-label="取消输出格式"
+                      onClick={() => setOutputFormat(undefined)}
+                    >
+                      ×
+                    </button>
+                  </span>
                 </div>
               ) : null}
               <textarea
@@ -894,14 +1093,21 @@ export function App() {
               />
               <div className="composer-toolbar">
                 <div className="composer-tools">
-                  {omniConfigured ? (
-                    <ImageInput
-                      disabled={sending || waitingAction}
-                      onImages={(images) =>
-                        setPendingImages((current) => [...current, ...images].slice(0, 4))
-                      }
-                    />
-                  ) : null}
+                  <AttachmentInput
+                    disabled={sending || waitingAction}
+                    remaining={MAX_ATTACHMENTS - pendingAttachments.length}
+                    onFiles={addPendingFiles}
+                  />
+                  <WebSearchToggle
+                    disabled={sending || waitingAction}
+                    value={webSearch}
+                    onChange={setWebSearch}
+                  />
+                  <OutputFormatInput
+                    disabled={sending || waitingAction}
+                    value={outputFormat}
+                    onChange={setOutputFormat}
+                  />
                   {asrConfigured ? (
                     <VoiceInput
                       disabled={sending || waitingAction}
@@ -912,22 +1118,33 @@ export function App() {
                       }
                     />
                   ) : null}
-                  {waitingAction || sending ? (
-                    <button type="button" className="composer-tool-btn" onClick={() => void onCancel()}>
-                      取消
-                    </button>
-                  ) : null}
                 </div>
                 <button
                   type="button"
-                  className="btn-send"
+                  className={composerBusy ? "btn-send btn-send--stop" : "btn-send"}
                   disabled={
-                    sending || waitingAction || (!input.trim() && pendingImages.length === 0)
+                    !composerBusy && !input.trim() && pendingAttachments.length === 0
                   }
-                  onClick={() => void send()}
-                  title="发送"
+                  onClick={() => {
+                    if (composerBusy) {
+                      void onCancel();
+                      return;
+                    }
+                    void send();
+                  }}
+                  title={composerBusy ? "取消" : "发送"}
+                  aria-label={composerBusy ? "取消" : "发送"}
                 >
-                  ↑
+                  {composerBusy ? (
+                    <span className="btn-send-stop" aria-hidden />
+                  ) : (
+                    <svg className="btn-send-arrow" viewBox="0 0 24 24" aria-hidden>
+                      <path
+                        fill="currentColor"
+                        d="M3.4 20.4 21.05 12.8c.73-.32.73-1.36 0-1.68L3.4 3.52c-.8-.35-1.64.42-1.35 1.25L4.2 11.1h8.05a.9.9 0 1 1 0 1.8H4.2l-2.15 6.33c-.29.83.55 1.6 1.35 1.25Z"
+                      />
+                    </svg>
+                  )}
                 </button>
               </div>
             </div>

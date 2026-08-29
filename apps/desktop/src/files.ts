@@ -238,6 +238,40 @@ export async function createWorkspaceDirectory(path: string): Promise<void> {
   await postFilePath("/v1/files/mkdir", { path });
 }
 
+export async function writeNewWorkspaceFile(
+  path: string,
+  blob: Blob,
+): Promise<string> {
+  const dir = parentPath(path);
+  if (dir !== ".") {
+    try {
+      await createWorkspaceDirectory(dir);
+    } catch (err) {
+      if (!(err instanceof Error && err.message === "exists")) throw err;
+    }
+  }
+  const name = fileNameOf(path);
+  const dot = name.lastIndexOf(".");
+  const stem = dot > 0 ? name.slice(0, dot) : name;
+  const ext = dot > 0 ? name.slice(dot) : "";
+  const dirPrefix = dir === "." ? "" : `${dir}/`;
+  let candidate = path;
+  let n = 1;
+  for (;;) {
+    try {
+      await createWorkspaceFile(candidate);
+      break;
+    } catch (err) {
+      if (!(err instanceof Error && err.message === "exists")) throw err;
+      n += 1;
+      if (n > 100) throw new Error("file write failed");
+      candidate = `${dirPrefix}${stem}-${n}${ext}`;
+    }
+  }
+  await writeFileBytes(candidate, blob);
+  return candidate;
+}
+
 export async function renameWorkspaceEntry(
   path: string,
   to: string,

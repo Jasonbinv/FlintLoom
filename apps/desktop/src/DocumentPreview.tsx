@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { FilePreviewCloseButton } from "./FilePreviewContent.tsx";
+import { ExportFormatButton } from "./ExportFormatButton.tsx";
 import {
   fetchFileBytes,
   fetchOfficeMarkdown,
@@ -62,6 +63,7 @@ type Props = {
   kind: OfficeKind;
   onClose?: () => void;
   onQuote?: () => void;
+  onExported?: (path: string) => void;
 };
 
 const BADGE: Record<OfficeKind, string> = {
@@ -70,7 +72,7 @@ const BADGE: Record<OfficeKind, string> = {
   pptx: "PPT",
 };
 
-export function DocumentPreview({ filePath, title, kind, onClose, onQuote }: Props) {
+export function DocumentPreview({ filePath, title, kind, onClose, onQuote, onExported }: Props) {
   const [tab, setTab] = useState<"preview" | "edit">("preview");
   const [arrayBuffer, setArrayBuffer] = useState<ArrayBuffer>();
   const [bytesError, setBytesError] = useState<string>();
@@ -234,6 +236,7 @@ export function DocumentPreview({ filePath, title, kind, onClose, onQuote }: Pro
           {title}
         </span>
         <div className="file-preview-header__actions">
+          <ExportFormatButton filePath={filePath} onExported={onExported} />
           <div className="file-preview-header__action-wrap">
             <button
               type="button"

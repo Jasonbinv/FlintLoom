@@ -1013,10 +1013,7 @@ body,
 .file-pane-resize-handle,
 .file-pane-inner-split-handle {
   position: relative;
-  width: var(--split-handle-width);
-  height: 100%;
   margin: 0;
-  cursor: col-resize;
   z-index: 50;
   touch-action: none;
   background: transparent;
@@ -1025,33 +1022,64 @@ body,
   flex-shrink: 0;
 }
 
+.file-pane-resize-handle {
+  width: var(--split-handle-width);
+  height: 100%;
+  cursor: col-resize;
+}
+
+.file-pane-inner-split-handle {
+  width: 100%;
+  height: var(--split-handle-width);
+  cursor: row-resize;
+}
+
 .file-pane-resize-handle::before,
-.file-pane-inner-split-handle::before {
+.file-pane-inner-split-handle::before,
+.file-pane-resize-handle::after,
+.file-pane-inner-split-handle::after {
   content: "";
   position: absolute;
+  pointer-events: none;
+}
+
+.file-pane-resize-handle::before {
   left: 50%;
   top: 0;
   bottom: 0;
   width: 1px;
   transform: translateX(-50%);
   background: var(--border-subtle);
-  pointer-events: none;
+}
+
+.file-pane-inner-split-handle::before {
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  transform: translateY(-50%);
+  background: var(--border-subtle);
 }
 
 .file-pane-resize-handle::after,
 .file-pane-inner-split-handle::after {
-  content: "";
-  position: absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  width: var(--split-handle-capsule-width);
-  height: var(--split-handle-capsule-height);
   border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--text-primary) 14%, transparent);
   background: var(--bg-elevated);
   box-shadow: var(--shadow-sm);
-  pointer-events: none;
+}
+
+.file-pane-resize-handle::after {
+  width: var(--split-handle-capsule-width);
+  height: var(--split-handle-capsule-height);
+}
+
+.file-pane-inner-split-handle::after {
+  width: var(--split-handle-capsule-height);
+  height: var(--split-handle-capsule-width);
 }
 
 .file-pane-resize-handle:hover::after,
@@ -1162,6 +1190,7 @@ body,
 .file-pane-body {
   flex: 1 1 auto;
   display: flex;
+  flex-direction: column;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
@@ -1179,7 +1208,7 @@ body,
   position: fixed;
   inset: 0;
   z-index: 40;
-  cursor: col-resize;
+  cursor: row-resize;
 }
 
 .file-pane-inner-split-rail {
@@ -1188,6 +1217,7 @@ body,
   align-items: stretch;
   justify-content: center;
   align-self: stretch;
+  width: 100%;
   z-index: 2;
 }
 
@@ -1197,7 +1227,6 @@ body,
   min-height: 0;
   overflow: auto;
   padding: var(--space-2) var(--space-1);
-  border-right: none;
   background: var(--bg-secondary);
 }
 
@@ -1555,6 +1584,7 @@ body,
 }
 
 .file-preview-header__action-wrap {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-1);
@@ -2732,12 +2762,97 @@ body,
   padding: var(--space-3) var(--space-4);
 }
 
-.composer-images {
+.composer-attach-error {
+  margin: 0 0 var(--space-2);
+  font-size: 0.75rem;
+  color: var(--danger, #f87171);
+}
+
+.composer-images,
+.composer-attachments {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
   margin-bottom: var(--space-2);
+}
+
+.composer-attach-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 220px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 4px 6px 4px 4px;
+}
+
+.composer-attach-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+.composer-attach-open .composer-image-thumb {
+  width: 32px;
+  height: 32px;
+  max-width: 32px;
+  max-height: 32px;
+}
+
+.composer-attach-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.composer-attach-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  color: var(--text-primary);
+}
+
+.composer-attach-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.7rem;
+  color: var(--text-tertiary);
+}
+
+.composer-attach-remove {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.composer-attach-remove:hover {
+  background: var(--border-subtle);
+  color: var(--text-primary);
 }
 
 .composer-box textarea {
@@ -2797,6 +2912,58 @@ body,
   cursor: not-allowed;
 }
 
+.composer-tool-btn--active {
+  border-color: color-mix(in srgb, var(--accent-primary) 50%, var(--border-subtle));
+  color: var(--accent-primary);
+  background: color-mix(in srgb, var(--accent-primary) 12%, var(--bg-tertiary));
+}
+
+.composer-format {
+  position: relative;
+}
+
+.composer-format-menu,
+.file-preview-export-menu {
+  position: absolute;
+  z-index: 8;
+  min-width: 108px;
+  padding: 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised, var(--bg-secondary));
+  box-shadow: 0 8px 24px color-mix(in srgb, #000 35%, transparent);
+}
+
+.composer-format-menu {
+  bottom: calc(100% + 6px);
+  left: 0;
+}
+
+.file-preview-export-menu {
+  top: calc(100% + 4px);
+  right: 0;
+}
+
+.composer-format-option,
+.file-preview-export-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.composer-format-option:hover,
+.file-preview-export-option:hover {
+  background: var(--bg-hover, var(--bg-panel));
+}
+
 .btn-send {
   width: 36px;
   height: 36px;
@@ -2804,8 +2971,6 @@ body,
   border-radius: 50%;
   background: var(--send-btn-bg);
   color: #fff;
-  font-size: 1.1rem;
-  font-weight: 600;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -2816,6 +2981,13 @@ body,
     opacity var(--transition-fast);
 }
 
+.btn-send-arrow {
+  width: 17px;
+  height: 17px;
+  display: block;
+  transform: rotate(-90deg);
+}
+
 .btn-send:hover:not(:disabled) {
   background: var(--send-btn-hover);
 }
@@ -2823,6 +2995,14 @@ body,
 .btn-send:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+}
+
+.btn-send-stop {
+  width: 12px;
+  height: 12px;
+  border-radius: 2.5px;
+  background: #fff;
+  display: block;
 }
 
 /* ── Buttons (settings / a2ui) ── */
