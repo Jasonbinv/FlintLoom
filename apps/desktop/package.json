@@ -8,6 +8,7 @@
     "@fortune-sheet/react": "^1.0.4",
     "@flintloom/host": "workspace:*",
     "@flintloom/infographic": "workspace:*",
+    "chart.js": "^4.4.1",
     "jszip": "^3.10.1",
     "docx-preview": "^0.3.0",
     "marked": "^18.0.9",

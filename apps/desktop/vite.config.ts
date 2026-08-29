@@ -71,6 +71,9 @@ function v1Proxy(): Plugin {
 
 export default defineConfig({
   plugins: [react(), v1Proxy()],
+  optimizeDeps: {
+    include: ["chart.js/auto", "pptxviewjs"],
+  },
   server: {
     host: "127.0.0.1",
     port: 5173,

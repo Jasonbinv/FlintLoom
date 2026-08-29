@@ -1,4 +1,12 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import {
+  Component,
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 import { FilePreviewCloseButton } from "./FilePreviewContent.tsx";
 import {
   fetchFileBytes,
@@ -23,6 +31,28 @@ const LazyPdfPreview = lazy(() =>
     default: module.PdfPreview,
   })),
 );
+
+class OfficePreviewErrorBoundary extends Component<
+  { children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
+
+  render() {
+    if (this.state.failed) {
+      return (
+        <div className="file-office-error">
+          <p>文档预览失败，请下载后查看</p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 type OfficeKind = "pdf" | "docx" | "pptx";
 
@@ -153,18 +183,19 @@ export function DocumentPreview({ filePath, title, kind, onClose, onQuote }: Pro
       );
     }
 
-    const suspense = (
-      <Suspense fallback={<div className="file-office-loading">正在渲染…</div>}>
-        {kind === "pdf" ? (
-          <LazyPdfPreview arrayBuffer={arrayBuffer} />
-        ) : kind === "docx" ? (
-          <LazyFileDocxPreview arrayBuffer={arrayBuffer} />
-        ) : (
-          <LazyFilePptxPreview arrayBuffer={arrayBuffer} />
-        )}
-      </Suspense>
+    return (
+      <OfficePreviewErrorBoundary key={`${filePath}:${kind}:${reloadKey}`}>
+        <Suspense fallback={<div className="file-office-loading">正在渲染…</div>}>
+          {kind === "pdf" ? (
+            <LazyPdfPreview arrayBuffer={arrayBuffer} />
+          ) : kind === "docx" ? (
+            <LazyFileDocxPreview arrayBuffer={arrayBuffer} />
+          ) : (
+            <LazyFilePptxPreview arrayBuffer={arrayBuffer} />
+          )}
+        </Suspense>
+      </OfficePreviewErrorBoundary>
     );
-    return suspense;
   })();
 
   const editBody = (() => {
