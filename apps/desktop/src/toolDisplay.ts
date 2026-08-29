@@ -22,6 +22,7 @@ export function toolDisplayTitle(name: string): string {
     infographic_patch: "Infographic",
     image_generate: "Image",
     video_generate: "Video",
+    web_search: "Web",
   };
   return titles[name] ?? name;
 }

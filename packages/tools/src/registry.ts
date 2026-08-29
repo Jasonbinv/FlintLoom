@@ -50,6 +50,7 @@ export class ToolRegistry {
         channel: exec.channel,
         signal: exec.signal,
         guardBypass: exec.guardBypass,
+        webSearch: exec.webSearch,
       },
       () => def.execute(args, exec),
     );

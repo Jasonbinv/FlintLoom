@@ -533,4 +533,138 @@ describe("runTurn", () => {
       }),
     ).rejects.toThrow(/not waiting/);
   });
+
+  it("omits web_search from tools and system when webSearch is unset", async () => {
+    let lastToolNames: string[] = [];
+    let systemContent = "";
+    const fakeChat: ChatProvider = {
+      async *stream(req) {
+        lastToolNames = req.tools.map((t) => t.name);
+        const first = req.messages[0];
+        systemContent = typeof first?.content === "string" ? first.content : "";
+        yield { type: "text", text: "ok" };
+      },
+    };
+
+    const ctx = boot();
+    ctx.require<ModelRegistry>("models").registerChat("fake", fakeChat);
+    ctx.require<ModelRegistry>("models").setDefault("chat", "fake");
+    ctx.require<ToolRegistry>("tools").register({
+      name: "web_search",
+      description: "search",
+      parameters: { type: "object", properties: {} },
+      async execute(_args, exec) {
+        if (exec.webSearch !== true) return "failed: web_search disabled";
+        return "searched";
+      },
+    });
+
+    const session = new Session("s-ws-off");
+    const result = await runTurn({
+      ctx,
+      session,
+      text: "hello",
+      workspaceRoot: process.cwd(),
+      channel: "test",
+      signal: new AbortController().signal,
+    });
+
+    expect(result.status).toBe("ok");
+    expect(lastToolNames).not.toContain("web_search");
+    expect(systemContent).not.toContain("web_search");
+  });
+
+  it("includes web_search in tools, system, and turn/start when webSearch is true", async () => {
+    let lastToolNames: string[] = [];
+    let systemContent = "";
+    const fakeChat: ChatProvider = {
+      async *stream(req) {
+        lastToolNames = req.tools.map((t) => t.name);
+        const first = req.messages[0];
+        systemContent = typeof first?.content === "string" ? first.content : "";
+        yield { type: "text", text: "ok" };
+      },
+    };
+
+    const ctx = boot();
+    ctx.require<ModelRegistry>("models").registerChat("fake", fakeChat);
+    ctx.require<ModelRegistry>("models").setDefault("chat", "fake");
+    ctx.require<ToolRegistry>("tools").register({
+      name: "web_search",
+      description: "search",
+      parameters: { type: "object", properties: {} },
+      async execute(_args, exec) {
+        if (exec.webSearch !== true) return "failed: web_search disabled";
+        return "searched";
+      },
+    });
+
+    const session = new Session("s-ws-on");
+    const result = await runTurn({
+      ctx,
+      session,
+      text: "hello",
+      webSearch: true,
+      workspaceRoot: process.cwd(),
+      channel: "test",
+      signal: new AbortController().signal,
+    });
+
+    expect(result.status).toBe("ok");
+    expect(lastToolNames).toContain("web_search");
+    expect(systemContent).toContain("You may call web_search");
+    const turnStart = session.events().find((e) => e.type === "turn/start");
+    expect(turnStart).toMatchObject({ type: "turn/start", webSearch: true });
+  });
+
+  it("rejects web_search tool_call when webSearch is false", async () => {
+    let streamCall = 0;
+    const fakeChat: ChatProvider = {
+      async *stream() {
+        streamCall += 1;
+        if (streamCall === 1) {
+          yield {
+            type: "tool_call",
+            id: "ws-1",
+            name: "web_search",
+            args: { query: "x" },
+          };
+        } else {
+          yield { type: "text", text: "done" };
+        }
+      },
+    };
+
+    const ctx = boot();
+    ctx.require<ModelRegistry>("models").registerChat("fake", fakeChat);
+    ctx.require<ModelRegistry>("models").setDefault("chat", "fake");
+    ctx.require<ToolRegistry>("tools").register({
+      name: "web_search",
+      description: "search",
+      parameters: { type: "object", properties: {} },
+      async execute(_args, exec) {
+        if (exec.webSearch !== true) return "failed: web_search disabled";
+        return "searched";
+      },
+    });
+
+    const session = new Session("s-ws-deny");
+    const result = await runTurn({
+      ctx,
+      session,
+      text: "search",
+      webSearch: false,
+      workspaceRoot: process.cwd(),
+      channel: "test",
+      signal: new AbortController().signal,
+    });
+
+    expect(result.status).toBe("ok");
+    const toolResult = session.events().find((e) => e.type === "tool/result");
+    expect(toolResult).toMatchObject({
+      type: "tool/result",
+      name: "web_search",
+      text: "failed: web_search disabled",
+    });
+  });
 });

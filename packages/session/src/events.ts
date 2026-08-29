@@ -8,7 +8,7 @@ export type ChatContentPart =
   | { type: "image"; mime: string; data: string };
 
 export type SessionEvent =
-  | { type: "turn/start"; turnId: string; startedAt: number }
+  | { type: "turn/start"; turnId: string; startedAt: number; webSearch?: boolean }
   | { type: "step/start"; turnId: string; step: number }
   | {
       type: "step/stats";

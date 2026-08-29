@@ -7,6 +7,7 @@ export type ToolPreExecutePayload = {
   channel: string;
   signal: AbortSignal;
   guardBypass?: boolean;
+  webSearch?: boolean;
 };
 
 export interface ToolDefinition {
@@ -21,4 +22,5 @@ export interface ToolExec {
   signal: AbortSignal;
   channel: string;
   guardBypass?: boolean;
+  webSearch?: boolean;
 }

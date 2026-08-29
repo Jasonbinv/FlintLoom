@@ -198,6 +198,7 @@ describe("startHost", () => {
     expect(src).not.toMatch(/@flintloom\/mcp/);
     expect(src).not.toMatch(/createMcp/);
     expect(src).not.toMatch(/mcp__/);
+    expect(src).not.toMatch(/@flintloom\/web-search/);
   });
 
   it("default ASSEMBLY does not include mcp plugin", () => {
@@ -776,6 +777,22 @@ describe("startHost", () => {
     expect(names).toContain("a2ui_emit");
     expect(names).toContain("infographic_get");
     expect(names).toContain("infographic_patch");
+    expect(names).toContain("web_search");
+  });
+
+  it("omitting web-search from yml omits web_search", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-noweb-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
+    writeFileSync(
+      join(workspaceRoot, "flintloom.yml"),
+      ASSEMBLY.replace(
+        `  - id: web-search\n    name: "@flintloom/web-search"\n`,
+        "",
+      ),
+    );
+    const { ctx } = await createRuntime(workspaceRoot, homeDir);
+    const names = ctx.require<ToolRegistry>("tools").schemas().map((s) => s.name);
+    expect(names).not.toContain("web_search");
   });
 
   it("turn without a chat key emits model/error and failed", async () => {

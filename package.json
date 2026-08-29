@@ -48,6 +48,7 @@
     "@flintloom/shell": "workspace:*",
     "@flintloom/skill": "workspace:*",
     "@flintloom/tools": "workspace:*",
+    "@flintloom/web-search": "workspace:*",
     "@types/node": "^22.20.1",
     "tsx": "^4.20.5",
     "typescript": "^5.8.3",

@@ -7,9 +7,22 @@ import {
 import { Session, type SessionEvent, type UserImage } from "@flintloom/session";
 import { isGuardAskError, type ToolRegistry } from "@flintloom/tools";
 
-const SYSTEM_MESSAGE =
-  "You are FlintLoom, a real agent. Use tools to work in the workspace.";
 const MAX_STEPS = 8;
+
+function conversationSystemMessage(webSearch: boolean): string {
+  const base = "You are FlintLoom, a real agent. Use tools to work in the workspace.";
+  if (!webSearch) return base;
+  return `${base}\nYou may call web_search when you need current or external information. Do not search for questions you can answer from the workspace or your knowledge.`;
+}
+
+function turnWebSearch(session: Session, turnId: string): boolean {
+  for (const event of session.events()) {
+    if (event.type === "turn/start" && event.turnId === turnId) {
+      return event.webSearch === true;
+    }
+  }
+  return false;
+}
 
 type A2uiLoopService = {
   takeEmit(emitId: string): { surfaceId: string; wait: boolean; messages: unknown[] } | undefined;
@@ -27,6 +40,7 @@ export interface RunTurnInput {
   workspaceRoot: string;
   channel: string;
   signal: AbortSignal;
+  webSearch?: boolean;
   onEvent?: (event: SessionEvent) => void;
 }
 
@@ -69,6 +83,7 @@ type RunStepsInput = {
   workspaceRoot: string;
   channel: string;
   signal: AbortSignal;
+  webSearch?: boolean;
   onEvent?: (event: SessionEvent) => void;
   pendingToolCalls?: ChatChunkToolCall[];
 };
@@ -398,6 +413,7 @@ async function executeToolCall(
       workspaceRoot,
       signal,
       channel,
+      webSearch: input.webSearch === true,
     });
   } catch (err) {
     if (signal.aborted) {
@@ -561,7 +577,7 @@ async function runStepIterations(input: RunStepsInput): Promise<RunTurnResult> {
     }
 
     const messages = [
-      { role: "system" as const, content: SYSTEM_MESSAGE },
+      { role: "system" as const, content: conversationSystemMessage(input.webSearch === true) },
       ...session.deriveMessages(),
     ];
 
@@ -570,7 +586,12 @@ async function runStepIterations(input: RunStepsInput): Promise<RunTurnResult> {
 
     try {
       for await (const chunk of chatProvider.stream(
-        { messages, tools: tools.schemas() },
+        {
+          messages,
+          tools: tools.schemas().filter(
+            (s) => input.webSearch === true || s.name !== "web_search",
+          ),
+        },
         signal,
       )) {
         if (signal.aborted) {
@@ -676,16 +697,22 @@ export async function runTurn(input: RunTurnInput): Promise<RunTurnResult> {
     onEvent,
   } = input;
 
+  const webSearch = input.webSearch === true;
   const turnId = crypto.randomUUID();
   const startedAt = Date.now();
-  appendEvent(session, onEvent, { type: "turn/start", turnId, startedAt });
+  appendEvent(session, onEvent, {
+    type: "turn/start",
+    turnId,
+    startedAt,
+    ...(webSearch ? { webSearch: true } : {}),
+  });
   if (images !== undefined && images.length > 0) {
     appendEvent(session, onEvent, { type: "user/message", text, images });
   } else {
     appendEvent(session, onEvent, { type: "user/message", text });
   }
 
-  return runStepIterations({ ...input, turnId, startedAt });
+  return runStepIterations({ ...input, turnId, startedAt, webSearch });
 }
 
 export async function continueGuardTurn(
@@ -709,6 +736,7 @@ export async function continueGuardTurn(
   }
 
   const startedAt = turnStartedAt(session, turnId);
+  const webSearch = turnWebSearch(session, turnId);
 
   appendEvent(session, onEvent, {
     type: "guard/response",
@@ -727,6 +755,7 @@ export async function continueGuardTurn(
       signal: input.signal,
       channel: input.channel,
       guardBypass: true,
+      webSearch,
     });
     await maybeAppendGuardSteward(
       input.ctx,
@@ -753,7 +782,7 @@ export async function continueGuardTurn(
   const stepWait = { value: false };
   for (const remaining of ask.remainingCalls) {
     const paused = await executeToolCall(
-      { ...input, turnId, startedAt },
+      { ...input, turnId, startedAt, webSearch },
       {
         type: "tool_call",
         id: remaining.id,
@@ -777,7 +806,7 @@ export async function continueGuardTurn(
     return { turnId, status: "awaiting_action" };
   }
 
-  return runStepIterations({ ...input, turnId, startedAt });
+  return runStepIterations({ ...input, turnId, startedAt, webSearch });
 }
 
 export async function continueTurn(input: ContinueTurnInput): Promise<RunTurnResult> {
@@ -811,5 +840,6 @@ export async function continueTurn(input: ContinueTurnInput): Promise<RunTurnRes
     ...input,
     turnId,
     startedAt: turnStartedAt(session, turnId),
+    webSearch: turnWebSearch(session, turnId),
   });
 }

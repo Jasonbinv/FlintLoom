@@ -39,4 +39,16 @@ describe("parseTurnBody", () => {
   it("rejects empty body", () => {
     expect(parseTurnBody(JSON.stringify({ sessionId: "s1", text: "  " }))).toBeUndefined();
   });
+
+  it("accepts webSearch true", () => {
+    expect(
+      parseTurnBody(JSON.stringify({ sessionId: "s1", text: "hi", webSearch: true })),
+    ).toEqual({ sessionId: "s1", text: "hi", webSearch: true });
+  });
+
+  it("rejects non-boolean webSearch", () => {
+    expect(
+      parseTurnBody(JSON.stringify({ sessionId: "s1", text: "hi", webSearch: "yes" })),
+    ).toBeUndefined();
+  });
 });

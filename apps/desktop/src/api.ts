@@ -217,10 +217,14 @@ export async function postTurn(
   onEvent: (event: WorkbenchEvent) => void,
   signal?: AbortSignal,
   images?: UserImage[],
+  webSearch?: boolean,
 ): Promise<void> {
   const body: Record<string, unknown> = { sessionId, text };
   if (images !== undefined && images.length > 0) {
     body.images = images;
+  }
+  if (webSearch === true) {
+    body.webSearch = true;
   }
   await postSse("/v1/turns", body, onEvent, signal);
 }

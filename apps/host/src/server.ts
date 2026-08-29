@@ -430,6 +430,38 @@ export async function createRuntime(
   runtimeConfigById.skill = {
     homeDir,
   };
+  const searchProvider = resolveLayeredString(
+    "FLINTLOOM_SEARCH_PROVIDER",
+    fileEnv,
+    undefined,
+  ).value;
+  const searxngUrl = resolveLayeredString(
+    "FLINTLOOM_SEARXNG_URL",
+    fileEnv,
+    undefined,
+  ).value;
+  const tavilyApiKey = resolveLayeredString(
+    "FLINTLOOM_TAVILY_API_KEY",
+    fileEnv,
+    undefined,
+  ).value;
+  const braveApiKey = resolveLayeredString(
+    "FLINTLOOM_BRAVE_API_KEY",
+    fileEnv,
+    undefined,
+  ).value;
+  const bochaApiKey = resolveLayeredString(
+    "FLINTLOOM_BOCHA_API_KEY",
+    fileEnv,
+    undefined,
+  ).value;
+  runtimeConfigById["web-search"] = {
+    ...(searchProvider ? { provider: searchProvider } : {}),
+    ...(searxngUrl ? { searxngUrl } : {}),
+    ...(tavilyApiKey ? { tavilyApiKey } : {}),
+    ...(braveApiKey ? { braveApiKey } : {}),
+    ...(bochaApiKey ? { bochaApiKey } : {}),
+  };
 
   if (opts?.pollChannels === true) {
     const telegram = resolveTelegramOverlay(fileEnv, credStore);
@@ -1396,6 +1428,7 @@ async function handleRequest(
           session,
           text: body.text,
           images: body.images,
+          webSearch: body.webSearch,
           workspaceRoot,
           channel: "host",
           signal,
