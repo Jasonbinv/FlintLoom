@@ -7,10 +7,10 @@ import {
   type RefObject,
 } from "react";
 import {
-  clampFilePaneTreeWidth,
-  loadFilePaneTreeWidth,
-  saveFilePaneTreeWidth,
-} from "./filePaneTreeWidth.ts";
+  clampFilePaneTreeHeight,
+  loadFilePaneTreeHeight,
+  saveFilePaneTreeHeight,
+} from "./filePaneTreeHeight.ts";
 
 type Options = {
   bodyRef: RefObject<HTMLElement | null>;
@@ -18,35 +18,35 @@ type Options = {
 };
 
 export function useFilePaneTreeResize({ bodyRef, enabled }: Options) {
-  const [width, setWidth] = useState(() => loadFilePaneTreeWidth());
+  const [height, setHeight] = useState(() => loadFilePaneTreeHeight());
   const [dragging, setDragging] = useState(false);
-  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
-  const widthRef = useRef(width);
-  widthRef.current = width;
+  const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
+  const heightRef = useRef(height);
+  heightRef.current = height;
 
-  const measureBodyWidth = useCallback(() => {
+  const measureBodyHeight = useCallback(() => {
     const body = bodyRef.current;
-    return body?.getBoundingClientRect().width ?? 0;
+    return body?.getBoundingClientRect().height ?? 0;
   }, [bodyRef]);
 
-  const clampWidth = useCallback(
-    (value: number) => clampFilePaneTreeWidth(value, measureBodyWidth()),
-    [measureBodyWidth],
+  const clampHeight = useCallback(
+    (value: number) => clampFilePaneTreeHeight(value, measureBodyHeight()),
+    [measureBodyHeight],
   );
 
-  const syncWidthToBody = useCallback(() => {
-    setWidth((prev) => {
-      const next = clampWidth(prev);
-      widthRef.current = next;
+  const syncHeightToBody = useCallback(() => {
+    setHeight((prev) => {
+      const next = clampHeight(prev);
+      heightRef.current = next;
       return prev === next ? prev : next;
     });
-  }, [clampWidth]);
+  }, [clampHeight]);
 
   useEffect(() => {
     if (!enabled) return;
-    syncWidthToBody();
+    syncHeightToBody();
 
-    const onResize = () => syncWidthToBody();
+    const onResize = () => syncHeightToBody();
     window.addEventListener("resize", onResize);
 
     const body = bodyRef.current;
@@ -60,15 +60,15 @@ export function useFilePaneTreeResize({ bodyRef, enabled }: Options) {
       window.removeEventListener("resize", onResize);
       observer?.disconnect();
     };
-  }, [bodyRef, enabled, syncWidthToBody]);
+  }, [bodyRef, enabled, syncHeightToBody]);
 
   const endDrag = useCallback(() => {
     dragRef.current = null;
     setDragging(false);
-    const next = clampWidth(widthRef.current);
-    setWidth(next);
-    saveFilePaneTreeWidth(next);
-  }, [clampWidth]);
+    const next = clampHeight(heightRef.current);
+    setHeight(next);
+    saveFilePaneTreeHeight(next);
+  }, [clampHeight]);
 
   const onHandlePointerDown = useCallback(
     (event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -79,21 +79,21 @@ export function useFilePaneTreeResize({ bodyRef, enabled }: Options) {
       } catch {
         // jsdom may not implement pointer capture
       }
-      dragRef.current = { startX: event.clientX, startWidth: width };
+      dragRef.current = { startY: event.clientY, startHeight: height };
       setDragging(true);
     },
-    [enabled, width],
+    [enabled, height],
   );
 
   const onHandlePointerMove = useCallback(
     (event: ReactPointerEvent<HTMLButtonElement>) => {
       if (!dragRef.current) return;
-      const delta = event.clientX - dragRef.current.startX;
-      const next = clampWidth(dragRef.current.startWidth + delta);
-      widthRef.current = next;
-      setWidth(next);
+      const delta = event.clientY - dragRef.current.startY;
+      const next = clampHeight(dragRef.current.startHeight + delta);
+      heightRef.current = next;
+      setHeight(next);
     },
-    [clampWidth],
+    [clampHeight],
   );
 
   const onHandlePointerUp = useCallback(() => {
@@ -101,7 +101,7 @@ export function useFilePaneTreeResize({ bodyRef, enabled }: Options) {
   }, [endDrag]);
 
   return {
-    width,
+    height,
     dragging,
     onHandlePointerDown,
     onHandlePointerMove,

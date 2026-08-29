@@ -113,7 +113,7 @@ export function FilePane({
   const [fileActionName, setFileActionName] = useState("");
   const [fileActionError, setFileActionError] = useState<string>();
   const {
-    width: treeWidth,
+    height: treeHeight,
     dragging: treeDragging,
     onHandlePointerDown: onTreeHandlePointerDown,
     onHandlePointerMove: onTreeHandlePointerMove,
@@ -190,19 +190,11 @@ export function FilePane({
   useEffect(() => {
     const ac = new AbortController();
     void fetchFiles(ROOT_TREE_PATH, ac.signal)
-      .then(async (list) => {
+      .then((list) => {
         if (ac.signal.aborted) return;
         setRootEntries(list.entries);
         setTreeError(false);
         setExpanded(new Set([ROOT_TREE_PATH]));
-
-        const firstFile = list.entries.find((e) => e.type === "file");
-        if (firstFile) {
-          const firstPath = childPath(ROOT_TREE_PATH, firstFile.name);
-          setSelectedFile(firstPath);
-          setPreviewOpen(true);
-          await startPreview(firstPath);
-        }
       })
       .catch(() => {
         if (ac.signal.aborted) return;
@@ -246,10 +238,20 @@ export function FilePane({
     const normalized = filePath.replaceAll("\\", "/");
     const parts = normalized.split("/").filter(Boolean);
     if (parts.length === 0) return;
+    try {
+      await reloadDir(ROOT_TREE_PATH);
+    } catch {
+      setTreeError(true);
+    }
     let parent = ".";
     for (let i = 0; i < parts.length - 1; i++) {
       parent = childPath(parent, parts[i]!);
       await ensureDirExpanded(parent);
+      try {
+        await reloadDir(parent);
+      } catch {
+        setDirErrors((prev) => new Set(prev).add(parent));
+      }
     }
     setSelectedFile(normalized);
   }
@@ -765,7 +767,7 @@ export function FilePane({
           {treeDragging ? <div className="file-pane-inner-drag-overlay" /> : null}
           <div
             className="file-tree-surface"
-            style={previewOpen ? { width: `${treeWidth}px` } : undefined}
+            style={previewOpen ? { height: `${treeHeight}px` } : undefined}
             onContextMenu={(event) => {
               if (isTreeRowTarget(event.target)) return;
               event.preventDefault();
@@ -845,7 +847,9 @@ export function FilePane({
               <div className="file-pane-inner-split-rail">
                 <FilePaneResizeHandle
                   className="file-pane-inner-split-handle"
-                  ariaLabel="调整目录树宽度"
+                  ariaLabel="调整目录树高度"
+                  title="拖动调整高度"
+                  orientation="horizontal"
                   onPointerDown={onTreeHandlePointerDown}
                   onPointerMove={onTreeHandlePointerMove}
                   onPointerUp={onTreeHandlePointerUp}
@@ -891,6 +895,9 @@ export function FilePane({
                     onQuote={
                       selectedFile ? () => quoteFile(selectedFile) : undefined
                     }
+                    onExported={(path) => {
+                      void previewFile(path, false);
+                    }}
                   />
                 )}
               </div>
