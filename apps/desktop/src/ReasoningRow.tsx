@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { foldLoopingReasoning } from "./foldLoopingReasoning.ts";
 
 function firstLine(text: string): string {
   const newline = text.indexOf("\n");
@@ -44,7 +45,11 @@ export function ReasoningRow({ text, running = false }: Props) {
           {expanded ? "▾" : "▸"}
         </span>
       </button>
-      {expanded ? <div className="disclosure-row-body reasoning-body">{text}</div> : null}
+      {expanded ? (
+        <div className="disclosure-row-body reasoning-body">
+          {running ? text : foldLoopingReasoning(text)}
+        </div>
+      ) : null}
     </div>
   );
 }

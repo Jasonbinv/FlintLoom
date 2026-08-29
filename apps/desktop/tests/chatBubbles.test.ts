@@ -90,6 +90,52 @@ describe("buildBubblesFromEvents", () => {
     }
   });
 
+  it("places leftover reasoning before the turn footer", () => {
+    const events: WorkbenchEvent[] = [
+      { type: "assistant/reasoning-chunk", text: "will draw" },
+      {
+        type: "a2ui/surface",
+        turnId: "t1",
+        surfaceId: "main",
+        messages: [],
+        wait: false,
+      },
+      { type: "assistant/reasoning-chunk", text: "already emitted" },
+      {
+        type: "turn/stats",
+        turnId: "t1",
+        steps: 2,
+        toolCalls: 1,
+        durationMs: 1000,
+        guard: { allow: 0, deny: 0, ask: 0, suspicious: 0 },
+      },
+      { type: "turn/end", turnId: "t1", status: "ok" },
+    ];
+    const bubbles = buildBubblesFromEvents(events, allocId);
+    expect(bubbles.map((b) => b.kind)).toEqual([
+      "reasoning",
+      "a2ui",
+      "reasoning",
+      "turn-footer",
+    ]);
+  });
+
+  it("places tool-step before a2ui surface", () => {
+    const events: WorkbenchEvent[] = [
+      { type: "tool/call", callId: "c1", name: "a2ui_emit", args: {} },
+      { type: "tool/result", callId: "c1", name: "a2ui_emit", text: "{\"status\":\"ok\"}" },
+      {
+        type: "a2ui/surface",
+        turnId: "t1",
+        surfaceId: "main",
+        messages: [],
+        wait: false,
+      },
+    ];
+    const bubbles = buildBubblesFromEvents(events, allocId);
+    expect(bubbles.map((b) => b.kind)).toEqual(["tool-step", "a2ui"]);
+  });
+
   it("collects turn stats from session events", () => {
     const events: WorkbenchEvent[] = [
       {

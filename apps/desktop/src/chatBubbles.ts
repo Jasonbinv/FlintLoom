@@ -117,6 +117,7 @@ export function buildBubblesFromEvents(
       continue;
     }
     if (event.type === "turn/end") {
+      flushReasoning();
       flushTurnFooter(event.status);
       continue;
     }
@@ -179,6 +180,7 @@ export function buildBubblesFromEvents(
     }
   }
 
+  flushReasoning();
   return bubbles;
 }
 
