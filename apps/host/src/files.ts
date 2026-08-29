@@ -1,7 +1,15 @@
 import { realpathSync } from "node:fs";
 import { extname, join, relative } from "node:path";
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { detectType, parse, buildDocument, formatFromOutRelPath, GENERATE_MAX_CHARS } from "@flintloom/docforge";
+import {
+  detectType,
+  parse,
+  buildDocument,
+  convertDocument,
+  formatFromOutRelPath,
+  GENERATE_MAX_CHARS,
+  type GenerateFormat,
+} from "@flintloom/docforge";
 import {
   isInfographicRelPath,
   parseDocument,
@@ -496,6 +504,68 @@ export async function writeWorkspaceFileFromMarkdown(
 
   await writeFile(absPath, bytes);
   return "ok";
+}
+
+export type ConvertWorkspaceFileResult =
+  | {
+      status: "ok";
+      source: string;
+      out: string;
+      format: GenerateFormat;
+      loss: string;
+    }
+  | "not_found"
+  | "too_large"
+  | "unsupported"
+  | "bad_out"
+  | "unreadable";
+
+export async function convertWorkspaceFile(
+  workspaceRoot: string,
+  sourceRel: string,
+  outRel: string,
+): Promise<ConvertWorkspaceFileResult> {
+  if (isHiddenRelPath(sourceRel) || isHiddenRelPath(outRel)) {
+    return "not_found";
+  }
+
+  const absSource = resolveInside(workspaceRoot, sourceRel);
+  const absOut = resolveInside(workspaceRoot, outRel);
+  if (
+    isHiddenRelPath(relFromWorkspace(workspaceRoot, absSource)) ||
+    isHiddenRelPath(relFromWorkspace(workspaceRoot, absOut))
+  ) {
+    return "not_found";
+  }
+
+  const format = formatFromOutRelPath(outRel);
+  if (format === undefined) {
+    return "bad_out";
+  }
+
+  try {
+    const result = await convertDocument(absSource, absOut);
+    return {
+      status: "ok",
+      source: relFromWorkspace(workspaceRoot, absSource),
+      out: relFromWorkspace(workspaceRoot, absOut),
+      format: result.format,
+      loss: result.loss,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "";
+    if (message === "not found") return "not_found";
+    if (message === "too large") return "too_large";
+    if (message === "bad out") return "bad_out";
+    if (
+      message === "unsupported type" ||
+      message === "empty text" ||
+      message === "encrypted"
+    ) {
+      return "unsupported";
+    }
+    return "unreadable";
+  }
 }
 
 export async function listWorkspaceFiles(

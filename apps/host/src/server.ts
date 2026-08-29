@@ -30,6 +30,7 @@ import {
   resolveWorkspaceReadableFile,
   writeWorkspaceFileBytes,
   writeWorkspaceFileFromMarkdown,
+  convertWorkspaceFile,
   FILE_RAW_MAX_BYTES,
   type FileMutationResult,
 } from "./files.ts";
@@ -1224,6 +1225,57 @@ async function handleRequest(
       }
       if (err instanceof Error && err.message === "unreadable") {
         send(res, 400, "unreadable");
+        return;
+      }
+      throw err;
+    }
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/v1/files/convert") {
+    const body = await readJsonObject(req);
+    if (body === "invalid") {
+      send(res, 400, "invalid json");
+      return;
+    }
+    const sourceRel = normalizeRelPath(stringField(body, "source") ?? null);
+    const outRel = normalizeRelPath(stringField(body, "out") ?? null);
+    if (sourceRel === undefined || outRel === undefined) {
+      send(res, 400);
+      return;
+    }
+    try {
+      const result = await convertWorkspaceFile(workspaceRoot, sourceRel, outRel);
+      if (result === "not_found") {
+        send(res, 404);
+        return;
+      }
+      if (result === "too_large") {
+        send(res, 413);
+        return;
+      }
+      if (result === "bad_out") {
+        send(res, 400, "bad out");
+        return;
+      }
+      if (result === "unsupported") {
+        send(res, 400, "unsupported");
+        return;
+      }
+      if (result === "unreadable") {
+        send(res, 400, "unreadable");
+        return;
+      }
+      sendJson(res, 200, {
+        ok: true,
+        source: result.source,
+        out: result.out,
+        format: result.format,
+        loss: result.loss,
+      });
+    } catch (err) {
+      if (err instanceof WorkspaceEscapeError) {
+        send(res, 400, err.message);
         return;
       }
       throw err;

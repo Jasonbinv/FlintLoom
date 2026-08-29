@@ -36,6 +36,9 @@ const EXT_MAP: Record<string, FileIconInfo> = {
   yml: { glyph: "Y", color: "#64748b", bg: "#f1f5f9" },
   yaml: { glyph: "Y", color: "#64748b", bg: "#f1f5f9" },
   txt: { glyph: "T", color: "#64748b", bg: "#f1f5f9" },
+  pdf: { glyph: "P", color: "#b91c1c", bg: "#fee2e2" },
+  pptx: { glyph: "P", color: "#c2410c", bg: "#ffedd5" },
+  ppt: { glyph: "P", color: "#c2410c", bg: "#ffedd5" },
 };
 
 const DIR_ICON: FileIconInfo = { glyph: "📁", color: "#ca8a04", bg: "#fef9c3" };

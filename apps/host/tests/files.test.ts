@@ -725,3 +725,90 @@ describe("GET /v1/files/sync", () => {
     expect(neg.status).toBe(400);
   });
 });
+
+describe("POST /v1/files/convert", () => {
+  let close: (() => Promise<void>) | undefined;
+
+  afterEach(async () => {
+    if (close) {
+      await close();
+      close = undefined;
+    }
+  });
+
+  async function startConvertHost() {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-convert-ws-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-convert-home-"));
+    writeFileSync(join(workspaceRoot, "README.md"), "# Hello\n");
+    writeFileSync(join(workspaceRoot, ".env"), "sk-secret\n");
+    writeAssembly(workspaceRoot);
+    const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+    close = host.close;
+    return {
+      url: host.url,
+      token: loadOrCreateToken(homeDir),
+      workspaceRoot,
+    };
+  }
+
+  function authHeaders(token: string): HeadersInit {
+    return { Authorization: `Bearer ${token}` };
+  }
+
+  it("writes html next to a markdown source", async () => {
+    const { url, token, workspaceRoot } = await startConvertHost();
+    const res = await fetch(`${url}/v1/files/convert`, {
+      method: "POST",
+      headers: {
+        ...authHeaders(token),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ source: "README.md", out: "README.html" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      ok?: boolean;
+      source?: string;
+      out?: string;
+      format?: string;
+      loss?: string;
+    };
+    expect(body).toMatchObject({
+      ok: true,
+      source: "README.md",
+      out: "README.html",
+      format: "html",
+    });
+    expect(typeof body.loss).toBe("string");
+    expect(readFileSync(join(workspaceRoot, "README.html"), "utf8")).toContain(
+      "Hello",
+    );
+  });
+
+  it("hides .env as not found", async () => {
+    const { url, token } = await startConvertHost();
+    const res = await fetch(`${url}/v1/files/convert`, {
+      method: "POST",
+      headers: {
+        ...authHeaders(token),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ source: ".env", out: "secret.md" }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("rejects a bad out extension", async () => {
+    const { url, token } = await startConvertHost();
+    const res = await fetch(`${url}/v1/files/convert`, {
+      method: "POST",
+      headers: {
+        ...authHeaders(token),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ source: "README.md", out: "README.txt" }),
+    });
+    expect(res.status).toBe(400);
+    expect(await res.text()).toBe("bad out");
+  });
+});

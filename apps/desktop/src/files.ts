@@ -198,6 +198,25 @@ export async function saveOfficeFromMarkdown(
   if (!res.ok) throw new Error("markdown save failed");
 }
 
+export async function convertWorkspaceFile(
+  source: string,
+  out: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const res = await fetch("/v1/files/convert", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source, out }),
+    signal,
+  });
+  if (!res.ok) throw new Error("convert failed");
+  const body = (await res.json()) as { out?: unknown };
+  if (typeof body.out !== "string" || body.out.length === 0) {
+    throw new Error("convert failed");
+  }
+  return body.out;
+}
+
 async function postFilePath(
   url: string,
   body: Record<string, string>,
