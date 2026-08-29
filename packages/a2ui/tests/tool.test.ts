@@ -46,4 +46,45 @@ describe("a2ui_emit", () => {
     ac.abort();
     expect(await tool.execute({ messages: confirmMessages() }, { ...exec, signal: ac.signal })).toBe("aborted");
   });
+
+  it("repairs a fused Text+Chart radar emit instead of returning bad envelope", async () => {
+    const svc = createA2uiService();
+    const tool = createA2uiEmitTool(svc);
+    const raw = await tool.execute(
+      {
+        messages: [
+          {
+            createSurface: { catalogId: "flintloom:a2ui:core", surfaceId: "main" },
+            version: "v0.9",
+          },
+          {
+            updateComponents: {
+              components: [
+                {
+                  children: ["title", "chart"],
+                  component: "Column",
+                  id: "root",
+                },
+                { component: "Text", id: "title", text: "雷达" },
+                {
+                  component: "Text",
+                  id: "label",
+                  text: "分布'},{component:",
+                  'Chart<|"|>,id': "chart",
+                  kind: "radar",
+                  labels: ["A", "B"],
+                  values: [1, 2],
+                },
+              ],
+            },
+          },
+        ],
+      },
+      exec,
+    );
+    const parsed = JSON.parse(raw) as { status: string; emitId: string };
+    expect(parsed.status).toBe("ok");
+    const snap = svc.takeEmit(parsed.emitId);
+    expect(snap?.messages.some((msg) => "updateComponents" in msg && msg.updateComponents.components.some((c) => c.id === "chart" && c.component === "Chart"))).toBe(true);
+  });
 });

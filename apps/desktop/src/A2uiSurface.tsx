@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
-import { chartSvg, type ChartKind } from "./a2ui-chart.tsx";
+import { chartSvg, heatmapSvg, parseChartKind, type ChartKind } from "./a2ui-chart.tsx";
 import { InfographicView } from "./InfographicView.tsx";
 import type { InfographicDocument } from "@flintloom/infographic";
 
@@ -24,6 +24,9 @@ type Comp = {
   labels?: unknown;
   values?: unknown;
   kind?: unknown;
+  type?: unknown;
+  xLabels?: unknown;
+  yLabels?: unknown;
   document?: unknown;
   file?: unknown;
 };
@@ -186,15 +189,54 @@ function resolveTable(comp: Comp, model: unknown): { headers: string[]; rows: st
   return undefined;
 }
 
-function resolveChart(comp: Comp, model: unknown): { labels: string[]; values: number[]; kind: ChartKind } | undefined {
-  const kind: ChartKind =
-    comp.kind === "line" ? "line" : comp.kind === "bar" ? "bar" : "bar";
+type ResolvedSeriesChart = { kind: Exclude<ChartKind, "heatmap">; labels: string[]; values: number[] };
+type ResolvedHeatmap = { kind: "heatmap"; xLabels: string[]; yLabels: string[]; values: number[][] };
+type ResolvedChart = ResolvedSeriesChart | ResolvedHeatmap;
+
+function parseHeatmapMatrix(raw: unknown): { xLabels: string[]; yLabels: string[]; values: number[][] } | undefined {
+  if (!isRecord(raw)) return undefined;
+  const xLabels = Array.isArray(raw.xLabels)
+    ? raw.xLabels.filter((l): l is string => typeof l === "string")
+    : [];
+  const yLabels = Array.isArray(raw.yLabels)
+    ? raw.yLabels.filter((l): l is string => typeof l === "string")
+    : [];
+  if (xLabels.length === 0 || yLabels.length === 0 || !Array.isArray(raw.values)) {
+    return undefined;
+  }
+  const values: number[][] = [];
+  for (const row of raw.values) {
+    if (!Array.isArray(row) || row.length !== xLabels.length) return undefined;
+    const cells: number[] = [];
+    for (const cell of row) {
+      const n =
+        typeof cell === "number"
+          ? cell
+          : typeof cell === "string" && cell.trim() !== ""
+            ? Number(cell)
+            : Number.NaN;
+      if (!Number.isFinite(n)) return undefined;
+      cells.push(n);
+    }
+    values.push(cells);
+  }
+  if (values.length !== yLabels.length) return undefined;
+  return { xLabels, yLabels, values };
+}
+
+function resolveChart(comp: Comp, model: unknown): ResolvedChart | undefined {
+  const kind = parseChartKind(comp.kind ?? comp.type) ?? "bar";
   const path = bindingPath(comp.data);
+  const source: unknown = path ? getAtPath(model, path) : comp;
+  if (kind === "heatmap") {
+    const heat = parseHeatmapMatrix(source);
+    if (!heat) return undefined;
+    return { kind, ...heat };
+  }
   if (path) {
-    const value = getAtPath(model, path);
-    if (!isRecord(value)) return undefined;
-    const labels = value.labels;
-    const values = value.values;
+    if (!isRecord(source)) return undefined;
+    const labels = source.labels;
+    const values = source.values;
     if (
       !Array.isArray(labels) ||
       !labels.every((l) => typeof l === "string") ||
@@ -326,11 +368,15 @@ function renderComp(
     case "Chart": {
       const chart = resolveChart(comp, model);
       if (!chart) return null;
+      const html =
+        chart.kind === "heatmap"
+          ? heatmapSvg(chart.xLabels, chart.yLabels, chart.values)
+          : chartSvg(chart.labels, chart.values, chart.kind);
       return (
         <div
           className="a2ui-chart"
           dangerouslySetInnerHTML={{
-            __html: chartSvg(chart.labels, chart.values, chart.kind),
+            __html: html,
           }}
         />
       );

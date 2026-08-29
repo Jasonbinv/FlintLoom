@@ -1,6 +1,6 @@
 ---
 name: Report A2UI emit
-description: Correct a2ui_emit envelopes for report confirmation and parameter pickers in FlintLoom workbench. Read before calling a2ui_emit for forms, buttons, or tables.
+description: Correct a2ui_emit envelopes for report confirmation and parameter pickers in FlintLoom workbench. Read before calling a2ui_emit for forms, buttons, tables, or charts (bar, hbar, line, area, scatter, pie, doughnut, radar, heatmap).
 ---
 
 # Report & confirm UI via `a2ui_emit`
@@ -12,6 +12,7 @@ Use this skill whenever the user asks for an **interactive card**, **confirm bef
 1. Call `skill` with `action: read`, `id: report-a2ui` if you need this checklist again.
 2. Call tool **`a2ui_emit`** with argument **`messages`** (array of envelopes). Never invent keys like `type`, `input`, `fields`, or `form`.
 3. If emit returns `failed: bad envelope`, fix the JSON shape below — **do not** tell the user the environment lacks UI. The workbench supports A2UI; the payload was wrong.
+4. **Never fuse Chart into Text.** Close the Text object, then add a separate `{ "id", "component": "Chart", "kind", "labels", "values" }`. Do not put `kind` / `labels` / `values` on a Text node. Each `messages[]` item needs its own `"version": "v0.9"` (not only on the tool args).
 
 ## Envelope rules (A2UI v0.9)
 
@@ -125,6 +126,16 @@ Read selected value from action `data` when user clicks **下一步**.
 
 ## Template C — Table + chart (no wait)
 
+`Chart.kind` (default `bar`): `bar` | `hbar` | `line` | `area` | `scatter` | `pie` | `doughnut` | `radar` | `heatmap`.
+
+Aliases: `column` → `bar`, `donut` → `doughnut`, `barh` / `horizontalBar` → `hbar`, `spider` → `radar`, `heat_map` / `heat-map` → `heatmap`.
+
+Series charts (`bar` / `hbar` / `line` / `area` / `scatter` / `pie` / `doughnut` / `radar`): send both `labels` (strings) and `values` (numbers, same length).
+
+Heatmap is a **matrix**, not 1D `labels` + `values`. Prefer `xLabels`, `yLabels`, and `values` as `number[][]` (row count = `yLabels.length`, each row length = `xLabels.length`). If you only have column `labels` plus a 2D `values` matrix, still emit `kind: "heatmap"` — do not wrap it as a series chart and do not substitute `DataTable`. DataTable cells must be strings; numbers belong in Chart heatmap `values`.
+
+Pick the kind the user asked for — **do not fall back to `bar` or `DataTable`**. Heatmap is supported: `kind: "heatmap"` with `xLabels`, `yLabels`, and `values` as a **number[][]** (numbers, not strings). A weekday × time-slot grid is a Chart heatmap, not a DataTable.
+
 ```json
 {
   "messages": [
@@ -147,7 +158,7 @@ Read selected value from action `data` when user clicks **下一步**.
           {
             "id": "chart",
             "component": "Chart",
-            "kind": "bar",
+            "kind": "pie",
             "labels": ["apple", "banana"],
             "values": [3, 5]
           }
@@ -155,6 +166,21 @@ Read selected value from action `data` when user clicks **下一步**.
       }
     }
   ]
+}
+```
+
+Other series `kind` examples (same `labels` / `values`): `"bar"`, `"hbar"`, `"line"`, `"area"`, `"scatter"`, `"doughnut"`, `"radar"`.
+
+Heatmap example (do **not** use 1D `labels`/`values`):
+
+```json
+{
+  "id": "heat",
+  "component": "Chart",
+  "kind": "heatmap",
+  "xLabels": ["Mon", "Tue", "Wed"],
+  "yLabels": ["AM", "PM"],
+  "values": [[1, 3, 2], [4, 0, 5]]
 }
 ```
 
@@ -168,7 +194,7 @@ Read selected value from action `data` when user clicks **下一步**.
 | `unknown component` | `Input`, `Form`, etc. | Use allowed components only |
 | `bad button` | Button missing `child` or `action.event.name` | Copy Template A button shape |
 | `bad ref` | `children` id not defined | Every child id must exist in `components` |
-| `remote url` | URL in text | Remove links from all strings |
+| `bad chart` | Unknown `kind`, missing `values`, labels/values length mismatch, or heatmap not a matrix | Series: `kind` must be `bar`/`hbar`/`line`/`area`/`scatter`/`pie`/`doughnut`/`radar`; `values` numbers matching `labels`. Heatmap: `kind` `heatmap` with `xLabels`/`yLabels`/`values` as `number[][]` |
 
 ## Wrong example (never send)
 

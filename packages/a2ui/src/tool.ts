@@ -4,7 +4,8 @@ import type { A2uiService } from "./types.ts";
 export function createA2uiEmitTool(svc: A2uiService): ToolDefinition {
   return {
     name: "a2ui_emit",
-    description: "Emit A2UI messages to render an interactive surface.",
+    description:
+      "Emit A2UI messages to render an interactive surface. Each messages[] item needs version v0.9 and exactly one of createSurface, updateComponents, updateDataModel, or deleteSurface. Chart must be its own component. Heatmap uses kind heatmap with xLabels, yLabels, and a number[][] values matrix — never a DataTable stand-in. Other charts use kind, labels, and values — never Chart fields on a Text node.",
     parameters: {
       type: "object",
       properties: {
