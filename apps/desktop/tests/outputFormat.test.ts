@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   OUTPUT_FORMATS,
   appendOutputFormatConstraint,
+  appendOutputFormatConstraints,
   exportOutPath,
   exportTargets,
   formatFromSourcePath,
+  inferOutputFormats,
   outPathFromToolResult,
+  stripOutputFormatConstraint,
 } from "../src/outputFormat.ts";
 
 describe("OUTPUT_FORMATS", () => {
@@ -27,11 +30,51 @@ describe("appendOutputFormatConstraint", () => {
     expect(text.startsWith("做一份三国介绍\n")).toBe(true);
     expect(text).toContain(".pptx");
     expect(text).toContain("doc_generate");
+    expect(text).toContain("不要用 shell mkdir");
+    expect(text).toContain("不要自己拼日期");
+    expect(text).not.toContain("<日期>");
   });
 
   it("is just the constraint when the prompt is empty", () => {
     expect(appendOutputFormatConstraint("", "pdf")).toContain(".pdf");
     expect(appendOutputFormatConstraint("", "pdf").startsWith("\n")).toBe(false);
+  });
+
+  it("prefers converting existing markdown instead of always writing a new one", () => {
+    const text = appendOutputFormatConstraint("写成PDF", "pdf");
+    expect(text).toContain("已有");
+    expect(text).toContain("doc_generate");
+    expect(text).toContain(".pdf");
+  });
+});
+
+describe("inferOutputFormats", () => {
+  it("picks word and ppt from a Chinese deliverable request", () => {
+    expect(
+      inferOutputFormats("把英语KET考纲中关于阅读的内容，做成一个word和PPT"),
+    ).toEqual(["docx", "pptx"]);
+  });
+
+  it("returns nothing for a plain question", () => {
+    expect(inferOutputFormats("KET阅读考什么？")).toEqual([]);
+  });
+});
+
+describe("appendOutputFormatConstraints", () => {
+  it("requires both office files and not stopping at markdown", () => {
+    const text = appendOutputFormatConstraints("做KET阅读", ["docx", "pptx"]);
+    expect(text).toContain(".docx");
+    expect(text).toContain(".pptx");
+    expect(text).toContain("doc_generate");
+    expect(text).toContain("不要只写 md");
+  });
+});
+
+describe("stripOutputFormatConstraint", () => {
+  it("removes the hidden recipe so the chat shows only what the user typed", () => {
+    const sent = appendOutputFormatConstraint("写成PDF", "pdf");
+    expect(sent).not.toBe("写成PDF");
+    expect(stripOutputFormatConstraint(sent)).toBe("写成PDF");
   });
 });
 

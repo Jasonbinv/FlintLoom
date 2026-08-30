@@ -651,6 +651,27 @@ describe("App", () => {
     expect(document.body.textContent).not.toContain(result);
   });
 
+  it("groups consecutive tool steps under one AI turn", async () => {
+    const toolSse =
+      `data: ${JSON.stringify({ type: "tool/call", callId: "c1", name: "doc_generate", args: {} })}\n\n` +
+      `data: ${JSON.stringify({ type: "tool/result", callId: "c1", name: "doc_generate", text: "failed: not found" })}\n\n` +
+      `data: ${JSON.stringify({ type: "tool/call", callId: "c2", name: "fs", args: { action: "list" } })}\n\n` +
+      `data: ${JSON.stringify({ type: "tool/result", callId: "c2", name: "fs", text: "ok" })}\n\n` +
+      `data: ${JSON.stringify({ type: "end", status: "ok" })}\n\n`;
+    installFetch({
+      turn: new Response(toolSse, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    });
+    await mountApp();
+    await typeAndSend("做一个word示例");
+    await waitForText("File");
+    expect(document.querySelectorAll(".log > .message-tool-step")).toHaveLength(1);
+    expect(document.querySelectorAll(".log > .message-tool-step .tool-row")).toHaveLength(2);
+    expect(document.querySelectorAll(".log > .message-tool-step .message-avatar")).toHaveLength(1);
+  });
+
   it("does not auto-open file preview and stacks it below the tree", async () => {
     installFetch();
     await mountApp();
@@ -3107,7 +3128,9 @@ describe("App", () => {
     expect(document.querySelectorAll(".log > .message-tool-step")).toHaveLength(1);
     expect(document.querySelector(".a2ui-chart-svg")).toBeTruthy();
     const reasoningTexts = Array.from(
-      document.querySelectorAll(".log > .message-reasoning .reasoning-body, .log > .message-reasoning .disclosure-row-summary"),
+      document.querySelectorAll(
+        ".log > .message-reasoning .reasoning-body, .log > .message-reasoning .reasoning-peek, .log > .message-reasoning .disclosure-row-summary",
+      ),
     ).map((el) => el.textContent);
     expect(reasoningTexts.some((t) => t?.includes("will-draw-order-probe"))).toBe(true);
     expect(reasoningTexts.some((t) => t?.includes("already-emitted-order-probe"))).toBe(true);
@@ -3160,6 +3183,47 @@ describe("App", () => {
     expect(document.querySelector(".a2ui-infographic svg")).toBeTruthy();
   });
 
+  it("renders a2ui Infographic from AntV syntax", async () => {
+    const syntax =
+      "infographic list-row-simple-horizontal-arrow\ndata\n  lists\n    - label Alpha\n      desc Start\n";
+    const messages = [
+      {
+        version: "v0.9" as const,
+        createSurface: { surfaceId: "main", catalogId: "flintloom:a2ui:core" },
+      },
+      {
+        version: "v0.9" as const,
+        updateComponents: {
+          surfaceId: "main",
+          components: [
+            { id: "root", component: "Infographic", syntax },
+          ],
+        },
+      },
+    ];
+    const sse =
+      `data: {"type":"turn/start","turnId":"t-antv"}\n\n` +
+      `data: ${JSON.stringify({
+        type: "a2ui/surface",
+        turnId: "t-antv",
+        surfaceId: "main",
+        wait: false,
+        messages,
+      })}\n\n` +
+      `data: {"type":"end","status":"ok"}\n\n`;
+    installFetch({
+      turn: new Response(sse, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    });
+    await mountApp();
+    await typeAndSend("show antv");
+    const el = document.querySelector(".a2ui-infographic--antv");
+    expect(el).toBeTruthy();
+    expect(el?.getAttribute("data-syntax")).toContain("list-row-simple-horizontal-arrow");
+  });
+
   it("adds sent message to sidebar session list", async () => {
     installFetch({
       turn: new Response(HELLO_SSE, {
@@ -3190,6 +3254,12 @@ describe("App", () => {
     await mountApp();
     await typeAndSend("write readme");
     await waitForText("README.md");
+    const started = Date.now();
+    while (Date.now() - started < 2000 && !document.querySelector(".chat-file-card")) {
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 15));
+      });
+    }
     const card = document.querySelector(".chat-file-card");
     expect(card).toBeTruthy();
     expect(card?.textContent).toContain("README.md");

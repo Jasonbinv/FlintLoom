@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildBubblesFromEvents, statsFromEvents } from "../src/chatBubbles.ts";
+import { buildBubblesFromEvents, groupChatTurns, statsFromEvents } from "../src/chatBubbles.ts";
+import type { Bubble } from "../src/chatBubbles.ts";
 import type { WorkbenchEvent } from "../src/types.ts";
 
 describe("buildBubblesFromEvents", () => {
@@ -153,5 +154,21 @@ describe("buildBubblesFromEvents", () => {
     expect(stats[0]?.steps).toBe(2);
     expect(stats[0]?.status).toBe("failed");
     expect(stats[0]?.guard.deny).toBe(1);
+  });
+});
+
+describe("groupChatTurns", () => {
+  it("groups consecutive tool-steps and leaves other bubbles separate", () => {
+    const bubbles: Bubble[] = [
+      { id: "u", kind: "user", text: "hi" },
+      { id: "t1", kind: "tool-step", callId: "c1", name: "fs", args: {}, state: "error" },
+      { id: "t2", kind: "tool-step", callId: "c2", name: "fs", args: {}, state: "done" },
+      { id: "a", kind: "assistant", text: "ok" },
+      { id: "t3", kind: "tool-step", callId: "c3", name: "doc_generate", args: {}, state: "done" },
+    ];
+    const turns = groupChatTurns(bubbles);
+    expect(turns.map((turn) => turn.type)).toEqual(["one", "tools", "one", "tools"]);
+    expect(turns[1]?.type === "tools" && turns[1].bubbles.map((b) => b.id)).toEqual(["t1", "t2"]);
+    expect(turns[3]?.type === "tools" && turns[3].bubbles.map((b) => b.id)).toEqual(["t3"]);
   });
 });

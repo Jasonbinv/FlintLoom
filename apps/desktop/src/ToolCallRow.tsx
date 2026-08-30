@@ -85,8 +85,12 @@ export function ToolCallRow({ name, args, result, state, step, onOpenFile }: Pro
           {result !== undefined ? (
             <div className="tool-io-section">
               <span className="tool-io-label">OUT</span>
-              <pre className={`tool-io-text${state === "error" ? " is-error" : ""}`}>{result}</pre>
-              <MessageFileCards text={result} onOpenFile={onOpenFile} />
+              <div className="tool-io-body">
+                <pre className={`tool-io-text${state === "error" ? " is-error" : ""}`}>
+                  {result}
+                </pre>
+                <MessageFileCards text={result} onOpenFile={onOpenFile} />
+              </div>
             </div>
           ) : null}
         </div>

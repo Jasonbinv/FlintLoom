@@ -23,6 +23,19 @@ export function outputFormatOf(id: OutputFormat): (typeof OUTPUT_FORMATS)[number
   return found;
 }
 
+export function inferOutputFormats(text: string): OutputFormat[] {
+  const found: OutputFormat[] = [];
+  const add = (id: OutputFormat) => {
+    if (!found.includes(id)) found.push(id);
+  };
+  if (/\bdocx?\b|\bword\b/i.test(text)) add("docx");
+  if (/\bpptx?\b|幻灯片|powerpoint/i.test(text)) add("pptx");
+  if (/\bxlsx?\b|\bexcel\b/i.test(text)) add("xlsx");
+  if (/\bpdf\b/i.test(text)) add("pdf");
+  if (/\bhtml\b/i.test(text)) add("html");
+  return found;
+}
+
 export function appendOutputFormatConstraint(
   text: string,
   format: OutputFormat,
@@ -30,9 +43,36 @@ export function appendOutputFormatConstraint(
   const item = outputFormatOf(format);
   const constraint =
     `本轮必须在工作区写出一份 ${item.label} 文件（扩展名 ${item.ext}）。` +
-    `先用 fs 写 markdown 或 document JSON 源文件，再调用 doc_generate，out 必须以 ${item.ext} 结尾。` +
+    `若本次对话已有 markdown，直接用它作 source 调用 doc_generate；没有再先用 fs 写一个 markdown（只要文件名，不要自己拼日期目录，不要用 shell mkdir）。` +
     `不要只在对话里回复正文。`;
   return text.length > 0 ? `${text}\n${constraint}` : constraint;
+}
+
+export function appendOutputFormatConstraints(
+  text: string,
+  formats: OutputFormat[],
+): string {
+  if (formats.length === 0) return text;
+  if (formats.length === 1) {
+    return appendOutputFormatConstraint(text, formats[0]!);
+  }
+  const labels = formats
+    .map((id) => {
+      const item = outputFormatOf(id);
+      return `${item.label}（${item.ext}）`;
+    })
+    .join("、");
+  const constraint =
+    `本轮必须在工作区写出 ${labels}。` +
+    `若本次对话已有 markdown，直接用它作 source 分别调用 doc_generate；没有再先用 fs 写一个 markdown（只要文件名，不要自己拼日期目录，不要用 shell mkdir）。` +
+    `不要只写 md 就结束，也不要只在对话里回复正文。`;
+  return text.length > 0 ? `${text}\n${constraint}` : constraint;
+}
+
+export function stripOutputFormatConstraint(text: string): string {
+  const idx = text.search(/\n本轮必须在工作区写出/);
+  if (idx === -1) return text;
+  return text.slice(0, idx);
 }
 
 export function outPathFromToolResult(

@@ -8,7 +8,7 @@ import {
 export type Bubble =
   | { id: string; kind: "user"; text: string; images?: UserImage[] }
   | { id: string; kind: "assistant"; text: string }
-  | { id: string; kind: "reasoning"; text: string }
+  | { id: string; kind: "reasoning"; text: string; open?: boolean }
   | {
       id: string;
       kind: "tool-step";
@@ -30,6 +30,27 @@ export type Bubble =
       verdict: "ok" | "suspicious";
       summary: string;
     };
+
+export type GroupedChatTurn =
+  | { type: "one"; bubble: Bubble }
+  | { type: "tools"; bubbles: Extract<Bubble, { kind: "tool-step" }>[] };
+
+export function groupChatTurns(bubbles: Bubble[]): GroupedChatTurn[] {
+  const turns: GroupedChatTurn[] = [];
+  for (const bubble of bubbles) {
+    if (bubble.kind === "tool-step") {
+      const last = turns.at(-1);
+      if (last?.type === "tools") {
+        last.bubbles.push(bubble);
+        continue;
+      }
+      turns.push({ type: "tools", bubbles: [bubble] });
+      continue;
+    }
+    turns.push({ type: "one", bubble });
+  }
+  return turns;
+}
 
 function bubbleFromSingleEvent(event: WorkbenchEvent, id: string): Bubble | undefined {
   switch (event.type) {

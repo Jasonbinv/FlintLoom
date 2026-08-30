@@ -26,9 +26,11 @@ import {
   visionImagesFrom,
 } from "./attachments.ts";
 import {
-  appendOutputFormatConstraint,
+  appendOutputFormatConstraints,
+  inferOutputFormats,
   outPathFromToolResult,
   outputFormatOf,
+  stripOutputFormatConstraint,
   type OutputFormat,
 } from "./outputFormat.ts";
 import { FileIcon } from "./FileIcon.tsx";
@@ -37,6 +39,7 @@ import {
   applyToolResult,
   buildBubblesFromEvents,
   bubbleFromHistory,
+  groupChatTurns,
   statsFromEvents,
   type Bubble,
 } from "./chatBubbles.ts";
@@ -149,13 +152,14 @@ export function App() {
   const pendingAttachmentsRef = useRef<PendingAttachment[]>([]);
   pendingAttachmentsRef.current = pendingAttachments;
   const [outputFormat, setOutputFormat] = useState<OutputFormat | undefined>();
-  const outputFormatForTurnRef = useRef<OutputFormat | undefined>();
+  const outputFormatForTurnRef = useRef<OutputFormat[]>([]);
   const [webSearch, setWebSearch] = useState(false);
   const [attachError, setAttachError] = useState<string>();
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
   const [draft, setDraft] = useState("");
   const [reasoningDraft, setReasoningDraft] = useState("");
   const reasoningDraftRef = useRef("");
+  const reasoningOpenRef = useRef(false);
   const [turnStatsList, setTurnStatsList] = useState<TurnStats[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -293,12 +297,13 @@ export function App() {
     setBubbles([]);
     setDraft("");
     reasoningDraftRef.current = "";
+    reasoningOpenRef.current = false;
     setReasoningDraft("");
     setTurnStatsList([]);
     setInput("");
     clearPendingAttachments();
     setOutputFormat(undefined);
-    outputFormatForTurnRef.current = undefined;
+    outputFormatForTurnRef.current = [];
     setWaitingAction(false);
     setSending(false);
     turnIdRef.current = undefined;
@@ -322,12 +327,13 @@ export function App() {
     setBubbles([]);
     setDraft("");
     reasoningDraftRef.current = "";
+    reasoningOpenRef.current = false;
     setReasoningDraft("");
     setTurnStatsList([]);
     setInput("");
     clearPendingAttachments();
     setOutputFormat(undefined);
-    outputFormatForTurnRef.current = undefined;
+    outputFormatForTurnRef.current = [];
     setWaitingAction(false);
     setSending(false);
     turnIdRef.current = undefined;
@@ -398,8 +404,14 @@ export function App() {
   function bubblesWithReasoning(prev: Bubble[], reasoning: string, extra: Bubble[]): Bubble[] {
     const next = [...prev];
     if (reasoning.length > 0) {
-      next.push({ id: allocId(), kind: "reasoning", text: reasoning });
+      next.push({
+        id: allocId(),
+        kind: "reasoning",
+        text: reasoning,
+        open: reasoningOpenRef.current,
+      });
     }
+    reasoningOpenRef.current = false;
     next.push(...extra);
     return next;
   }
@@ -433,7 +445,7 @@ export function App() {
     }
     if (event.type === "end") {
       if (event.status !== "awaiting_action") {
-        outputFormatForTurnRef.current = undefined;
+        outputFormatForTurnRef.current = [];
       }
       if (
         event.status === "ok" ||
@@ -507,8 +519,8 @@ export function App() {
     if (event.type === "tool/result") {
       setBubbles((prev) => applyToolResult(prev, event));
       const expected = outputFormatForTurnRef.current;
-      if (expected) {
-        const out = outPathFromToolResult(event.name, event.text, expected);
+      for (const format of expected) {
+        const out = outPathFromToolResult(event.name, event.text, format);
         if (out) openFileFromChat(out);
       }
       return;
@@ -635,10 +647,17 @@ export function App() {
       setSending(false);
       return;
     }
-    if (outputFormat) {
-      text = appendOutputFormatConstraint(text, outputFormat);
+    const formats = [
+      ...new Set([
+        ...(outputFormat ? [outputFormat] : []),
+        ...inferOutputFormats(typed),
+      ]),
+    ];
+    const displayText = text;
+    if (formats.length > 0) {
+      text = appendOutputFormatConstraints(text, formats);
     }
-    outputFormatForTurnRef.current = outputFormat;
+    outputFormatForTurnRef.current = formats;
     setOutputFormat(undefined);
     if (!text && images === undefined) {
       setSending(false);
@@ -649,7 +668,7 @@ export function App() {
     setBubbles((prev) => {
       const next: Bubble[] = [
         ...prev,
-        { id: allocId(), kind: "user", text, images },
+        { id: allocId(), kind: "user", text: displayText, images },
       ];
       setSessions((sessionsPrev) =>
         upsertSession(sessionsPrev, sid.current, titleFromBubbles(next)),
@@ -658,6 +677,7 @@ export function App() {
     });
     setDraft("");
     reasoningDraftRef.current = "";
+    reasoningOpenRef.current = false;
     setReasoningDraft("");
     turnIdRef.current = undefined;
     cancelWantedRef.current = false;
@@ -880,7 +900,29 @@ export function App() {
                 <p className="log-empty-hint">向工作区说一句话，开始你的任务</p>
               </div>
             ) : null}
-            {bubbles.map((bubble) => (
+            {groupChatTurns(bubbles).map((turn) => {
+              if (turn.type === "tools") {
+                return (
+                  <div key={turn.bubbles[0]!.id} className="message-turn message-tool-step">
+                    <div className="message-avatar assistant" aria-hidden>AI</div>
+                    <div className="bubble tool-step tool-step-stack">
+                      {turn.bubbles.map((bubble) => (
+                        <ToolCallRow
+                          key={bubble.id}
+                          name={bubble.name}
+                          args={bubble.args}
+                          result={bubble.result}
+                          state={bubble.state}
+                          step={bubble.step}
+                          onOpenFile={openFileFromChat}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              }
+              const bubble = turn.bubble;
+              return (
               <div key={bubble.id} className={`message-turn message-${bubble.kind}`}>
                 {bubble.kind !== "user" && bubble.kind !== "turn-footer" ? (
                   <div className="message-avatar assistant" aria-hidden>AI</div>
@@ -896,9 +938,11 @@ export function App() {
                         src={`data:${image.mime};base64,${image.data}`}
                       />
                     ))}
-                    {bubble.text ? <span>{bubble.text}</span> : null}
+                    {bubble.text ? (
+                      <span>{stripOutputFormatConstraint(bubble.text)}</span>
+                    ) : null}
                     <MessageFileCards
-                      text={bubble.text}
+                      text={stripOutputFormatConstraint(bubble.text)}
                       onOpenFile={openFileFromChat}
                     />
                   </div>
@@ -914,7 +958,7 @@ export function App() {
                   </div>
                 )}
                 {bubble.kind === "reasoning" && (
-                  <ReasoningRow text={bubble.text} />
+                  <ReasoningRow text={bubble.text} defaultOpen={bubble.open} />
                 )}
                 {bubble.kind === "tool-step" && (
                   <ToolCallRow
@@ -992,12 +1036,19 @@ export function App() {
                   <div className="message-avatar user" aria-hidden>我</div>
                 ) : null}
               </div>
-            ))}
+              );
+            })}
             {reasoningDraft ? (
               <div className="message-turn message-reasoning">
                 <div className="message-avatar assistant" aria-hidden>AI</div>
                 <div className="bubble reasoning">
-                  <ReasoningRow text={reasoningDraft} running />
+                  <ReasoningRow
+                    text={reasoningDraft}
+                    running
+                    onOpenChange={(open) => {
+                      reasoningOpenRef.current = open;
+                    }}
+                  />
                 </div>
               </div>
             ) : null}

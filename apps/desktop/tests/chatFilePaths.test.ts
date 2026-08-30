@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { describe, expect, it } from "vitest";
-import { extractFilePaths, fileBaseName } from "../src/chatFilePaths.ts";
+import { extractFilePaths, fileBaseName, keepExistingFilePaths } from "../src/chatFilePaths.ts";
 
 describe("chatFilePaths", () => {
   it("extracts backtick paths", () => {
@@ -34,5 +34,61 @@ describe("chatFilePaths", () => {
 
   it("returns basename", () => {
     expect(fileBaseName("docs/setup.md")).toBe("setup.md");
+  });
+
+  it("keeps only paths that exist as files in listed directories", async () => {
+    const existing = await keepExistingFilePaths(
+      ["README.md", "version1.docx", "docs/plan.md", "docs/missing.md"],
+      async (dir) => {
+        if (dir === ".") {
+          return {
+            path: ".",
+            entries: [
+              { name: "README.md", type: "file" },
+              { name: "docs", type: "dir" },
+            ],
+          };
+        }
+        if (dir === "docs") {
+          return {
+            path: "docs",
+            entries: [{ name: "plan.md", type: "file" }],
+          };
+        }
+        throw new Error("missing");
+      },
+    );
+    expect(existing).toEqual(["README.md", "docs/plan.md"]);
+  });
+
+  it("resolves a bare filename to a unique file under ai_generation", async () => {
+    const existing = await keepExistingFilePaths(
+      ["shuihu.md", "missing.pptx"],
+      async (dir) => {
+        if (dir === ".") {
+          return {
+            path: ".",
+            entries: [{ name: "ai_generation", type: "dir" }],
+          };
+        }
+        if (dir === "ai_generation") {
+          return {
+            path: "ai_generation",
+            entries: [{ name: "2026-08-30_水浒故事", type: "dir" }],
+          };
+        }
+        if (dir === "ai_generation/2026-08-30_水浒故事") {
+          return {
+            path: "ai_generation/2026-08-30_水浒故事",
+            entries: [
+              { name: "shuihu.md", type: "file" },
+              { name: "shuihu.pptx", type: "file" },
+            ],
+          };
+        }
+        throw new Error(`unexpected dir ${dir}`);
+      },
+    );
+    expect(existing).toEqual(["ai_generation/2026-08-30_水浒故事/shuihu.md"]);
   });
 });
