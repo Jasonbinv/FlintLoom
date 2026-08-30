@@ -11,7 +11,9 @@ import {
   type GenerateFormat,
 } from "@flintloom/docforge";
 import {
+  isAntvInfographicRelPath,
   isInfographicRelPath,
+  parseAntvSyntax,
   parseDocument,
   renderSvg,
 } from "@flintloom/infographic";
@@ -32,6 +34,7 @@ export type FilePreview = {
     | "audio"
     | "video"
     | "image"
+    | "antv"
     | "failed";
   text: string;
 };
@@ -670,6 +673,19 @@ export async function previewWorkspaceFile(
     const raw = (await readFile(absPath)).toString("utf8");
     try {
       return { path: relPath, kind: "svg", text: renderSvg(parseDocument(raw)) };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { path: relPath, kind: "failed", text: `failed: ${message}` };
+    }
+  }
+
+  if (isAntvInfographicRelPath(relPath)) {
+    if (st.size > 65536) {
+      return { path: relPath, kind: "failed", text: "failed: too large" };
+    }
+    const raw = (await readFile(absPath)).toString("utf8");
+    try {
+      return { path: relPath, kind: "antv", text: parseAntvSyntax(raw) };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return { path: relPath, kind: "failed", text: `failed: ${message}` };

@@ -13,6 +13,7 @@ export type FilePreview = {
     | "audio"
     | "video"
     | "image"
+    | "antv"
     | "failed";
   text: string;
 };

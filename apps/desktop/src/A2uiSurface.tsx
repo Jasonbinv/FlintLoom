@@ -29,6 +29,7 @@ type Comp = {
   yLabels?: unknown;
   document?: unknown;
   file?: unknown;
+  syntax?: unknown;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -382,6 +383,9 @@ function renderComp(
       );
     }
     case "Infographic": {
+      if (typeof comp.syntax === "string") {
+        return <InfographicView syntax={comp.syntax} />;
+      }
       const doc = resolveInfographic(comp, model);
       if (doc) return <InfographicView document={doc} />;
       if (typeof comp.file === "string") return <InfographicView file={comp.file} />;

@@ -7,7 +7,11 @@ import {
   type A2uiService,
 } from "./types.ts";
 import { parseChartKind } from "./chartKinds.ts";
-import { isInfographicRelPath, parseDocument } from "@flintloom/infographic";
+import {
+  isAnyInfographicRelPath,
+  parseAntvSyntax,
+  parseDocument,
+} from "@flintloom/infographic";
 import { normalizeEmitMessages } from "./normalize.ts";
 
 const ENVELOPE_KEYS = ["createSurface", "updateComponents", "updateDataModel", "deleteSurface"] as const;
@@ -230,7 +234,10 @@ function validateComponentShape(comp: A2uiComponent): void {
     const dataPath = bindingPath(comp.data);
     const hasDoc = isRecord(comp.document);
     const hasFile = typeof comp.file === "string";
-    const modes = [dataPath !== undefined, hasDoc, hasFile].filter(Boolean).length;
+    const hasSyntax = typeof comp.syntax === "string";
+    const modes = [dataPath !== undefined, hasDoc, hasFile, hasSyntax].filter(
+      Boolean,
+    ).length;
     if (modes !== 1) {
       fail("bad infographic");
     }
@@ -239,9 +246,13 @@ function validateComponentShape(comp: A2uiComponent): void {
     }
     if (hasFile) {
       const file = comp.file as string;
-      if (file.includes("..") || !isInfographicRelPath(file)) {
+      if (file.includes("..") || !isAnyInfographicRelPath(file)) {
         fail("bad path");
       }
+      return;
+    }
+    if (hasSyntax) {
+      parseAntvSyntax(comp.syntax as string);
       return;
     }
     parseDocument(JSON.stringify(comp.document));

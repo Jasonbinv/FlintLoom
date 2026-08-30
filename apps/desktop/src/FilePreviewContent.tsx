@@ -9,6 +9,7 @@ import {
 import { ExportFormatButton } from "./ExportFormatButton.tsx";
 import { SpreadsheetPreview } from "./SpreadsheetPreview.tsx";
 import { DocumentPreview } from "./DocumentPreview.tsx";
+import { InfographicView } from "./InfographicView.tsx";
 
 type PreviewKind = FilePreview["kind"] | "error";
 
@@ -63,6 +64,7 @@ function previewBadge(filePath: string | undefined, kind: PreviewKind): string {
   if (kind === "video") return "视频";
   if (kind === "image") return "图片";
   if (kind === "svg") return "SVG";
+  if (kind === "antv") return "信息图";
   if (kind === "failed" || kind === "error") return "无法预览";
   if (!filePath) return "文本";
   const name = basename(filePath);
@@ -366,6 +368,22 @@ export function FilePreviewContent({
         onQuote={onQuote}
         onExported={onExported}
       />
+    );
+  }
+
+  if (kind === "antv") {
+    return (
+      <div className="file-preview file-preview--antv">
+        <PreviewHeader
+          title={title}
+          filePath={filePath}
+          badge={badge}
+          actions={headerActions}
+          onClose={onClose}
+          onQuote={onQuote}
+        />
+        <InfographicView syntax={text} />
+      </div>
     );
   }
 

@@ -1,4 +1,5 @@
 import { parseChartKind } from "./chartKinds.ts";
+import { A2UI_CATALOG_ID } from "./types.ts";
 
 const ENVELOPE_KEYS = ["createSurface", "updateComponents", "updateDataModel", "deleteSurface"] as const;
 const TEXT_KEYS = new Set(["id", "component", "text"]);
@@ -16,6 +17,61 @@ function cloneJson<T>(value: T): T {
 function envelopeKeyOf(msg: Record<string, unknown>): (typeof ENVELOPE_KEYS)[number] | undefined {
   const keys = ENVELOPE_KEYS.filter((key) => key in msg);
   return keys.length === 1 ? keys[0] : undefined;
+}
+
+function coerceVersion(msg: Record<string, unknown>): void {
+  const version = msg.version;
+  if (version === "v0.9") return;
+  if (version === undefined || version === "0.9" || version === 0.9) {
+    msg.version = "v0.9";
+  }
+}
+
+function pickEnvelope(msg: Record<string, unknown>, key: (typeof ENVELOPE_KEYS)[number]): Record<string, unknown> {
+  return { version: "v0.9", [key]: msg[key] };
+}
+
+function liftTypedEnvelope(msg: Record<string, unknown>): Record<string, unknown> {
+  coerceVersion(msg);
+  let key = envelopeKeyOf(msg);
+  const typed =
+    typeof msg.type === "string" && ENVELOPE_KEYS.includes(msg.type as (typeof ENVELOPE_KEYS)[number])
+      ? (msg.type as (typeof ENVELOPE_KEYS)[number])
+      : undefined;
+
+  if (key === undefined && typed) {
+    if (typed === "createSurface") {
+      msg.createSurface = isRecord(msg.createSurface)
+        ? msg.createSurface
+        : {
+            surfaceId: stringProp(msg.surfaceId) ?? "main",
+            catalogId: A2UI_CATALOG_ID,
+          };
+    } else if (typed === "updateComponents") {
+      const body = isRecord(msg.updateComponents) ? msg.updateComponents : {};
+      if (!Array.isArray(body.components)) body.components = [];
+      body.surfaceId = stringProp(body.surfaceId) ?? stringProp(msg.surfaceId) ?? "main";
+      msg.updateComponents = body;
+    } else if (typed === "updateDataModel") {
+      const body = isRecord(msg.updateDataModel) ? msg.updateDataModel : {};
+      body.surfaceId = stringProp(body.surfaceId) ?? stringProp(msg.surfaceId) ?? "main";
+      msg.updateDataModel = body;
+    } else {
+      const body = isRecord(msg.deleteSurface) ? msg.deleteSurface : {};
+      body.surfaceId = stringProp(body.surfaceId) ?? stringProp(msg.surfaceId) ?? "main";
+      msg.deleteSurface = body;
+    }
+    key = typed;
+  }
+
+  if (key === undefined) return msg;
+  if (key === "createSurface" && isRecord(msg.createSurface)) {
+    if (typeof msg.createSurface.surfaceId !== "string") {
+      msg.createSurface.surfaceId = stringProp(msg.createSurface.id) ?? "main";
+    }
+    if (typeof msg.createSurface.catalogId !== "string") msg.createSurface.catalogId = A2UI_CATALOG_ID;
+  }
+  return pickEnvelope(msg, key);
 }
 
 function stringProp(value: unknown): string | undefined {
@@ -36,7 +92,7 @@ function inferSurfaceId(messages: unknown[]): string | undefined {
   for (const msg of messages) {
     if (!isRecord(msg)) continue;
     if (isRecord(msg.createSurface)) {
-      const id = stringProp(msg.createSurface.surfaceId);
+      const id = stringProp(msg.createSurface.surfaceId) ?? stringProp(msg.createSurface.id);
       if (id) return id;
     }
     if (isRecord(msg.updateComponents)) {
@@ -237,8 +293,12 @@ function fillHeatmapAxes(comp: Record<string, unknown>): void {
 
 function normalizeChartFields(comp: Record<string, unknown>): void {
   if (comp.component !== "Chart") return;
-  if (typeof comp.kind !== "string" && typeof comp.type === "string") {
-    comp.kind = comp.type;
+  if (typeof comp.kind !== "string") {
+    if (typeof comp.chartType === "string") {
+      comp.kind = comp.chartType;
+    } else if (typeof comp.type === "string" && parseChartKind(comp.type) !== undefined) {
+      comp.kind = comp.type;
+    }
   }
   const kind = typeof comp.kind === "string" ? parseChartKind(comp.kind) : undefined;
   if (kind === "heatmap") {
@@ -246,8 +306,65 @@ function normalizeChartFields(comp: Record<string, unknown>): void {
   }
 }
 
+const DASHBOARD_TYPE_TO_COMPONENT: Record<string, string> = {
+  card: "Text",
+  metric: "Text",
+  chart: "Chart",
+  table: "DataTable",
+  datatable: "DataTable",
+};
+
+function joinCardText(content: Record<string, unknown>): string | undefined {
+  const parts = [content.title, content.value, content.subValue].filter(
+    (item): item is string => typeof item === "string" && item.length > 0,
+  );
+  return parts.length > 0 ? parts.join("  ") : undefined;
+}
+
+function firstSeriesValues(data: Record<string, unknown>): unknown[] | undefined {
+  if (!Array.isArray(data.series)) return undefined;
+  for (const item of data.series) {
+    if (isRecord(item) && Array.isArray(item.data)) return item.data;
+  }
+  return undefined;
+}
+
+function coerceDashboardComponent(comp: Record<string, unknown>): Record<string, unknown> {
+  if (typeof comp.component !== "string" && typeof comp.type === "string") {
+    const mapped = DASHBOARD_TYPE_TO_COMPONENT[comp.type.toLowerCase()];
+    if (mapped) comp.component = mapped;
+  }
+  if (comp.component === "Text" && typeof comp.text !== "string" && isRecord(comp.content)) {
+    const text = joinCardText(comp.content);
+    if (text !== undefined) comp.text = text;
+  }
+  if (comp.component === "Chart" && isRecord(comp.data)) {
+    if (!Array.isArray(comp.labels) && Array.isArray(comp.data.categories)) {
+      comp.labels = comp.data.categories;
+    }
+    if (!Array.isArray(comp.labels) && Array.isArray(comp.data.labels)) {
+      comp.labels = comp.data.labels;
+    }
+    if (!Array.isArray(comp.values)) {
+      const fromSeries = firstSeriesValues(comp.data);
+      if (fromSeries) comp.values = fromSeries;
+      else if (Array.isArray(comp.data.values)) comp.values = comp.data.values;
+    }
+  }
+  if (comp.component === "DataTable" && isRecord(comp.data)) {
+    if (!Array.isArray(comp.headers) && Array.isArray(comp.data.headers)) {
+      comp.headers = comp.data.headers;
+    }
+    if (!Array.isArray(comp.rows) && Array.isArray(comp.data.rows)) {
+      comp.rows = comp.data.rows;
+    }
+  }
+  return comp;
+}
+
 function normalizeComponents(components: unknown[]): unknown[] {
-  const split = splitFusedCharts(components);
+  const coerced = components.map((item) => (isRecord(item) ? coerceDashboardComponent(item) : item));
+  const split = splitFusedCharts(coerced);
   return split.map((item) => {
     if (!isRecord(item)) return item;
     normalizeChartFields(item);
@@ -255,13 +372,39 @@ function normalizeComponents(components: unknown[]): unknown[] {
   });
 }
 
+function isDashboardType(value: unknown): boolean {
+  return typeof value === "string" && DASHBOARD_TYPE_TO_COMPONENT[value.toLowerCase()] !== undefined;
+}
+
+function ensureRoot(messages: unknown[]): void {
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  let firstUpdate: Record<string, unknown> | undefined;
+  let dashboard = false;
+  for (const msg of messages) {
+    if (!isRecord(msg) || !isRecord(msg.updateComponents) || !Array.isArray(msg.updateComponents.components)) {
+      continue;
+    }
+    if (!firstUpdate) firstUpdate = msg.updateComponents;
+    for (const comp of msg.updateComponents.components) {
+      if (!isRecord(comp)) continue;
+      if (isDashboardType(comp.type)) dashboard = true;
+      if (typeof comp.id !== "string" || comp.id.length === 0 || seen.has(comp.id)) continue;
+      seen.add(comp.id);
+      ids.push(comp.id);
+    }
+  }
+  if (!dashboard || !firstUpdate || seen.has("root") || ids.length === 0) return;
+  const components = firstUpdate.components;
+  if (!Array.isArray(components)) return;
+  components.unshift({ id: "root", component: "Column", children: ids });
+}
+
 function normalizeMessage(msg: unknown, surfaceId: string | undefined): unknown {
   if (!isRecord(msg)) return msg;
   const key = envelopeKeyOf(msg);
   if (key === undefined) return msg;
-  if (msg.version === undefined) {
-    msg.version = "v0.9";
-  }
+  coerceVersion(msg);
   if (key === "updateComponents" && isRecord(msg.updateComponents)) {
     if (surfaceId !== undefined && typeof msg.updateComponents.surfaceId !== "string") {
       msg.updateComponents.surfaceId = surfaceId;
@@ -291,6 +434,9 @@ export function normalizeEmitMessages(raw: unknown): unknown {
   } catch {
     return raw;
   }
-  const surfaceId = inferSurfaceId(clone);
-  return clone.map((msg) => normalizeMessage(msg, surfaceId));
+  const lifted = clone.map((msg) => (isRecord(msg) ? liftTypedEnvelope(msg) : msg));
+  const surfaceId = inferSurfaceId(lifted) ?? "main";
+  const normalized = lifted.map((msg) => normalizeMessage(msg, surfaceId));
+  ensureRoot(normalized);
+  return normalized;
 }

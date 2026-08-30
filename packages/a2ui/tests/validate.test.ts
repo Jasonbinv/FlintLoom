@@ -583,6 +583,117 @@ describe("createA2uiService", () => {
         },
       ]),
     ).toThrow(/unknown node/);
+
+    const syntaxSnap = svc.validateEmit([
+      { version: "v0.9", createSurface: { surfaceId: "a", catalogId: "flintloom:a2ui:core" } },
+      {
+        version: "v0.9",
+        updateComponents: {
+          surfaceId: "a",
+          components: [
+            {
+              id: "root",
+              component: "Infographic",
+              syntax:
+                "infographic list-row-simple-horizontal-arrow\ndata\n  lists\n    - label A\n      desc Start\n",
+            },
+          ],
+        },
+      },
+    ]);
+    expect(syntaxSnap.wait).toBe(false);
+
+    const igFileSnap = svc.validateEmit([
+      { version: "v0.9", createSurface: { surfaceId: "g", catalogId: "flintloom:a2ui:core" } },
+      {
+        version: "v0.9",
+        updateComponents: {
+          surfaceId: "g",
+          components: [
+            { id: "root", component: "Infographic", file: "steps.infographic.ig" },
+          ],
+        },
+      },
+    ]);
+    expect(igFileSnap.wait).toBe(false);
+
+    expect(() =>
+      svc.validateEmit([
+        { version: "v0.9", createSurface: { surfaceId: "s", catalogId: "flintloom:a2ui:core" } },
+        {
+          version: "v0.9",
+          updateComponents: {
+            surfaceId: "s",
+            components: [
+              {
+                id: "root",
+                component: "Infographic",
+                syntax: "infographic x",
+                document: { nodes: [{ id: "a", label: "A", x: 0, y: 0 }], edges: [] },
+              },
+            ],
+          },
+        },
+      ]),
+    ).toThrow(/bad infographic/);
+    expect(() =>
+      svc.validateEmit([
+        { version: "v0.9", createSurface: { surfaceId: "s", catalogId: "flintloom:a2ui:core" } },
+        {
+          version: "v0.9",
+          updateComponents: {
+            surfaceId: "s",
+            components: [
+              {
+                id: "root",
+                component: "Infographic",
+                syntax: "infographic x\nicon https://cdn.example/a.svg\n",
+              },
+            ],
+          },
+        },
+      ]),
+    ).toThrow(/remote url/);
+  });
+
+  it("repairs version 0.9 and type-as-envelope keys", () => {
+    const svc = createA2uiService();
+    const snap = svc.validateEmit([
+      {
+        type: "createSurface",
+        version: "0.9",
+        createSurface: { surfaceId: "main", catalogId: "flintloom:a2ui:core" },
+      },
+      {
+        type: "updateComponents",
+        version: "0.9",
+        updateComponents: {
+          surfaceId: "main",
+          components: [{ id: "root", component: "Text", text: "ok" }],
+        },
+      },
+    ]);
+    expect(snap.wait).toBe(false);
+    expect(snap.messages[0]).toMatchObject({
+      version: "v0.9",
+      createSurface: { surfaceId: "main", catalogId: "flintloom:a2ui:core" },
+    });
+  });
+
+  it("synthesizes createSurface when type is the only envelope hint", () => {
+    const svc = createA2uiService();
+    const snap = svc.validateEmit([
+      { type: "createSurface", version: "0.9", kind: "heatmap" },
+      {
+        type: "updateComponents",
+        version: "0.9",
+        updateComponents: {
+          components: [{ id: "root", component: "Text", text: "hi" }],
+        },
+      },
+    ]);
+    expect(snap.surfaceId).toBe("main");
+    expect(snap.wait).toBe(false);
   });
 
   it("repairs missing version and surfaceId on updateComponents", () => {
@@ -869,5 +980,133 @@ describe("createA2uiService", () => {
       [15, 35, 55],
       [25, 50, 80],
     ]);
+  });
+
+  it("repairs a dashboard emit that uses createSurface.id and card/chart/table types", () => {
+    const svc = createA2uiService();
+    const snap = svc.validateEmit([
+      {
+        createSurface: {
+          id: "dashboard_surface",
+          layout: "vertical",
+          title: "实时销售数据看板",
+        },
+      },
+      {
+        updateComponents: {
+          components: [
+            {
+              content: {
+                color: "#10b981",
+                subValue: "+12.5% 较上月",
+                title: "总销售额",
+                value: "¥1,284,500",
+              },
+              id: "metric_total_sales",
+              type: "card",
+            },
+            {
+              content: {
+                color: "#3b82f6",
+                subValue: "-2.1% 较上月",
+                title: "订单总量",
+                value: "4,320",
+              },
+              id: "metric_orders",
+              type: "card",
+            },
+          ],
+          surfaceId: "dashboard_surface",
+        },
+      },
+      {
+        updateComponents: {
+          components: [
+            {
+              chartType: "line",
+              data: {
+                categories: ["1月", "2月", "3月", "4月", "5月", "6月"],
+                series: [{ data: [120, 150, 180, 140, 210, 250], name: "实际销售额" }],
+              },
+              id: "sales_chart",
+              type: "chart",
+            },
+          ],
+          surfaceId: "dashboard_surface",
+        },
+      },
+      {
+        updateComponents: {
+          components: [
+            {
+              data: {
+                headers: ["产品名称", "销量", "单价", "库存"],
+                rows: [
+                  ["智能手机 X1", "520", "¥3,999", "45"],
+                  ["无线耳机 Pro", "890", "¥799", "120"],
+                  ["平板电脑 Air", "310", "¥2,499", "12"],
+                  ["智能手表 S3", "450", "¥1,299", "88"],
+                ],
+              },
+              id: "product_table",
+              type: "table",
+            },
+          ],
+          surfaceId: "dashboard_surface",
+        },
+      },
+    ]);
+    expect(snap.surfaceId).toBe("dashboard_surface");
+    expect(snap.wait).toBe(false);
+    const create = snap.messages[0];
+    expect(create && "createSurface" in create && create.createSurface.surfaceId).toBe("dashboard_surface");
+    expect(create && "createSurface" in create && create.createSurface.catalogId).toBe("flintloom:a2ui:core");
+
+    const byId = new Map<string, { id: string; component: string; [key: string]: unknown }>();
+    for (const msg of snap.messages) {
+      if (!("updateComponents" in msg)) continue;
+      expect(msg.updateComponents.surfaceId).toBe("dashboard_surface");
+      for (const comp of msg.updateComponents.components) {
+        byId.set(comp.id, comp);
+      }
+    }
+    expect(byId.get("root")?.component).toBe("Column");
+    expect(byId.get("root")?.children).toEqual([
+      "metric_total_sales",
+      "metric_orders",
+      "sales_chart",
+      "product_table",
+    ]);
+    expect(byId.get("metric_total_sales")?.component).toBe("Text");
+    expect(byId.get("metric_total_sales")?.text).toContain("总销售额");
+    expect(byId.get("metric_total_sales")?.text).toContain("¥1,284,500");
+    expect(byId.get("sales_chart")?.component).toBe("Chart");
+    expect(byId.get("sales_chart")?.kind).toBe("line");
+    expect(byId.get("sales_chart")?.labels).toEqual(["1月", "2月", "3月", "4月", "5月", "6月"]);
+    expect(byId.get("sales_chart")?.values).toEqual([120, 150, 180, 140, 210, 250]);
+    expect(byId.get("product_table")?.component).toBe("DataTable");
+    expect(byId.get("product_table")?.headers).toEqual(["产品名称", "销量", "单价", "库存"]);
+    expect(byId.get("product_table")?.rows).toEqual([
+      ["智能手机 X1", "520", "¥3,999", "45"],
+      ["无线耳机 Pro", "890", "¥799", "120"],
+      ["平板电脑 Air", "310", "¥2,499", "12"],
+      ["智能手表 S3", "450", "¥1,299", "88"],
+    ]);
+  });
+
+  it("still rejects envelopes that name two different surfaces", () => {
+    const svc = createA2uiService();
+    expect(() =>
+      svc.validateEmit([
+        { version: "v0.9", createSurface: { surfaceId: "main", catalogId: "flintloom:a2ui:core" } },
+        {
+          version: "v0.9",
+          updateComponents: {
+            surfaceId: "other",
+            components: [{ id: "root", component: "Text", text: "hi" }],
+          },
+        },
+      ]),
+    ).toThrow(/mixed surface/);
   });
 });

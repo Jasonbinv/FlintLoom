@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@antv/infographic": "^0.2.20",
     "@corbe30/fortune-excel": "^2.3.3",
     "@flintloom/host": "workspace:*",
     "@flintloom/infographic": "workspace:*",

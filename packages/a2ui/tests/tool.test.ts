@@ -87,4 +87,28 @@ describe("a2ui_emit", () => {
     const snap = svc.takeEmit(parsed.emitId);
     expect(snap?.messages.some((msg) => "updateComponents" in msg && msg.updateComponents.components.some((c) => c.id === "chart" && c.component === "Chart"))).toBe(true);
   });
+
+  it("accepts a bare AntV syntax argument without envelopes", async () => {
+    const svc = createA2uiService();
+    const tool = createA2uiEmitTool(svc);
+    const raw = await tool.execute(
+      {
+        syntax:
+          "infographic list-row-simple-horizontal-arrow\ndata\n  lists\n    - label A\n      desc Start\n    - label B\n      desc Next\n    - label C\n      desc Done\n",
+      },
+      exec,
+    );
+    const parsed = JSON.parse(raw) as { status: string; emitId: string; wait: boolean };
+    expect(parsed.status).toBe("ok");
+    expect(parsed.wait).toBe(false);
+    const snap = svc.takeEmit(parsed.emitId);
+    const update = snap?.messages.find((msg) => "updateComponents" in msg);
+    expect(
+      update &&
+        "updateComponents" in update &&
+        update.updateComponents.components.some(
+          (c) => c.component === "Infographic" && typeof c.syntax === "string",
+        ),
+    ).toBe(true);
+  });
 });

@@ -33,6 +33,7 @@ const EXT_MAP: Record<string, FileIconInfo> = {
   avi: { glyph: "▶", color: "#db2777", bg: "#fce7f3" },
   mkv: { glyph: "▶", color: "#db2777", bg: "#fce7f3" },
   svg: { glyph: "◇", color: "#7c3aed", bg: "#ede9fe" },
+  ig: { glyph: "IG", color: "#7c3aed", bg: "#ede9fe" },
   yml: { glyph: "Y", color: "#64748b", bg: "#f1f5f9" },
   yaml: { glyph: "Y", color: "#64748b", bg: "#f1f5f9" },
   txt: { glyph: "T", color: "#64748b", bg: "#f1f5f9" },

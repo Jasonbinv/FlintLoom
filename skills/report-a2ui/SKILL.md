@@ -10,8 +10,8 @@ Use this skill whenever the user asks for an **interactive card**, **confirm bef
 ## Before you emit
 
 1. Call `skill` with `action: read`, `id: report-a2ui` if you need this checklist again.
-2. Call tool **`a2ui_emit`** with argument **`messages`** (array of envelopes). Never invent keys like `type`, `input`, `fields`, or `form`.
-3. If emit returns `failed: bad envelope`, fix the JSON shape below — **do not** tell the user the environment lacks UI. The workbench supports A2UI; the payload was wrong.
+2. Call tool **`a2ui_emit`** with argument **`messages`** (array of envelopes). For an AntV timeline/step infographic, pass **only** `syntax` instead (read skill `antv-infographic`). Never invent keys like `type`, `input`, `fields`, or `form`.
+3. If emit returns `failed: bad envelope`, fix the JSON shape below — **do not** tell the user the environment lacks UI. The workbench supports A2UI; the payload was wrong. Use `"version": "v0.9"` (not `"0.9"`).
 4. **Never fuse Chart into Text.** Close the Text object, then add a separate `{ "id", "component": "Chart", "kind", "labels", "values" }`. Do not put `kind` / `labels` / `values` on a Text node. Each `messages[]` item needs its own `"version": "v0.9"` (not only on the tool args).
 
 ## Envelope rules (A2UI v0.9)
@@ -37,6 +37,7 @@ There is **no** `Input`, `TextField`, or free-form multi-field form. Use `Text` 
 
 - Surface **waits** (user must click; send disabled) when the tree includes **`Button`** or **`ChoicePicker`** without a separate confirm button (picker-only auto-submits on change).
 - **`DataTable`**, **`Chart`**, **`Infographic`**, plain **`Text`/`Markdown`** without buttons → display only, no wait.
+- **`Infographic`**: box-line uses `document` / `file: "*.infographic.json"`; AntV templates use `syntax` or `file: "*.infographic.ig"` (read skill `antv-infographic`). Never mix those fields.
 
 After user clicks a **Button**, you receive an action (e.g. `confirm`) on the same turn — then proceed (e.g. generate the report).
 
