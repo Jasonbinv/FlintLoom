@@ -18,8 +18,12 @@ import { EMPTY_PDF } from "./helpers/pdf.ts";
 import { writeHelloDocx } from "./helpers/office.ts";
 import { parse } from "../src/parse.ts";
 
-function createExec(workspaceRoot: string, signal = new AbortController().signal) {
-  return { workspaceRoot, signal, channel: "cli" };
+function createExec(
+  workspaceRoot: string,
+  signal = new AbortController().signal,
+  generationDir?: string,
+) {
+  return { workspaceRoot, signal, channel: "cli", generationDir };
 }
 
 describe("doc tools", () => {
@@ -96,6 +100,15 @@ describe("doc tools", () => {
     expect(await tool.execute({ source: "nope.md", out: "a.pdf" }, exec)).toBe(
       "failed: not found",
     );
+    expect(
+      await tool.execute(
+        {
+          source: "# 示例文档\n\n这是正文，不是路径。",
+          out: "example_word.docx",
+        },
+        exec,
+      ),
+    ).toBe("failed: source must be a file path");
     expect(await tool.execute({ source: "hello.md", out: "missing/a.pdf" }, exec)).toBe(
       "failed: missing parent",
     );
@@ -119,6 +132,39 @@ describe("doc tools", () => {
     expect(
       await tool.execute({ source: "a.md", out: "a.pdf" }, createExec(workspace, ac.signal)),
     ).toBe("aborted");
+  });
+
+  it("places generated files into the session generation dir", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "flintloom-gtool-gen-"));
+    const generationDir = "ai_generation/2026-08-30_word示例";
+    mkdirSync(join(workspace, generationDir), { recursive: true });
+    writeFileSync(join(workspace, generationDir, "hello.md"), "# Hello\n");
+    const tool = createDocGenerateTool();
+    const exec = createExec(workspace, new AbortController().signal, generationDir);
+    const docx = JSON.parse(
+      await tool.execute({ source: "hello.md", out: "note.docx" }, exec),
+    ) as { source: string; out: string };
+    expect(docx.source).toBe(`${generationDir}/hello.md`);
+    expect(docx.out).toBe(`${generationDir}/note.docx`);
+    expect(existsSync(join(workspace, generationDir, "note.docx"))).toBe(true);
+    const pptx = JSON.parse(
+      await tool.execute({ source: "hello.md", out: "slide.pptx" }, exec),
+    ) as { out: string };
+    expect(pptx.out).toBe(`${generationDir}/slide.pptx`);
+    expect(existsSync(join(workspace, generationDir, "slide.pptx"))).toBe(true);
+  });
+
+  it("mkdirs the generation dir when generating into it", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "flintloom-gtool-mkdir-"));
+    writeFileSync(join(workspace, "hello.md"), "# Hello\n");
+    const generationDir = "ai_generation/2026-08-30_word示例";
+    const tool = createDocGenerateTool();
+    const exec = createExec(workspace, new AbortController().signal, generationDir);
+    const raw = JSON.parse(
+      await tool.execute({ source: "hello.md", out: "note.docx" }, exec),
+    ) as { out: string };
+    expect(raw.out).toBe(`${generationDir}/note.docx`);
+    expect(existsSync(join(workspace, generationDir, "note.docx"))).toBe(true);
   });
 
   it("converts docx to md with ordered json", async () => {
@@ -205,6 +251,19 @@ describe("doc tools", () => {
     expect(
       await tool.execute({ source: "a.md", out: "a.pdf" }, createExec(workspace, ac.signal)),
     ).toBe("aborted");
+  });
+
+  it("places converted files into the session generation dir", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "flintloom-ctool-gen-"));
+    writeFileSync(join(workspace, "hello.md"), "# Hello\n");
+    const generationDir = "ai_generation/2026-08-30_word示例";
+    const tool = createDocConvertTool();
+    const exec = createExec(workspace, new AbortController().signal, generationDir);
+    const raw = JSON.parse(
+      await tool.execute({ source: "hello.md", out: "note.docx" }, exec),
+    ) as { out: string };
+    expect(raw.out).toBe(`${generationDir}/note.docx`);
+    expect(existsSync(join(workspace, generationDir, "note.docx"))).toBe(true);
   });
 
   it("edits markdown with ordered json", async () => {

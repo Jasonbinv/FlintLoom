@@ -100,10 +100,28 @@ function runCommand(
   });
 }
 
+function blockedAiGenerationShell(command: string): string | undefined {
+  const normalized = command.replaceAll("\\", "/");
+  if (!/ai_generation/i.test(normalized)) return undefined;
+  const lower = normalized.toLowerCase();
+  if (/(?:^|[;&|]\s*)(?:mkdir|md)(?:\s|$)/.test(lower) || /\bnew-item\b/.test(lower)) {
+    return (
+      "Do not create ai_generation folders with shell. Use fs write with a simple filename like ket.md; the session folder is created automatically. Then call doc_generate for docx/pptx."
+    );
+  }
+  if (/[>]/.test(normalized) || /\b(set-content|out-file|add-content)\b/.test(lower)) {
+    return (
+      "Do not write into ai_generation with shell. Use fs write with a simple filename, then call doc_generate."
+    );
+  }
+  return undefined;
+}
+
 export function createShellTool(): ToolDefinition {
   return {
     name: "shell",
-    description: "Run a shell command in the workspace directory.",
+    description:
+      "Run a shell command in the workspace directory. Do not use mkdir to create ai_generation folders; use fs write, which creates directories.",
     parameters: {
       type: "object",
       properties: {
@@ -113,6 +131,10 @@ export function createShellTool(): ToolDefinition {
     },
     async execute(args, exec) {
       const command = String(args.command);
+      const blocked = blockedAiGenerationShell(command);
+      if (blocked !== undefined) {
+        return blocked;
+      }
       const { code, output, timedOut } = await runCommand(
         command,
         exec.workspaceRoot,

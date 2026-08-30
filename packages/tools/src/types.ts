@@ -23,4 +23,5 @@ export interface ToolExec {
   channel: string;
   guardBypass?: boolean;
   webSearch?: boolean;
+  generationDir?: string;
 }

@@ -5,12 +5,15 @@ import {
   type ModelRegistry,
 } from "@flintloom/models";
 import { Session, type SessionEvent, type UserImage } from "@flintloom/session";
-import { isGuardAskError, type ToolRegistry } from "@flintloom/tools";
+import { isGuardAskError, type ToolExec, type ToolRegistry } from "@flintloom/tools";
+import { generationDirOf } from "./generationDir.ts";
 
 const MAX_STEPS = 8;
 
-function conversationSystemMessage(webSearch: boolean): string {
-  const base = "You are FlintLoom, a real agent. Use tools to work in the workspace.";
+function conversationSystemMessage(webSearch: boolean, generationDir: string): string {
+  let base =
+    "You are FlintLoom, a real agent. Use tools to work in the workspace." +
+    `\nThis chat's output folder is ${generationDir}/. Write new files with fs using simple names like ket.md and ket.docx. Do not invent dates or folder names. Do not use shell mkdir; writing a file creates the folder. Then call doc_generate with source and out as those same filenames.`;
   if (!webSearch) return base;
   return `${base}\nYou may call web_search when you need current or external information. Do not search for questions you can answer from the workspace or your knowledge.`;
 }
@@ -96,6 +99,26 @@ type TurnGuardStats = {
   ask: number;
   suspicious: number;
 };
+
+function toolExec(
+  input: {
+    session: Session;
+    workspaceRoot: string;
+    signal: AbortSignal;
+    channel: string;
+    webSearch?: boolean;
+  },
+  extra?: { guardBypass?: boolean },
+): ToolExec {
+  return {
+    workspaceRoot: input.workspaceRoot,
+    signal: input.signal,
+    channel: input.channel,
+    webSearch: input.webSearch === true,
+    generationDir: generationDirOf(input.session),
+    ...extra,
+  };
+}
 
 function emptyGuardStats(): TurnGuardStats {
   return { allow: 0, deny: 0, ask: 0, suspicious: 0 };
@@ -409,12 +432,7 @@ async function executeToolCall(
   const toolStartedAt = Date.now();
   let resultText: string;
   try {
-    resultText = await tools.execute(call.name, parseToolArgs(call.args), {
-      workspaceRoot,
-      signal,
-      channel,
-      webSearch: input.webSearch === true,
-    });
+    resultText = await tools.execute(call.name, parseToolArgs(call.args), toolExec(input));
   } catch (err) {
     if (signal.aborted) {
       return { turnId, status: "cancelled" } as RunTurnResult;
@@ -577,7 +595,7 @@ async function runStepIterations(input: RunStepsInput): Promise<RunTurnResult> {
     }
 
     const messages = [
-      { role: "system" as const, content: conversationSystemMessage(input.webSearch === true) },
+      { role: "system" as const, content: conversationSystemMessage(input.webSearch === true, generationDirOf(input.session)) },
       ...session.deriveMessages(),
     ];
 
@@ -750,13 +768,20 @@ export async function continueGuardTurn(
   if (decision === "deny") {
     resultText = `guard denied: ${call.name}`;
   } else {
-    resultText = await tools.execute(call.name, parseToolArgs(call.args), {
-      workspaceRoot: input.workspaceRoot,
-      signal: input.signal,
-      channel: input.channel,
-      guardBypass: true,
-      webSearch,
-    });
+    resultText = await tools.execute(
+      call.name,
+      parseToolArgs(call.args),
+      toolExec(
+        {
+          session,
+          workspaceRoot: input.workspaceRoot,
+          signal: input.signal,
+          channel: input.channel,
+          webSearch,
+        },
+        { guardBypass: true },
+      ),
+    );
     await maybeAppendGuardSteward(
       input.ctx,
       session,

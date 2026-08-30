@@ -2,7 +2,9 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Context, FlintPlugin } from "@flintloom/kernel";
 import {
+  preferExistingGeneratedRel,
   resolveInside,
+  routeGeneratedWriteRel,
   type ToolDefinition,
   type ToolRegistry,
 } from "@flintloom/tools";
@@ -12,7 +14,8 @@ const READ_LIMIT = 200_000;
 export function createFsTool(): ToolDefinition {
   return {
     name: "fs",
-    description: "Read, write, or list files within the workspace.",
+    description:
+      "Read, write, or list files within the workspace. For this chat, write simple filenames like ket.md; the system places them in the session folder. Writing a file creates that folder; do not use shell mkdir and do not invent dates. Do not dump generated documents in the workspace root or into type folders like docx/ or PPT/. Do not move existing user files such as README.md.",
     parameters: {
       type: "object",
       properties: {
@@ -25,7 +28,11 @@ export function createFsTool(): ToolDefinition {
     async execute(args, exec) {
       const action = String(args.action);
       const inputPath = String(args.path);
-      const resolvedPath = resolveInside(exec.workspaceRoot, inputPath);
+      const routedPath =
+        action === "write"
+          ? routeGeneratedWriteRel(inputPath, exec.workspaceRoot, exec.generationDir)
+          : preferExistingGeneratedRel(inputPath, exec.workspaceRoot, exec.generationDir);
+      const resolvedPath = resolveInside(exec.workspaceRoot, routedPath);
 
       switch (action) {
         case "read": {
@@ -41,7 +48,7 @@ export function createFsTool(): ToolDefinition {
         case "write": {
           await mkdir(path.dirname(resolvedPath), { recursive: true });
           await writeFile(resolvedPath, String(args.content ?? ""), "utf8");
-          return `Wrote ${inputPath}`;
+          return `Wrote ${routedPath}`;
         }
         case "list": {
           const entries = await readdir(resolvedPath);

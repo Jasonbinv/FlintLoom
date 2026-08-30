@@ -1,9 +1,16 @@
 import { realpathSync } from "node:fs";
 import { dirname, relative } from "node:path";
-import { stat } from "node:fs/promises";
+import { mkdir, stat } from "node:fs/promises";
 import type { KnowledgeService } from "@flintloom/knowledge";
 import type { ModelRegistry } from "@flintloom/models";
-import { isHiddenRelPath, resolveInside, type ToolDefinition } from "@flintloom/tools";
+import {
+  isHiddenRelPath,
+  preferExistingGeneratedRel,
+  resolveInside,
+  routeGeneratedWriteRel,
+  type ToolDefinition,
+  type ToolExec,
+} from "@flintloom/tools";
 import { compareDocuments } from "./compare.ts";
 import { convertDocument } from "./convert.ts";
 import { editMarkdown } from "./edit.ts";
@@ -39,6 +46,52 @@ const FAIL_REASONS = new Set([
   "encrypted",
   "unsupported type",
 ]);
+
+function looksLikeInlineSource(source: string): boolean {
+  if (source.includes("\n") || source.includes("\r")) return true;
+  if (source.length > 260) return true;
+  return /^\s*#\s/.test(source);
+}
+
+async function routedDocumentPaths(
+  source: string,
+  out: string,
+  exec: ToolExec,
+): Promise<
+  | { absSource: string; absOut: string; sourceRel: string; outRel: string }
+  | "failed: hidden"
+> {
+  const sourcePath = preferExistingGeneratedRel(
+    source,
+    exec.workspaceRoot,
+    exec.generationDir,
+  );
+  const outPath = routeGeneratedWriteRel(out, exec.workspaceRoot, exec.generationDir);
+  const absSource = resolveInside(exec.workspaceRoot, sourcePath);
+  const absOut = resolveInside(exec.workspaceRoot, outPath);
+  const realRoot = realpathSync.native(exec.workspaceRoot);
+  const sourceRel = relative(realRoot, absSource).replaceAll("\\", "/");
+  const outRel = relative(realRoot, absOut).replaceAll("\\", "/");
+  if (
+    isHiddenRelPath(source) ||
+    isHiddenRelPath(out) ||
+    isHiddenRelPath(sourcePath) ||
+    isHiddenRelPath(outPath) ||
+    isHiddenRelPath(sourceRel) ||
+    isHiddenRelPath(outRel)
+  ) {
+    return "failed: hidden";
+  }
+  return { absSource, absOut, sourceRel, outRel };
+}
+
+function shouldMkdirGenerationParent(outRel: string, generationDir?: string): boolean {
+  if (outRel.startsWith("ai_generation/")) return true;
+  return (
+    generationDir !== undefined &&
+    (outRel === generationDir || outRel.startsWith(`${generationDir}/`))
+  );
+}
 
 function strArg(args: Record<string, unknown>, key: string): string | undefined {
   const value = args[key];
@@ -184,12 +237,19 @@ export function createDocGenerateTool(): ToolDefinition {
   return {
     name: "doc_generate",
     description:
-      "Write a workspace markdown or document JSON file to md, html, docx, pdf, xlsx, or pptx. Pass source and out; format is the out extension. Markdown with fs, or JSON with { blocks: [...] } (same block types as generate IR) or { headers, rows } for a single table. Do not use this to parse binaries.",
+      "Generate md, html, docx, pdf, xlsx, or pptx from an EXISTING workspace file. source is a relative path like ket.md or report.json — never the file contents. First fs-write the markdown (or JSON), then pass that path plus out. Use simple filenames; do not invent dates or mkdir. Missing folders are created. Format is the out extension.",
     parameters: {
       type: "object",
       properties: {
-        source: { type: "string" },
-        out: { type: "string" },
+        source: {
+          type: "string",
+          description:
+            "Workspace-relative path to an existing .md or document .json file. Do not pass markdown text here.",
+        },
+        out: {
+          type: "string",
+          description: "Workspace-relative output path. Format is taken from the extension.",
+        },
       },
       required: ["source", "out"],
     },
@@ -201,23 +261,18 @@ export function createDocGenerateTool(): ToolDefinition {
       if (source === undefined) {
         return "failed: missing source";
       }
+      if (looksLikeInlineSource(source)) {
+        return "failed: source must be a file path";
+      }
       const out = strArg(args, "out");
       if (out === undefined) {
         return "failed: missing out";
       }
-      const absSource = resolveInside(exec.workspaceRoot, source);
-      const absOut = resolveInside(exec.workspaceRoot, out);
-      const realRoot = realpathSync.native(exec.workspaceRoot);
-      const sourceRel = relative(realRoot, absSource).replaceAll("\\", "/");
-      const outRel = relative(realRoot, absOut).replaceAll("\\", "/");
-      if (
-        isHiddenRelPath(source) ||
-        isHiddenRelPath(out) ||
-        isHiddenRelPath(sourceRel) ||
-        isHiddenRelPath(outRel)
-      ) {
-        return "failed: hidden";
+      const routed = await routedDocumentPaths(source, out, exec);
+      if (routed === "failed: hidden") {
+        return routed;
       }
+      const { absSource, absOut, sourceRel, outRel } = routed;
       const format = formatFromOutRelPath(outRel);
       if (format === undefined) {
         return "failed: bad out";
@@ -237,16 +292,20 @@ export function createDocGenerateTool(): ToolDefinition {
       if (sourceStat.size > GENERATE_MAX_BYTES) {
         return "failed: too large";
       }
-      try {
-        const parent = await stat(dirname(absOut));
-        if (!parent.isDirectory()) {
-          return "failed: missing parent";
+      if (shouldMkdirGenerationParent(outRel, exec.generationDir)) {
+        await mkdir(dirname(absOut), { recursive: true });
+      } else {
+        try {
+          const parent = await stat(dirname(absOut));
+          if (!parent.isDirectory()) {
+            return "failed: missing parent";
+          }
+        } catch (err) {
+          if (isNotFound(err)) {
+            return "failed: missing parent";
+          }
+          return failFromError(err);
         }
-      } catch (err) {
-        if (isNotFound(err)) {
-          return "failed: missing parent";
-        }
-        return failFromError(err);
       }
       try {
         const outStat = await stat(absOut);
@@ -475,7 +534,7 @@ export function createDocConvertTool(): ToolDefinition {
   return {
     name: "doc_convert",
     description:
-      "Convert a workspace document (md, html, pdf, docx, pptx, or xlsx) to md, html, docx, pdf, xlsx, or pptx. Pass source and out; format is the out extension. Do not use this to generate from scratch; write markdown first or use doc_generate for md sources if you prefer.",
+      "Convert a workspace document (md, html, pdf, docx, pptx, or xlsx) to md, html, docx, pdf, xlsx, or pptx. Pass source and out as workspace paths; format is the out extension. Use simple filenames; do not invent dates or mkdir. Do not use this to generate from scratch; write markdown first or use doc_generate for md sources if you prefer.",
     parameters: {
       type: "object",
       properties: {
@@ -496,19 +555,11 @@ export function createDocConvertTool(): ToolDefinition {
       if (out === undefined) {
         return "failed: missing out";
       }
-      const absSource = resolveInside(exec.workspaceRoot, source);
-      const absOut = resolveInside(exec.workspaceRoot, out);
-      const realRoot = realpathSync.native(exec.workspaceRoot);
-      const sourceRel = relative(realRoot, absSource).replaceAll("\\", "/");
-      const outRel = relative(realRoot, absOut).replaceAll("\\", "/");
-      if (
-        isHiddenRelPath(source) ||
-        isHiddenRelPath(out) ||
-        isHiddenRelPath(sourceRel) ||
-        isHiddenRelPath(outRel)
-      ) {
-        return "failed: hidden";
+      const routed = await routedDocumentPaths(source, out, exec);
+      if (routed === "failed: hidden") {
+        return routed;
       }
+      const { absSource, absOut, sourceRel, outRel } = routed;
       const format = formatFromOutRelPath(outRel);
       if (format === undefined) {
         return "failed: bad out";
@@ -528,16 +579,20 @@ export function createDocConvertTool(): ToolDefinition {
       if (sourceStat.size > GENERATE_MAX_BYTES) {
         return "failed: too large";
       }
-      try {
-        const parent = await stat(dirname(absOut));
-        if (!parent.isDirectory()) {
-          return "failed: missing parent";
+      if (shouldMkdirGenerationParent(outRel, exec.generationDir)) {
+        await mkdir(dirname(absOut), { recursive: true });
+      } else {
+        try {
+          const parent = await stat(dirname(absOut));
+          if (!parent.isDirectory()) {
+            return "failed: missing parent";
+          }
+        } catch (err) {
+          if (isNotFound(err)) {
+            return "failed: missing parent";
+          }
+          return failFromError(err);
         }
-      } catch (err) {
-        if (isNotFound(err)) {
-          return "failed: missing parent";
-        }
-        return failFromError(err);
       }
       try {
         const outStat = await stat(absOut);
