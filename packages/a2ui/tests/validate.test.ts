@@ -45,7 +45,6 @@ describe("createA2uiService", () => {
     expect(() =>
       svc.validateEmit([
         { version: "v0.9", createSurface: { surfaceId: "s", catalogId: "flintloom:a2ui:core" } },
-        { version: "v0.9", updateComponents: { surfaceId: "s", components: [{ id: "x", component: "Text", text: "hi" }] } },
       ]),
     ).toThrow(/missing root/);
     expect(() =>
@@ -603,6 +602,33 @@ describe("createA2uiService", () => {
     ]);
     expect(syntaxSnap.wait).toBe(false);
 
+    const stepListSnap = svc.validateEmit([
+      { version: "v0.9", createSurface: { surfaceId: "s", catalogId: "flintloom:a2ui:core" } },
+      {
+        version: "v0.9",
+        updateComponents: {
+          surfaceId: "s",
+          components: [
+            {
+              id: "root",
+              component: "Infographic",
+              syntax: "infographic stepList\nstep 1: 接收指令\n理解意图\nstep 2: 任务规划\n拆解步骤\n",
+            },
+          ],
+        },
+      },
+    ]);
+    const stepListUpdate = stepListSnap.messages.find((msg) => "updateComponents" in msg);
+    const stepListRoot =
+      stepListUpdate && "updateComponents" in stepListUpdate
+        ? stepListUpdate.updateComponents.components.find((c) => c.id === "root")
+        : undefined;
+    expect(stepListRoot && "syntax" in stepListRoot ? stepListRoot.syntax : "").toContain(
+      "list-column-simple-vertical-arrow",
+    );
+    expect(stepListRoot && "syntax" in stepListRoot ? stepListRoot.syntax : "").toContain("data");
+    expect(stepListRoot && "syntax" in stepListRoot ? stepListRoot.syntax : "").toContain("接收指令");
+
     const igFileSnap = svc.validateEmit([
       { version: "v0.9", createSurface: { surfaceId: "g", catalogId: "flintloom:a2ui:core" } },
       {
@@ -1108,5 +1134,71 @@ describe("createA2uiService", () => {
         },
       ]),
     ).toThrow(/mixed surface/);
+  });
+
+  it("repairs typed envelopes that put id and components on the message root", () => {
+    const svc = createA2uiService();
+    const snap = svc.validateEmit([
+      {
+        type: "createSurface",
+        id: "dashboard_surface",
+        title: "业务实时监控看板",
+      },
+      {
+        type: "updateComponents",
+        components: [
+          {
+            id: "metric_sales",
+            type: "card",
+            content: { title: "今日销售额", value: "¥128,400", subValue: "+8%" },
+          },
+          {
+            id: "metric_users",
+            type: "card",
+            content: { title: "活跃用户", value: "3,240" },
+          },
+          {
+            id: "metric_cvr",
+            type: "card",
+            title: "转化率",
+            value: "3.8%",
+          },
+        ],
+      },
+    ]);
+    expect(snap.surfaceId).toBe("dashboard_surface");
+    expect(snap.wait).toBe(false);
+    const byId = new Map<string, { id: string; component: string; [key: string]: unknown }>();
+    for (const msg of snap.messages) {
+      if (!("updateComponents" in msg)) continue;
+      for (const comp of msg.updateComponents.components) {
+        byId.set(comp.id, comp);
+      }
+    }
+    expect(byId.get("root")?.component).toBe("Column");
+    expect(byId.get("root")?.children).toEqual(["metric_sales", "metric_users", "metric_cvr"]);
+    expect(byId.get("metric_sales")?.component).toBe("Text");
+    expect(String(byId.get("metric_sales")?.text)).toContain("今日销售额");
+    expect(byId.get("metric_cvr")?.component).toBe("Text");
+    expect(String(byId.get("metric_cvr")?.text)).toContain("转化率");
+  });
+
+  it("wraps loose Text components in a root Column", () => {
+    const svc = createA2uiService();
+    const snap = svc.validateEmit([
+      { version: "v0.9", createSurface: { surfaceId: "s", catalogId: "flintloom:a2ui:core" } },
+      {
+        version: "v0.9",
+        updateComponents: {
+          surfaceId: "s",
+          components: [{ id: "x", component: "Text", text: "hi" }],
+        },
+      },
+    ]);
+    const update = snap.messages.find((msg) => "updateComponents" in msg);
+    if (!update || !("updateComponents" in update)) throw new Error("expected update");
+    const byId = new Map(update.updateComponents.components.map((c) => [c.id, c]));
+    expect(byId.get("root")?.component).toBe("Column");
+    expect(byId.get("root")?.children).toEqual(["x"]);
   });
 });

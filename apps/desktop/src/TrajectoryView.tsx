@@ -39,7 +39,10 @@ export function TrajectoryView({
   if (records.length === 0) {
     return (
       <div className="trajectory-root" data-conversation-composer-overlay="">
-        <p className="trajectory-empty">尚无轨迹</p>
+        <div className="trajectory-empty">
+          <p className="trajectory-empty-title">尚无轨迹</p>
+          <p className="trajectory-empty-hint">发一条消息后，这里会按步骤列出思考与工具调用</p>
+        </div>
       </div>
     );
   }

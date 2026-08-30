@@ -21,14 +21,14 @@ export function createA2uiEmitTool(svc: A2uiService): ToolDefinition {
   return {
     name: "a2ui_emit",
     description:
-      "Emit A2UI UI. For an AntV timeline/list/compare infographic, pass ONLY syntax (string starting with 'infographic <template>'), no messages. For cards/tables/charts, pass messages[]: each item must be version v0.9 (not 0.9) and exactly one of createSurface, updateComponents, updateDataModel, or deleteSurface. Never put type/kind on the envelope. Chart is its own component. Infographic syntax must not include http:// or https://.",
+      "Emit A2UI UI. For an AntV infographic, pass ONLY syntax (string starting with 'infographic <template>'), no messages. Preferred templates: list-column-simple-vertical-arrow, list-row-simple-horizontal-arrow, compare-binary-horizontal-simple-vs, list-grid-compact-card, sequence-steps-simple, hierarchy-mindmap-branch-gradient-capsule-item. Aliases stepList/timeline/compare/cards/mindmap are repaired. For a mind map / 思维导图, use mindmap — never stepList (that is a flowchart). SWOT and relation networks are not auto-drawn from prose. For cards/tables/charts, pass messages[]: each item must be version v0.9 (not 0.9) and exactly one of createSurface, updateComponents, updateDataModel, or deleteSurface. Never put type/kind on the envelope. Infographic syntax must not include http:// or https://.",
     parameters: {
       type: "object",
       properties: {
         syntax: {
           type: "string",
           description:
-            "AntV infographic DSL. First line: infographic <template>. Prefer this instead of messages for timelines and step lists.",
+            "AntV infographic DSL. First line: infographic <template>. Official body uses data / lists|compares|root / - label / desc / children (space, not label:). Invented headings, bullets, and YAML root/label:/children: are repaired. Use mindmap for 思维导图, not stepList.",
         },
         messages: {
           type: "array",

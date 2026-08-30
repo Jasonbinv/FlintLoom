@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { INFOGRAPHIC_MAX_BYTES, parseAntvSyntax } from "../src/syntax.ts";
+import { INFOGRAPHIC_MAX_BYTES, parseAntvSyntax, repairAntvSyntax } from "../src/syntax.ts";
 
 const SAMPLE = `infographic list-row-simple-horizontal-arrow
 data
@@ -22,5 +22,171 @@ describe("parseAntvSyntax", () => {
     expect(() => parseAntvSyntax(`infographic x\n${"a".repeat(INFOGRAPHIC_MAX_BYTES)}`)).toThrow(
       /too large/,
     );
+  });
+});
+
+describe("repairAntvSyntax", () => {
+  it("leaves a valid list template unchanged", () => {
+    expect(repairAntvSyntax(SAMPLE).trim()).toBe(SAMPLE.trim());
+  });
+
+  it("rewrites invented stepList syntax into a list template with data.lists", () => {
+    const repaired = repairAntvSyntax(`infographic stepList
+step 1: 接收指令
+理解用户输入的自然语言意图
+step 2: 任务规划
+将意图转化为可执行计划
+step 3: 执行与交付
+完成输出
+`);
+    expect(repaired).toMatch(/^infographic list-column-simple-vertical-arrow\n/);
+    expect(repaired).toContain("data\n  lists");
+    expect(repaired).toContain("- label 接收指令");
+    expect(repaired).toContain("desc 理解用户输入的自然语言意图");
+    expect(repaired).toContain("- label 任务规划");
+    expect(repaired).toContain("- label 执行与交付");
+  });
+
+  it("rewrites timeline + 2024 Q1 headings into list data", () => {
+    const repaired = repairAntvSyntax(`infographic timeline
+2024 Q1: 概念验证与原型设计
+完成用户调研并输出交互原型
+2024 Q2: 核心开发与 MVP 构建
+打通主链路并完成内部试用
+2024 Q3: 系统集成与 Beta 测试
+联调外部系统并收集反馈
+2024 Q4: 全面发布与规模化运营
+稳定运行并启动增长
+`);
+    expect(repaired).toMatch(/^infographic list-row-simple-horizontal-arrow\n/);
+    expect(repaired).toContain("data\n  lists");
+    expect(repaired).toContain("- label 2024 Q1");
+    expect(repaired).toContain("desc 概念验证与原型设计");
+    expect(repaired).toContain("- label 2024 Q2");
+    expect(repaired).toContain("- label 2024 Q4");
+    expect(repaired).toContain("规模化运营");
+  });
+
+  it("rewrites compare + titled bullet columns into data.compares", () => {
+    const repaired = repairAntvSyntax(`infographic compare
+传统开发模式
+- 依赖手动编写代码与单元测试
+- 周期长，反馈循环慢
+- 资源密集型，人工成本高
+
+AI 驱动开发模式
+- 自动化生成代码与自然语言驱动
+- 实时迭代，反馈即时
+- 智能化辅助，大幅提升研发效能
+`);
+    expect(repaired).toMatch(/^infographic compare-binary-horizontal-simple-vs\n/);
+    expect(repaired).toContain("data\n  compares");
+    expect(repaired).toContain("- label 传统开发模式");
+    expect(repaired).toContain("依赖手动编写代码与单元测试");
+    expect(repaired).toContain("- label AI 驱动开发模式");
+    expect(repaired).toContain("智能化辅助");
+  });
+
+  it("rewrites titled stepList sections with bullets into data.lists", () => {
+    const repaired = repairAntvSyntax(`infographic stepList
+需求评审阶段
+- 检查用户痛点是否明确
+- 评估技术实现难度
+
+逻辑分支：技术可行性
+- 高可行性 -> 进入开发计划
+- 中可行性 -> 优化方案并重新评审
+- 低可行性 -> 需求暂缓或重新定义
+`);
+    expect(repaired).toMatch(/^infographic list-column-simple-vertical-arrow\n/);
+    expect(repaired).toContain("data\n  lists");
+    expect(repaired).toContain("- label 需求评审阶段");
+    expect(repaired).toContain("检查用户痛点是否明确");
+    expect(repaired).toContain("- label 逻辑分支：技术可行性");
+    expect(repaired).toContain("进入开发计划");
+  });
+
+  it("rewrites mindmap headings into a hierarchy root with children", () => {
+    const repaired = repairAntvSyntax(`infographic mindmap
+AI 学习路径
+Step 1: 数学与编程基础
+线性代数、微积分、Python
+Step 2: 机器学习核心
+监督学习、无监督学习
+Step 3: 深度学习进阶
+神经网络、Transformer
+`);
+    expect(repaired).toMatch(/^infographic hierarchy-mindmap-branch-gradient-capsule-item\n/);
+    expect(repaired).toContain("data\n  root");
+    expect(repaired).toContain("label AI 学习路径");
+    expect(repaired).toContain("- label 数学与编程基础");
+    expect(repaired).toContain("- label 线性代数");
+    expect(repaired).toContain("- label 机器学习核心");
+    expect(repaired).toContain("- label 深度学习进阶");
+    expect(repaired).not.toContain("data\n  lists");
+  });
+
+  it("rewrites YAML-style root/label:/children: mindmap into official data.root", () => {
+    const repaired = repairAntvSyntax(`infographic mindmap
+root
+ label: AI 学习路径
+ children:
+ label: 1. 基础准备
+ children:
+ label: 数学
+ label: 编程
+ label: CS 基础
+ label: 2. 机器学习
+ children:
+ label: 经典模型
+ label: 学习范式
+ label: 3. 深度学习
+ children:
+ label: 神经网络
+ label: Transformer
+`);
+    expect(repaired).toMatch(/^infographic hierarchy-mindmap-branch-gradient-capsule-item\n/);
+    expect(repaired).toContain("data\n  root");
+    expect(repaired).toContain("label AI 学习路径");
+    expect(repaired).not.toMatch(/^\s*label:/m);
+    expect(repaired).toContain("- label 1. 基础准备");
+    expect(repaired).toContain("- label 数学");
+    expect(repaired).toContain("- label 编程");
+    expect(repaired).toContain("- label 2. 机器学习");
+    expect(repaired).toContain("- label 经典模型");
+    expect(repaired).toContain("- label 3. 深度学习");
+    expect(repaired).toContain("- label Transformer");
+  });
+
+  it("rewrites indented YAML mindmap with a data wrapper and colons", () => {
+    const repaired = repairAntvSyntax(`infographic hierarchy-mindmap-branch-gradient-capsule-item
+data
+  root
+    label: AI 学习路径
+    children:
+      - label: 基础准备
+        children:
+          - label: 数学
+          - label: Python
+`);
+    expect(repaired).toContain("data\n  root");
+    expect(repaired).toContain("label AI 学习路径");
+    expect(repaired).toContain("- label 基础准备");
+    expect(repaired).toContain("- label 数学");
+    expect(repaired).toContain("- label Python");
+    expect(repaired).not.toMatch(/label:/);
+  });
+
+  it("leaves a well-formed official mindmap unchanged", () => {
+    const official = `infographic hierarchy-mindmap-branch-gradient-capsule-item
+data
+  root
+    label AI 学习路径
+    children
+      - label 基础准备
+        children
+          - label 数学
+`;
+    expect(repairAntvSyntax(official).trim()).toBe(official.trim());
   });
 });

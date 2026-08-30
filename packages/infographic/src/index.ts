@@ -13,4 +13,4 @@ export {
   isInfographicRelPath,
 } from "./path.ts";
 export { renderSvg } from "./render.ts";
-export { parseAntvSyntax } from "./syntax.ts";
+export { ANTV_CHAT_TEMPLATES, parseAntvSyntax, repairAntvSyntax } from "./syntax.ts";

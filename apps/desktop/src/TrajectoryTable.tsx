@@ -6,9 +6,14 @@ export type TrajectoryTableProps = {
   onSelect: (id: string) => void;
 };
 
-function kindLabel(kind: TrajectoryRecord["kind"]): string {
-  return kind.toUpperCase();
-}
+const KIND_LABEL: Record<TrajectoryRecord["kind"], string> = {
+  user: "用户",
+  assistant: "助手",
+  tool: "工具",
+  error: "错误",
+  guard: "护栏",
+  a2ui: "界面",
+};
 
 export function TrajectoryTable({ records, selectedId, onSelect }: TrajectoryTableProps) {
   return (
@@ -24,21 +29,24 @@ export function TrajectoryTable({ records, selectedId, onSelect }: TrajectoryTab
               key={record.id}
               data-trajectory-id={record.id}
               aria-selected={selected}
+              data-running={record.running ? "true" : undefined}
+              data-turn-start={record.turnStart ? "true" : undefined}
               onClick={() => onSelect(record.id)}
             >
-              <td className="trajectory-kind" data-role-kind={record.kind}>
-                {kindLabel(record.kind)}
+              <td className="trajectory-kind">
+                <span className="trajectory-kind-tag" data-role-kind={record.kind}>
+                  {KIND_LABEL[record.kind]}
+                </span>
               </td>
               <td className="trajectory-event">
                 {record.turnStart ? (
-                  <>
-                    <span className="trajectory-turn">Turn {record.turn}</span>{" "}
-                  </>
+                  <span className="trajectory-meta">Turn {record.turn}</span>
                 ) : null}
                 {showStep ? (
-                  <>
-                    <span className="trajectory-step">Step {record.step}</span>{" "}
-                  </>
+                  <span className="trajectory-meta">Step {record.step}</span>
+                ) : null}
+                {record.running ? (
+                  <span className="trajectory-running">进行中</span>
                 ) : null}
                 <span className="trajectory-preview">{record.preview}</span>
               </td>

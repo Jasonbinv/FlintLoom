@@ -3464,6 +3464,9 @@ describe("App", () => {
     await act(async () => {
       (trajTab as HTMLButtonElement).click();
     });
+    const log = document.querySelector(".log") as HTMLElement | null;
+    expect(log?.hasAttribute("hidden")).toBe(true);
+    expect(log ? getComputedStyle(log).display : "").toBe("none");
     const panel = document.querySelector('[data-trajectory-id="tool:c1"]');
     expect(panel).toBeTruthy();
     await act(async () => {

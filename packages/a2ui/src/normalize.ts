@@ -1,3 +1,4 @@
+import { parseAntvSyntax } from "@flintloom/infographic";
 import { parseChartKind } from "./chartKinds.ts";
 import { A2UI_CATALOG_ID } from "./types.ts";
 
@@ -44,21 +45,26 @@ function liftTypedEnvelope(msg: Record<string, unknown>): Record<string, unknown
       msg.createSurface = isRecord(msg.createSurface)
         ? msg.createSurface
         : {
-            surfaceId: stringProp(msg.surfaceId) ?? "main",
+            surfaceId: stringProp(msg.surfaceId) ?? stringProp(msg.id) ?? "main",
             catalogId: A2UI_CATALOG_ID,
           };
     } else if (typed === "updateComponents") {
       const body = isRecord(msg.updateComponents) ? msg.updateComponents : {};
-      if (!Array.isArray(body.components)) body.components = [];
-      body.surfaceId = stringProp(body.surfaceId) ?? stringProp(msg.surfaceId) ?? "main";
+      if (!Array.isArray(body.components)) {
+        body.components = Array.isArray(msg.components) ? msg.components : [];
+      }
+      const sid = stringProp(body.surfaceId) ?? stringProp(msg.surfaceId);
+      if (sid) body.surfaceId = sid;
       msg.updateComponents = body;
     } else if (typed === "updateDataModel") {
       const body = isRecord(msg.updateDataModel) ? msg.updateDataModel : {};
-      body.surfaceId = stringProp(body.surfaceId) ?? stringProp(msg.surfaceId) ?? "main";
+      const sid = stringProp(body.surfaceId) ?? stringProp(msg.surfaceId);
+      if (sid) body.surfaceId = sid;
       msg.updateDataModel = body;
     } else {
       const body = isRecord(msg.deleteSurface) ? msg.deleteSurface : {};
-      body.surfaceId = stringProp(body.surfaceId) ?? stringProp(msg.surfaceId) ?? "main";
+      const sid = stringProp(body.surfaceId) ?? stringProp(msg.surfaceId);
+      if (sid) body.surfaceId = sid;
       msg.deleteSurface = body;
     }
     key = typed;
@@ -67,7 +73,8 @@ function liftTypedEnvelope(msg: Record<string, unknown>): Record<string, unknown
   if (key === undefined) return msg;
   if (key === "createSurface" && isRecord(msg.createSurface)) {
     if (typeof msg.createSurface.surfaceId !== "string") {
-      msg.createSurface.surfaceId = stringProp(msg.createSurface.id) ?? "main";
+      msg.createSurface.surfaceId =
+        stringProp(msg.createSurface.id) ?? stringProp(msg.id) ?? "main";
     }
     if (typeof msg.createSurface.catalogId !== "string") msg.createSurface.catalogId = A2UI_CATALOG_ID;
   }
@@ -334,8 +341,9 @@ function coerceDashboardComponent(comp: Record<string, unknown>): Record<string,
     const mapped = DASHBOARD_TYPE_TO_COMPONENT[comp.type.toLowerCase()];
     if (mapped) comp.component = mapped;
   }
-  if (comp.component === "Text" && typeof comp.text !== "string" && isRecord(comp.content)) {
-    const text = joinCardText(comp.content);
+  if (comp.component === "Text" && typeof comp.text !== "string") {
+    const fromContent = isRecord(comp.content) ? joinCardText(comp.content) : undefined;
+    const text = fromContent ?? joinCardText(comp);
     if (text !== undefined) comp.text = text;
   }
   if (comp.component === "Chart" && isRecord(comp.data)) {
@@ -359,6 +367,13 @@ function coerceDashboardComponent(comp: Record<string, unknown>): Record<string,
       comp.rows = comp.data.rows;
     }
   }
+  if (comp.component === "Infographic" && typeof comp.syntax === "string") {
+    try {
+      comp.syntax = parseAntvSyntax(comp.syntax);
+    } catch {
+      // validateEmit still rejects illegal syntax
+    }
+  }
   return comp;
 }
 
@@ -372,15 +387,22 @@ function normalizeComponents(components: unknown[]): unknown[] {
   });
 }
 
-function isDashboardType(value: unknown): boolean {
-  return typeof value === "string" && DASHBOARD_TYPE_TO_COMPONENT[value.toLowerCase()] !== undefined;
+function childRefIds(comp: Record<string, unknown>): string[] {
+  const refs: string[] = [];
+  if (Array.isArray(comp.children)) {
+    for (const child of comp.children) {
+      if (typeof child === "string" && child.length > 0) refs.push(child);
+    }
+  }
+  if (typeof comp.child === "string" && comp.child.length > 0) refs.push(comp.child);
+  return refs;
 }
 
 function ensureRoot(messages: unknown[]): void {
   const ids: string[] = [];
   const seen = new Set<string>();
+  const referenced = new Set<string>();
   let firstUpdate: Record<string, unknown> | undefined;
-  let dashboard = false;
   for (const msg of messages) {
     if (!isRecord(msg) || !isRecord(msg.updateComponents) || !Array.isArray(msg.updateComponents.components)) {
       continue;
@@ -388,16 +410,17 @@ function ensureRoot(messages: unknown[]): void {
     if (!firstUpdate) firstUpdate = msg.updateComponents;
     for (const comp of msg.updateComponents.components) {
       if (!isRecord(comp)) continue;
-      if (isDashboardType(comp.type)) dashboard = true;
+      for (const ref of childRefIds(comp)) referenced.add(ref);
       if (typeof comp.id !== "string" || comp.id.length === 0 || seen.has(comp.id)) continue;
       seen.add(comp.id);
       ids.push(comp.id);
     }
   }
-  if (!dashboard || !firstUpdate || seen.has("root") || ids.length === 0) return;
+  if (!firstUpdate || seen.has("root") || ids.length === 0) return;
   const components = firstUpdate.components;
   if (!Array.isArray(components)) return;
-  components.unshift({ id: "root", component: "Column", children: ids });
+  const top = ids.filter((id) => !referenced.has(id));
+  components.unshift({ id: "root", component: "Column", children: top.length > 0 ? top : ids });
 }
 
 function normalizeMessage(msg: unknown, surfaceId: string | undefined): unknown {

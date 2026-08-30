@@ -58,31 +58,73 @@ function availableTabs(record: TrajectoryRecord): InspectorTab[] {
   return tabs;
 }
 
+const KIND_LABEL: Record<TrajectoryRecord["kind"], string> = {
+  user: "用户",
+  assistant: "助手",
+  tool: "工具",
+  error: "错误",
+  guard: "护栏",
+  a2ui: "界面",
+};
+
 const TAB_LABELS: Record<InspectorTab, string> = {
-  summary: "Summary",
-  thinking: "Thinking",
-  output: "Output",
-  payload: "Payload",
-  result: "Result",
-  timing: "Timing",
+  summary: "摘要",
+  thinking: "思考",
+  output: "输出",
+  payload: "入参",
+  result: "结果",
+  timing: "耗时",
+};
+
+const STATE_LABEL: Record<string, string> = {
+  running: "进行中",
+  done: "完成",
+  error: "失败",
 };
 
 function SummaryPanel({ record }: { record: TrajectoryRecord }) {
   return (
     <div className="trajectory-summary">
-      <p>
-        <strong>{record.kind.toUpperCase()}</strong>
-        {record.step !== undefined ? ` · Step ${record.step}` : ""}
-        {` · Turn ${record.turn}`}
+      <p className="trajectory-summary-body">
+        {record.kind === "user" ? (record.output ?? record.preview) : record.preview}
       </p>
-      <p>{record.kind === "user" ? (record.output ?? record.preview) : record.preview}</p>
-      {record.toolName ? <p>Tool: {record.toolName}</p> : null}
-      {record.toolState ? <p>State: {record.toolState}</p> : null}
-      {record.errorKind ? <p>Kind: {record.errorKind}</p> : null}
+      {record.toolName ? (
+        <p className="trajectory-summary-kv">
+          <span>工具</span>
+          <span>{record.toolName}</span>
+        </p>
+      ) : null}
+      {record.toolState ? (
+        <p className="trajectory-summary-kv">
+          <span>状态</span>
+          <span>{STATE_LABEL[record.toolState] ?? record.toolState}</span>
+        </p>
+      ) : null}
+      {record.errorKind ? (
+        <p className="trajectory-summary-kv">
+          <span>类型</span>
+          <span>{record.errorKind}</span>
+        </p>
+      ) : null}
       {record.errorMessage ? <pre>{record.errorMessage}</pre> : null}
-      {record.guardTool ? <p>Guard tool: {record.guardTool}</p> : null}
-      {record.guardLabel ? <p>Guard: {record.guardLabel}</p> : null}
-      {record.surfaceId ? <p>Surface: {record.surfaceId}</p> : null}
+      {record.guardTool ? (
+        <p className="trajectory-summary-kv">
+          <span>护栏</span>
+          <span>{record.guardTool}</span>
+        </p>
+      ) : null}
+      {record.guardLabel ? (
+        <p className="trajectory-summary-kv">
+          <span>判定</span>
+          <span>{record.guardLabel}</span>
+        </p>
+      ) : null}
+      {record.surfaceId ? (
+        <p className="trajectory-summary-kv">
+          <span>界面</span>
+          <span>{record.surfaceId}</span>
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -131,26 +173,45 @@ export function TrajectoryInspector({ record, onClose, onOpenFile }: TrajectoryI
     setTab(nextTabs.includes(preferred) ? preferred : (nextTabs[0] ?? "summary"));
   }, [record.id]);
 
+  const meta = [
+    `Turn ${record.turn}`,
+    record.step !== undefined ? `Step ${record.step}` : undefined,
+    record.running ? "进行中" : undefined,
+  ]
+    .filter((part): part is string => part !== undefined)
+    .join(" · ");
+
   return (
     <aside className="trajectory-inspector" aria-label="事件详情">
       <div className="trajectory-inspector-header">
-        <div className="trajectory-inspector-tabs" role="tablist">
-          {tabs.map((id) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              data-inspector-tab={id}
-              aria-selected={tab === id}
-              onClick={() => setTab(id)}
-            >
-              {TAB_LABELS[id]}
-            </button>
-          ))}
+        <div className="trajectory-inspector-heading">
+          <span className="trajectory-kind-tag" data-role-kind={record.kind}>
+            {KIND_LABEL[record.kind]}
+          </span>
+          <span className="trajectory-inspector-meta">{meta}</span>
         </div>
-        <button type="button" aria-label="关闭详情" onClick={onClose}>
+        <button
+          type="button"
+          className="trajectory-inspector-close"
+          aria-label="关闭详情"
+          onClick={onClose}
+        >
           ×
         </button>
+      </div>
+      <div className="trajectory-inspector-tabs" role="tablist">
+        {tabs.map((id) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            data-inspector-tab={id}
+            aria-selected={tab === id}
+            onClick={() => setTab(id)}
+          >
+            {TAB_LABELS[id]}
+          </button>
+        ))}
       </div>
       <div className="trajectory-inspector-body" data-inspector-panel="" role="tabpanel">
         {tab === "summary" ? <SummaryPanel record={record} /> : null}
