@@ -51,6 +51,9 @@ const TEMPLATE_ALIASES: Record<string, string> = {
   "quadrant-circular": ANTV_CHAT_TEMPLATES.quadrantCircle,
   "quadrant-circle": ANTV_CHAT_TEMPLATES.quadrantCircle,
   圆形四象限: ANTV_CHAT_TEMPLATES.quadrantCircle,
+  eisenhower: ANTV_CHAT_TEMPLATES.quadrant,
+  艾森豪威尔: ANTV_CHAT_TEMPLATES.quadrant,
+  优先级矩阵: ANTV_CHAT_TEMPLATES.quadrant,
 };
 
 const KNOWN_TEMPLATE_PREFIXES = [

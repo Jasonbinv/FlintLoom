@@ -1,6 +1,73 @@
 import type { ToolDefinition } from "@flintloom/tools";
 import { A2UI_CATALOG_ID, type A2uiService } from "./types.ts";
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function firstLineItem(text: string): { label: string; desc?: string } {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^[•\-*]\s*/, "").trim())
+    .filter((line) => line.length > 0);
+  const label = lines[0] ?? "象限";
+  const rest = lines.slice(1);
+  return rest.length > 0 ? { label, desc: rest.join("、") } : { label };
+}
+
+function compareItemsFromUnknown(compares: unknown[]): { label: string; desc?: string }[] {
+  return compares.slice(0, 8).map((item, index) => {
+    if (typeof item === "string") return firstLineItem(item);
+    if (!isRecord(item)) return { label: `象限${index + 1}` };
+    const label = typeof item.label === "string" ? item.label.trim() : "";
+    const desc = typeof item.desc === "string" ? item.desc.trim() : "";
+    if (label && desc) return { label, desc: desc.replace(/\s+/g, " ") };
+    if (label) return { label };
+    if (desc) return firstLineItem(desc);
+    return { label: `象限${index + 1}` };
+  });
+}
+
+function syntaxFromCompareItems(items: { label: string; desc?: string }[]): string {
+  const swot = items.some((item) => /优势|劣势|机遇|机会|威胁|strength|weakness|opportunit|threat/i.test(item.label));
+  const template = swot
+    ? "compare-swot"
+    : items.length === 2
+      ? "compare-binary-horizontal-simple-vs"
+      : "compare-quadrant-quarter-simple-card";
+  const lines = [`infographic ${template}`, "data", "  compares"];
+  for (const item of items) {
+    lines.push(`    - label ${item.label}`);
+    if (template === "compare-swot") {
+      const kids = (item.desc ?? "")
+        .split(/[、,;；。\n]/)
+        .map((part) => part.replace(/^[•\-*]\s*/, "").trim())
+        .filter((part) => part.length > 0)
+        .slice(0, 8);
+      if (kids.length > 0) {
+        lines.push("      children");
+        for (const kid of kids) lines.push(`        - label ${kid}`);
+      }
+    } else if (item.desc) {
+      lines.push(`      desc ${item.desc.replace(/\s+/g, " ")}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+function syntaxFromLooseMessages(messages: unknown): string | undefined {
+  if (!Array.isArray(messages)) return undefined;
+  for (const msg of messages) {
+    if (!isRecord(msg)) continue;
+    const model = isRecord(msg.updateDataModel) ? msg.updateDataModel : undefined;
+    if (!model || !Array.isArray(model.compares) || model.compares.length < 2) continue;
+    const items = compareItemsFromUnknown(model.compares);
+    if (items.length < 2) continue;
+    return syntaxFromCompareItems(items);
+  }
+  return undefined;
+}
+
 function wrapInfographicSyntax(syntax: string) {
   return [
     {
@@ -40,10 +107,14 @@ export function createA2uiEmitTool(svc: A2uiService): ToolDefinition {
       if (exec.signal.aborted) {
         return "aborted";
       }
+      const recovered =
+        typeof args.syntax !== "string" ? syntaxFromLooseMessages(args.messages) : undefined;
       const messages =
         typeof args.syntax === "string"
           ? wrapInfographicSyntax(args.syntax)
-          : args.messages;
+          : recovered
+            ? wrapInfographicSyntax(recovered)
+            : args.messages;
       if (messages === undefined) {
         return "failed: missing messages";
       }

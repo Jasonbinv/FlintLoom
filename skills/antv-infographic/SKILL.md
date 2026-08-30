@@ -23,7 +23,7 @@ Desktop already renders `@antv/infographic`. Do not write HTML, `unpkg`, or foll
 - Official names starting with `list-` / `sequence-` / `compare-` / `hierarchy-` / `relation-` / `chart-` pass through. Do not rename them to `stepList`.
 - Aliases `stepList` / `timeline` / `compare` / `cards` / `mindmap` / `tree` / `org` / `quadrant` / `四象限` are repaired.
 - 思维导图 / mind map → `mindmap` or `hierarchy-mindmap-*`. Never `stepList`.
-- 四象限图 / quadrant / 2×2 矩阵 → `compare-quadrant-*`. Never `compare-swot` (that is four letter-card columns, not XY axes).
+- 四象限图 / quadrant / 2×2 矩阵 / 艾森豪威尔 / Eisenhower → `compare-quadrant-*`. Never `compare-swot` (that is four letter-card columns, not XY axes). Never put AntV `compares` into A2UI `updateDataModel` — pass `syntax` only.
 - Do not invent `compare-binary-simple-horizontal` or `hierarchy-tree-simple`.
 - Do not fall back to A2UI Chart `kind: "bar"` when the user asked for an infographic.
 

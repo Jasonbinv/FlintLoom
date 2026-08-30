@@ -101,6 +101,43 @@ describe("a2ui_emit", () => {
     expect(snap?.messages.some((msg) => "updateComponents" in msg && msg.updateComponents.components.some((c) => c.id === "chart" && c.component === "Chart"))).toBe(true);
   });
 
+  it("recovers Eisenhower compares stuffed into updateDataModel into a quadrant Infographic", async () => {
+    const svc = createA2uiService();
+    const tool = createA2uiEmitTool(svc);
+    const raw = await tool.execute(
+      {
+        messages: [
+          {
+            version: 0.9,
+            updateDataModel: {
+              compares: [
+                { desc: "立即执行 (Do)\n• 处理突发危机" },
+                { desc: "计划 (Schedule)\n• 长期规划" },
+                { desc: "委派他人 (Delegate)\n• 某些电话会议" },
+                { desc: "减少 (Minimize)\n• 消遣闲逛" },
+              ],
+            },
+          },
+        ],
+      },
+      exec,
+    );
+    expect(raw).not.toMatch(/^failed:/);
+    const parsed = JSON.parse(raw) as { status: string; emitId: string };
+    expect(parsed.status).toBe("ok");
+    const snap = svc.takeEmit(parsed.emitId);
+    const update = snap?.messages.find((msg) => "updateComponents" in msg);
+    const syntax =
+      update && "updateComponents" in update
+        ? update.updateComponents.components.find((c) => c.component === "Infographic")?.syntax
+        : undefined;
+    expect(typeof syntax).toBe("string");
+    expect(syntax).toContain("compare-quadrant-quarter-simple-card");
+    expect(syntax).toContain("立即执行");
+    expect(syntax).toContain("委派他人");
+    expect(syntax).toContain("desc 处理突发危机");
+  });
+
   it("accepts a bare AntV syntax argument without envelopes", async () => {
     const svc = createA2uiService();
     const tool = createA2uiEmitTool(svc);
