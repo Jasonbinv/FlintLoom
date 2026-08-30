@@ -8,11 +8,13 @@ import {
 
 type Props = {
   name: string;
+  callId?: string;
   args: unknown;
   result?: string;
   state: "running" | "done" | "error";
   step?: number;
   onOpenFile?: (path: string) => void;
+  onInspect?: (callId: string) => void;
 };
 
 function toolIcon(name: string): string {
@@ -26,7 +28,16 @@ function toolIcon(name: string): string {
   return "🛠";
 }
 
-export function ToolCallRow({ name, args, result, state, step, onOpenFile }: Props) {
+export function ToolCallRow({
+  name,
+  callId,
+  args,
+  result,
+  state,
+  step,
+  onOpenFile,
+  onInspect,
+}: Props) {
   const [expanded, setExpanded] = useState(false);
   const title = toolDisplayTitle(name);
   const summary = toolDisplaySummary(name, args);
@@ -37,43 +48,58 @@ export function ToolCallRow({ name, args, result, state, step, onOpenFile }: Pro
 
   return (
     <div className={`disclosure-row tool-row${state === "running" ? " is-running" : ""}`} data-state={state}>
-      <button
-        type="button"
-        className="disclosure-row-header"
-        aria-expanded={expanded}
-        disabled={!expandable}
-        onClick={() => {
-          if (expandable) setExpanded((value) => !value);
-        }}
-      >
-        <span className="disclosure-row-icon" aria-hidden>
-          {state === "error" ? "✕" : toolIcon(name)}
-        </span>
-        <span className="disclosure-row-title">{title}</span>
-        {step !== undefined ? (
-          <>
-            <span className="disclosure-row-sep" aria-hidden>
-              ·
-            </span>
-            <span className="disclosure-row-step">step {step}</span>
-          </>
-        ) : null}
-        {!expanded ? (
-          <>
-            <span className="disclosure-row-sep" aria-hidden>
-              ·
-            </span>
-            <span className={`disclosure-row-summary${failureLine ? " is-error" : ""}`}>
-              {failureLine ?? summary}
-            </span>
-          </>
-        ) : null}
-        {expandable ? (
-          <span className="disclosure-row-chevron" aria-hidden>
-            {expanded ? "▾" : "▸"}
+      <div className="disclosure-row-bar">
+        <button
+          type="button"
+          className="disclosure-row-header"
+          aria-expanded={expanded}
+          disabled={!expandable}
+          onClick={() => {
+            if (expandable) setExpanded((value) => !value);
+          }}
+        >
+          <span className="disclosure-row-icon" aria-hidden>
+            {state === "error" ? "✕" : toolIcon(name)}
           </span>
+          <span className="disclosure-row-title">{title}</span>
+          {step !== undefined ? (
+            <>
+              <span className="disclosure-row-sep" aria-hidden>
+                ·
+              </span>
+              <span className="disclosure-row-step">step {step}</span>
+            </>
+          ) : null}
+          {!expanded ? (
+            <>
+              <span className="disclosure-row-sep" aria-hidden>
+                ·
+              </span>
+              <span className={`disclosure-row-summary${failureLine ? " is-error" : ""}`}>
+                {failureLine ?? summary}
+              </span>
+            </>
+          ) : null}
+          {expandable ? (
+            <span className="disclosure-row-chevron" aria-hidden>
+              {expanded ? "▾" : "▸"}
+            </span>
+          ) : null}
+        </button>
+        {onInspect && callId ? (
+          <button
+            type="button"
+            className="tool-inspect-btn"
+            aria-label="在轨迹中查看"
+            onClick={(event) => {
+              event.stopPropagation();
+              onInspect(callId);
+            }}
+          >
+            轨迹
+          </button>
         ) : null}
-      </button>
+      </div>
       {expanded && expandable ? (
         <div className="disclosure-row-body tool-row-body">
           {argsText.length > 0 ? (

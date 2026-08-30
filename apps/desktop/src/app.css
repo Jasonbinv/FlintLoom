@@ -2447,6 +2447,34 @@ body,
   width: 100%;
 }
 
+.disclosure-row-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.disclosure-row-bar .disclosure-row-header {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+}
+
+.tool-inspect-btn {
+  flex: 0 0 auto;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.tool-inspect-btn:hover {
+  color: var(--text-secondary);
+}
+
 .disclosure-row-header {
   display: flex;
   align-items: center;

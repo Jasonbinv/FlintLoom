@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ToolCallRow } from "../src/ToolCallRow.tsx";
@@ -51,6 +51,34 @@ describe("ToolCallRow", () => {
     expect(out?.querySelector(".tool-io-body .tool-io-text")?.textContent).toContain(
       '"status":"ok"',
     );
+    cleanup();
+  });
+
+  it("inspect button does not toggle IN/OUT", () => {
+    const onInspect = vi.fn();
+    mount(
+      <ToolCallRow
+        name="fs"
+        callId="c1"
+        args={{ path: "a.txt" }}
+        result="hello"
+        state="done"
+        onInspect={onInspect}
+      />,
+    );
+    expect(container?.querySelector(".tool-io-section")).toBeNull();
+    const inspect = container?.querySelector('[aria-label="在轨迹中查看"]') as HTMLButtonElement;
+    act(() => {
+      inspect.click();
+    });
+    expect(onInspect).toHaveBeenCalledWith("c1");
+    expect(container?.querySelector(".tool-io-section")).toBeNull();
+    act(() => {
+      container?.querySelector(".disclosure-row-header")?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
+    expect(container?.querySelector(".tool-io-section")).toBeTruthy();
     cleanup();
   });
 });
