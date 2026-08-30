@@ -31,6 +31,17 @@ function confirmMessages(surfaceId = "main") {
 const exec = { workspaceRoot: "/tmp", signal: new AbortController().signal, channel: "cli" };
 
 describe("a2ui_emit", () => {
+  it("describes official AntV families instead of saying SWOT and relation cannot be drawn", () => {
+    const tool = createA2uiEmitTool(createA2uiService());
+    expect(tool.description).toContain("compare-swot");
+    expect(tool.description).toMatch(/relation-/);
+    expect(tool.description).toMatch(/chart-/);
+    expect(tool.description).toContain("ONLY syntax");
+    expect(tool.description).not.toMatch(/not auto-drawn/);
+    expect(tool.parameters.properties.syntax.description).toMatch(/values|nodes/);
+    expect(tool.parameters.properties.syntax.description).toContain("mindmap");
+  });
+
   it("returns short json without messages and rejects abort / missing messages", async () => {
     const svc = createA2uiService();
     const tool = createA2uiEmitTool(svc);

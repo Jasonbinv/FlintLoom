@@ -10,7 +10,7 @@ Use this skill whenever the user asks for an **interactive card**, **confirm bef
 ## Before you emit
 
 1. Call `skill` with `action: read`, `id: report-a2ui` if you need this checklist again.
-2. Call tool **`a2ui_emit`** with argument **`messages`** (array of envelopes). For an AntV timeline/step infographic, pass **only** `syntax` instead (read skill `antv-infographic`). Never invent keys like `type`, `input`, `fields`, or `form`.
+2. Call tool **`a2ui_emit`** with argument **`messages`** (array of envelopes). For an AntV infographic (steps, SWOT, mind map, relation, chart poster), pass **only** `syntax` instead (read skill `antv-infographic`). Never invent keys like `type`, `input`, `fields`, or `form`.
 3. If emit returns `failed: bad envelope`, fix the JSON shape below — **do not** tell the user the environment lacks UI. The workbench supports A2UI; the payload was wrong. Use `"version": "v0.9"` (not `"0.9"`).
 4. **Never fuse Chart into Text.** Close the Text object, then add a separate `{ "id", "component": "Chart", "kind", "labels", "values" }`. Do not put `kind` / `labels` / `values` on a Text node. Each `messages[]` item needs its own `"version": "v0.9"` (not only on the tool args).
 

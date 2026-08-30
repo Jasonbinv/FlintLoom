@@ -177,6 +177,63 @@ data
     expect(repaired).not.toMatch(/label:/);
   });
 
+  it("lifts SWOT root desc into children so letter-cards are not empty", () => {
+    const repaired = repairAntvSyntax(`infographic compare-swot
+data
+  compares
+    - label 优势 (Strengths)
+      desc 基础研究领先、商业化应用广泛、政策支持力度大、人才储备丰富
+    - label 劣势 (Weaknesses)
+      desc 算力与高端芯片依赖、大模型幻觉问题
+    - label 机遇 (Opportunities)
+      desc 多模态融合、Agent系统发展
+    - label 威胁 (Threats)
+      desc 监管政策收紧、数据隐私风险
+`);
+    expect(repaired).toContain("- label 优势");
+    expect(repaired).not.toContain("优势 (Strengths)");
+    expect(repaired).toContain("children");
+    expect(repaired).toContain("- label 基础研究领先");
+    expect(repaired).toContain("- label 商业化应用广泛");
+    expect(repaired).toContain("- label 算力与高端芯片依赖");
+    expect(repaired).toContain("- label 多模态融合");
+    expect(repaired).toContain("- label 监管政策收紧");
+    expect(repaired).not.toMatch(/^\s*desc /m);
+  });
+
+  it("leaves official SWOT, relation, and chart syntax unchanged", () => {
+    const swot = `infographic compare-swot
+data
+  compares
+    - label 优势
+      children
+        - label 品牌
+    - label 劣势
+      children
+        - label 成本
+`;
+    const relation = `infographic relation-dagre-flow-tb-simple-circle-node
+data
+  nodes
+    - label API
+    - id db
+      label DB
+  relations
+    API - 读写 -> db
+`;
+    const chart = `infographic chart-line-plain-text
+data
+  values
+    - label W1
+      value 86
+    - label W2
+      value 91
+`;
+    expect(repairAntvSyntax(swot).trim()).toBe(swot.trim());
+    expect(repairAntvSyntax(relation).trim()).toBe(relation.trim());
+    expect(repairAntvSyntax(chart).trim()).toBe(chart.trim());
+  });
+
   it("leaves a well-formed official mindmap unchanged", () => {
     const official = `infographic hierarchy-mindmap-branch-gradient-capsule-item
 data

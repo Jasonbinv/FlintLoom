@@ -220,6 +220,96 @@ function splitBranchChildren(item: Item): string[] {
   return item.desc.length <= 28 ? [flattenIgValue(item.desc)] : [];
 }
 
+function splitDescToLabels(desc: string): string[] {
+  const parts = desc
+    .split(/[、,;；。]/)
+    .map((part) => flattenIgValue(part))
+    .filter((part) => part.length > 0);
+  if (parts.length >= 2) return parts.slice(0, 8);
+  const one = flattenIgValue(desc);
+  return one ? [one] : [];
+}
+
+function simplifySwotLabel(label: string): string {
+  const stripped = label.replace(/\s*\([^)]+\)\s*$/g, "").trim();
+  return stripped || label;
+}
+
+function liftCompareDescIntoChildren(template: string, body: string): string {
+  if (!template.startsWith("compare-") || !/^\s*compares\b/m.test(body)) return body;
+  const lines = body.split(/\r?\n/);
+  const out: string[] = [];
+  let i = 0;
+  let inCompares = false;
+  let rootIndent: number | undefined;
+  while (i < lines.length) {
+    const line = lines[i]!;
+    const trimmed = line.trim();
+    const indent = line.match(/^(\s*)/)?.[1].length ?? 0;
+    if (/^compares$/.test(trimmed)) {
+      inCompares = true;
+      rootIndent = undefined;
+      out.push(line);
+      i += 1;
+      continue;
+    }
+    if (inCompares && trimmed && indent <= 2 && !trimmed.startsWith("-")) {
+      inCompares = false;
+    }
+    const labelMatch = inCompares ? line.match(/^(\s*)- label (.+)$/) : undefined;
+    if (labelMatch) {
+      const itemIndent = labelMatch[1].length;
+      if (rootIndent === undefined) rootIndent = itemIndent;
+      if (itemIndent === rootIndent) {
+        const pad = labelMatch[1];
+        const label = template.startsWith("compare-swot")
+          ? simplifySwotLabel(flattenIgValue(labelMatch[2]))
+          : flattenIgValue(labelMatch[2]);
+        i += 1;
+        let desc: string | undefined;
+        let hasChildren = false;
+        const extras: string[] = [];
+        while (i < lines.length) {
+          const next = lines[i]!;
+          const nextTrim = next.trim();
+          const nextIndent = next.match(/^(\s*)/)?.[1].length ?? 0;
+          if (nextTrim && nextIndent <= itemIndent) break;
+          if (/^children$/.test(nextTrim)) hasChildren = true;
+          const descMatch = next.match(/^\s*desc (.+)$/);
+          if (descMatch && !hasChildren) {
+            desc = descMatch[1];
+            i += 1;
+            continue;
+          }
+          extras.push(next);
+          i += 1;
+        }
+        out.push(`${pad}- label ${label}`);
+        if (desc && !hasChildren) {
+          const kids = splitDescToLabels(desc);
+          if (kids.length > 0) {
+            out.push(`${pad}  children`);
+            for (const kid of kids) {
+              out.push(`${pad}    - label ${kid}`);
+            }
+          }
+        } else if (desc) {
+          out.push(`${pad}  desc ${flattenIgValue(desc)}`);
+        }
+        out.push(...extras);
+        continue;
+      }
+    }
+    out.push(line);
+    i += 1;
+  }
+  return out.join("\n");
+}
+
+function finalizeRepaired(template: string, body: string): string {
+  return `infographic ${template}\n${liftCompareDescIntoChildren(template, body.trim())}`.trim();
+}
+
 function parseYamlishTokens(lines: string[]): TreeTok[] {
   const toks: TreeTok[] = [];
   for (const line of lines) {
@@ -420,20 +510,20 @@ export function repairAntvSyntax(raw: string): string {
   if (isHierarchyTemplate(template) && !isWellFormedHierarchy(rest)) {
     const tree = parseYamlishTree(bodyLines);
     if (tree) {
-      return `infographic ${template}\n${emitTreeBlock(tree)}`;
+      return finalizeRepaired(template, emitTreeBlock(tree));
     }
   }
   if (hasOfficialDataBlock(rest) && !hasYamlishColons(rest)) {
-    return `infographic ${template}\n${rest}`.trim();
+    return finalizeRepaired(template, rest);
   }
   const items = parseInventedItems(bodyLines);
   if (items.length === 0) {
-    return `infographic ${template}\n${rest}`.trim();
+    return finalizeRepaired(template, rest);
   }
   const body = isHierarchyTemplate(template)
     ? emitMindmapBlock(items)
     : emitDataBlock(dataFieldFor(template), items);
-  return `infographic ${template}\n${body}`;
+  return finalizeRepaired(template, body);
 }
 
 export function parseAntvSyntax(raw: string): string {

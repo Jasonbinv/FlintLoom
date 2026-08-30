@@ -21,14 +21,14 @@ export function createA2uiEmitTool(svc: A2uiService): ToolDefinition {
   return {
     name: "a2ui_emit",
     description:
-      "Emit A2UI UI. For an AntV infographic, pass ONLY syntax (string starting with 'infographic <template>'), no messages. Preferred templates: list-column-simple-vertical-arrow, list-row-simple-horizontal-arrow, compare-binary-horizontal-simple-vs, list-grid-compact-card, sequence-steps-simple, hierarchy-mindmap-branch-gradient-capsule-item. Aliases stepList/timeline/compare/cards/mindmap are repaired. For a mind map / 思维导图, use mindmap — never stepList (that is a flowchart). SWOT and relation networks are not auto-drawn from prose. For cards/tables/charts, pass messages[]: each item must be version v0.9 (not 0.9) and exactly one of createSurface, updateComponents, updateDataModel, or deleteSurface. Never put type/kind on the envelope. Infographic syntax must not include http:// or https://.",
+      "Emit A2UI UI. For an AntV infographic, pass ONLY syntax (first line infographic <template>), no messages and no HTML. Pick a family then a real template: list-* / sequence-* → lists|sequences; compare-binary-* (two sides), compare-swot (4 roots, points in children not desc), or compare-quadrant-* → compares; hierarchy-mindmap-* (思维导图, never stepList) or hierarchy-tree-* → root+children; relation-* → nodes+relations; chart-* / chart-wordcloud → values. Defaults: list-column-simple-vertical-arrow, list-row-simple-horizontal-arrow, compare-binary-horizontal-simple-vs, compare-swot, hierarchy-mindmap-branch-gradient-capsule-item, relation-dagre-flow-tb-simple-circle-node, chart-line-plain-text. Official list-/sequence-/compare-/hierarchy-/relation-/chart- names pass through; aliases stepList/timeline/compare/cards/mindmap/tree are repaired. Body uses data and key value (not label:). No http(s). For cards/tables/A2UI Chart components, pass messages[]: each item must be version v0.9 (not 0.9) and exactly one of createSurface, updateComponents, updateDataModel, or deleteSurface. Never put type/kind on the envelope.",
     parameters: {
       type: "object",
       properties: {
         syntax: {
           type: "string",
           description:
-            "AntV infographic DSL. First line: infographic <template>. Official body uses data / lists|compares|root / - label / desc / children (space, not label:). Invented headings, bullets, and YAML root/label:/children: are repaired. Use mindmap for 思维导图, not stepList.",
+            "AntV infographic DSL. First line: infographic <template>. One data field: lists|sequences|compares|root|nodes|values. Space-separated keys, not YAML label:. SWOT points go in children, not root desc. Relation / chart need official nested DSL. Use mindmap for 思维导图, not stepList.",
         },
         messages: {
           type: "array",
