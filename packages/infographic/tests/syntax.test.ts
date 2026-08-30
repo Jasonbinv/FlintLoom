@@ -201,6 +201,32 @@ data
     expect(repaired).not.toMatch(/^\s*desc /m);
   });
 
+  it("rewrites quadrant aliases into the official 2x2 quadrant template", () => {
+    const repaired = repairAntvSyntax(`infographic quadrant
+data
+  compares
+    - label 高价值高复杂度
+      desc 核心突破
+    - label 高价值低复杂度
+      desc 规模应用
+    - label 低价值高复杂度
+      desc 潜力探索
+    - label 低价值低复杂度
+      desc 基础工具
+`);
+    expect(repaired).toMatch(/^infographic compare-quadrant-quarter-simple-card\n/);
+    expect(repaired).toContain("data\n  compares");
+    expect(repaired).toContain("- label 高价值高复杂度");
+    expect(repaired).toContain("desc 核心突破");
+    expect(repaired).not.toContain("compare-swot");
+  });
+
+  it("maps circular quadrant alias to the official quarter-circular template", () => {
+    expect(repairAntvSyntax("infographic quadrant-circular\ndata\n  compares\n    - label A\n").split("\n")[0]).toBe(
+      "infographic compare-quadrant-quarter-circular",
+    );
+  });
+
   it("leaves official SWOT, relation, and chart syntax unchanged", () => {
     const swot = `infographic compare-swot
 data

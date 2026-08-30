@@ -12,6 +12,9 @@ describe("antv-infographic skill", () => {
   it("routes SWOT, relation, and chart families to official templates and a2ui_emit", () => {
     expect(skill).toMatch(/Use when/i);
     expect(skill).toContain("compare-swot");
+    expect(skill).toContain("compare-quadrant-quarter-simple-card");
+    expect(skill).toContain("compare-quadrant-quarter-circular");
+    expect(skill).toMatch(/四象限[\s\S]*compare-swot/);
     expect(skill).toMatch(/SWOT[\s\S]*children/);
     expect(skill).not.toMatch(/optional `children`/);
     expect(skill).toContain("relation-dagre-flow-tb-simple-circle-node");

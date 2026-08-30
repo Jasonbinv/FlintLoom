@@ -34,6 +34,8 @@ describe("a2ui_emit", () => {
   it("describes official AntV families instead of saying SWOT and relation cannot be drawn", () => {
     const tool = createA2uiEmitTool(createA2uiService());
     expect(tool.description).toContain("compare-swot");
+    expect(tool.description).toContain("compare-quadrant-quarter-simple-card");
+    expect(tool.description).toMatch(/never compare-swot/);
     expect(tool.description).toMatch(/relation-/);
     expect(tool.description).toMatch(/chart-/);
     expect(tool.description).toContain("ONLY syntax");

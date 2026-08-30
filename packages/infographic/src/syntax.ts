@@ -12,6 +12,8 @@ export const ANTV_CHAT_TEMPLATES = {
   mindmap: "hierarchy-mindmap-branch-gradient-capsule-item",
   tree: "hierarchy-tree-tech-style-capsule-item",
   org: "hierarchy-structure",
+  quadrant: "compare-quadrant-quarter-simple-card",
+  quadrantCircle: "compare-quadrant-quarter-circular",
 } as const;
 
 const TEMPLATE_ALIASES: Record<string, string> = {
@@ -40,6 +42,15 @@ const TEMPLATE_ALIASES: Record<string, string> = {
   mindmap: ANTV_CHAT_TEMPLATES.mindmap,
   "mind-map": ANTV_CHAT_TEMPLATES.mindmap,
   org: ANTV_CHAT_TEMPLATES.org,
+  quadrant: ANTV_CHAT_TEMPLATES.quadrant,
+  "four-quadrant": ANTV_CHAT_TEMPLATES.quadrant,
+  "4-quadrant": ANTV_CHAT_TEMPLATES.quadrant,
+  "compare-quadrant": ANTV_CHAT_TEMPLATES.quadrant,
+  四象限: ANTV_CHAT_TEMPLATES.quadrant,
+  四象限图: ANTV_CHAT_TEMPLATES.quadrant,
+  "quadrant-circular": ANTV_CHAT_TEMPLATES.quadrantCircle,
+  "quadrant-circle": ANTV_CHAT_TEMPLATES.quadrantCircle,
+  圆形四象限: ANTV_CHAT_TEMPLATES.quadrantCircle,
 };
 
 const KNOWN_TEMPLATE_PREFIXES = [
@@ -49,6 +60,7 @@ const KNOWN_TEMPLATE_PREFIXES = [
   "sequence-",
   "relation-",
   "chart-",
+  "quadrant-",
 ];
 
 const STEP_RE = /^(?:step\s+)?(\d+)\s*[:：.、)]\s*(.+)$/i;
@@ -236,7 +248,12 @@ function simplifySwotLabel(label: string): string {
 }
 
 function liftCompareDescIntoChildren(template: string, body: string): string {
-  if (!template.startsWith("compare-") || !/^\s*compares\b/m.test(body)) return body;
+  if (
+    !(template.startsWith("compare-swot") || template.startsWith("compare-binary")) ||
+    !/^\s*compares\b/m.test(body)
+  ) {
+    return body;
+  }
   const lines = body.split(/\r?\n/);
   const out: string[] = [];
   let i = 0;
