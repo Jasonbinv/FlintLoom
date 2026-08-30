@@ -31,8 +31,6 @@ import {
   type FilePreview,
 } from "./files.ts";
 
-const TREE_INDENT_PX = 16;
-const TREE_BASE_INDENT_PX = 12;
 const ROOT_TREE_PATH = ".";
 
 function delay(ms: number, signal: AbortSignal): Promise<void> {
@@ -61,10 +59,6 @@ function sortFileEntries(entries: FileEntry[]): FileEntry[] {
     .filter((entry) => entry.type === "file")
     .sort((a, b) => a.name.localeCompare(b.name));
   return [...dirs, ...files];
-}
-
-function treeIndent(depth: number): number {
-  return TREE_BASE_INDENT_PX + depth * TREE_INDENT_PX;
 }
 
 type Props = {
@@ -625,10 +619,9 @@ export function FilePane({
     void previewFile(requestedPath, false);
   }, [requestedPath, previewRequest]);
 
-  function renderEntries(entries: FileEntry[], parent: string, depth: number) {
+  function renderEntries(entries: FileEntry[], parent: string) {
     return sortFileEntries(entries).map((entry) => {
       const path = childPath(parent, entry.name);
-      const indent = treeIndent(depth);
 
       if (entry.type === "dir") {
         const isOpen = expanded.has(path);
@@ -639,7 +632,6 @@ export function FilePane({
               role="treeitem"
               aria-expanded={isOpen}
               className="file-tree__row file-tree__row--folder"
-              style={{ ["--file-tree-indent" as string]: `${indent}px` }}
               onClick={() => void toggleDir(path)}
               onContextMenu={(event) =>
                 openNodeMenu({ path, name: entry.name, type: "dir" }, event)
@@ -654,20 +646,13 @@ export function FilePane({
               </span>
             </button>
             {isOpen && dirErrors.has(path) ? (
-              <div
-                className="file-tree__state file-tree__state--error"
-                style={{ paddingLeft: `${treeIndent(depth + 1)}px` }}
-              >
+              <div className="file-tree__state file-tree__state--error">
                 host unreachable
               </div>
             ) : null}
             {isOpen && children[path] ? (
-              <div
-                className="file-tree__children"
-                role="group"
-                style={{ ["--file-tree-indent" as string]: `${indent}px` }}
-              >
-                {renderEntries(children[path], path, depth + 1)}
+              <div className="file-tree__children" role="group">
+                {renderEntries(children[path], path)}
               </div>
             ) : null}
           </div>
@@ -682,7 +667,6 @@ export function FilePane({
             role="treeitem"
             aria-selected={isActive}
             className={`file-tree__row${isActive ? " file-tree__row--active" : ""}`}
-            style={{ ["--file-tree-indent" as string]: `${indent}px` }}
             onClick={() => void openFile(path)}
             onContextMenu={(event) =>
               openNodeMenu({ path, name: entry.name, type: "file" }, event)
@@ -791,9 +775,6 @@ export function FilePane({
                       role="treeitem"
                       aria-expanded={expanded.has(ROOT_TREE_PATH)}
                       className="file-tree__row file-tree__row--root"
-                      style={{
-                        ["--file-tree-indent" as string]: `${treeIndent(0)}px`,
-                      }}
                       onClick={() => {
                         setExpanded((prev) => {
                           const next = new Set(prev);
@@ -818,22 +799,11 @@ export function FilePane({
                       </span>
                     </button>
                     {expanded.has(ROOT_TREE_PATH) ? (
-                      <div
-                        className="file-tree__children"
-                        role="group"
-                        style={{
-                          ["--file-tree-indent" as string]: `${treeIndent(0)}px`,
-                        }}
-                      >
+                      <div className="file-tree__children" role="group">
                         {rootEntries.length === 0 ? (
-                          <div
-                            className="file-tree__state"
-                            style={{ paddingLeft: `${treeIndent(1)}px` }}
-                          >
-                            暂无文件
-                          </div>
+                          <div className="file-tree__state">暂无文件</div>
                         ) : (
-                          renderEntries(rootEntries, ROOT_TREE_PATH, 1)
+                          renderEntries(rootEntries, ROOT_TREE_PATH)
                         )}
                       </div>
                     ) : null}

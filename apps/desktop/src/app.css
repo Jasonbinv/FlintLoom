@@ -1308,8 +1308,8 @@ body,
   display: flex;
   flex-direction: column;
   min-width: 0;
-  margin-left: calc(var(--file-tree-indent, 12px) + 6px);
-  padding-left: 10px;
+  margin-left: 10px;
+  padding-left: 6px;
   border-left: 1px solid color-mix(in srgb, var(--border-default) 70%, transparent);
 }
 
@@ -1346,7 +1346,7 @@ body,
   gap: 6px;
   min-width: 0;
   flex: 1 1 auto;
-  padding-left: var(--file-tree-indent, 8px);
+  padding-left: 8px;
   overflow: hidden;
 }
 
@@ -1391,7 +1391,7 @@ body,
 }
 
 .file-tree__state {
-  padding: 4px 6px 4px 0;
+  padding: 4px 6px 4px 8px;
   font-size: 0.75rem;
   line-height: 1.35;
   color: var(--text-tertiary);
