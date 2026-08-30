@@ -3410,3 +3410,76 @@ body,
   color: var(--text-muted);
   font-size: 0.85rem;
 }
+
+.chat-view-tabs {
+  display: flex;
+  gap: 2px;
+  margin-right: var(--space-2);
+}
+
+.chat-view-tabs button {
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 0.8rem;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.chat-view-tabs button[aria-selected="true"] {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.trajectory-root {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.trajectory-ledger {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+}
+
+.trajectory-empty {
+  margin: auto;
+  color: var(--text-tertiary);
+}
+
+.trajectory-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.trajectory-table tr[aria-selected="true"] {
+  background: var(--bg-tertiary);
+}
+
+.trajectory-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: top;
+}
+
+.trajectory-kind {
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.trajectory-inspector {
+  flex: 0 0 360px;
+  width: 360px;
+  border-left: 1px solid var(--border-subtle);
+  overflow: auto;
+  padding: var(--space-3);
+}
+
+.trajectory-inspector pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
