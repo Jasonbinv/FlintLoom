@@ -41,6 +41,7 @@ import {
   type Bubble,
 } from "./chatBubbles.ts";
 import { ReasoningRow } from "./ReasoningRow.tsx";
+import { AssistantMarkdown } from "./AssistantMarkdown.tsx";
 import { SessionStatsLine } from "./SessionStatsLine.tsx";
 import { ToolCallRow } from "./ToolCallRow.tsx";
 import { TurnFooter } from "./TurnFooter.tsx";
@@ -904,7 +905,7 @@ export function App() {
                 )}
                 {bubble.kind === "assistant" && (
                   <div className="assistant-row">
-                    <span className="assistant-text">{bubble.text}</span>
+                    <AssistantMarkdown text={bubble.text} />
                     <MessageFileCards
                       text={bubble.text}
                       onOpenFile={openFileFromChat}
@@ -1003,7 +1004,9 @@ export function App() {
             {draft ? (
               <div className="message-turn message-assistant">
                 <div className="message-avatar assistant" aria-hidden>AI</div>
-                <div className="bubble assistant draft">{draft}</div>
+                <div className="bubble assistant draft">
+                  <AssistantMarkdown text={draft} />
+                </div>
               </div>
             ) : null}
             {sending && !draft && !reasoningDraft ? (

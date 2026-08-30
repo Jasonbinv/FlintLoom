@@ -522,6 +522,57 @@ describe("App", () => {
     expect(document.body.textContent).toContain("hello");
   });
 
+  it("renders completed assistant markdown as formatted html", async () => {
+    const sse =
+      `data: ${JSON.stringify({
+        type: "assistant/message",
+        text: "### 架构层面的原因\n\n- 文本通道\n- 渲染通道",
+      })}\n\n` + `data: {"type":"end","status":"ok"}\n\n`;
+    installFetch({
+      turn: new Response(sse, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    });
+    await mountApp();
+    await typeAndSend("explain");
+    await waitForText("架构层面的原因");
+    expect(document.querySelector(".assistant-md h3")?.textContent).toContain("架构层面的原因");
+    expect(document.querySelector(".assistant-md li")?.textContent).toContain("文本通道");
+    expect(document.body.textContent).not.toContain("### 架构层面的原因");
+  });
+
+  it("renders streaming assistant draft as markdown including tables", async () => {
+    const tableChunk =
+      "### 已知技能列表\n\n| 技能 | 描述 |\n|:---|:---|\n| report-a2ui | A2UI |\n";
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({ type: "assistant/chunk", text: tableChunk })}\n\n`,
+          ),
+        );
+      },
+    });
+    installFetch({
+      turn: new Response(stream, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    });
+    await mountApp();
+    await typeAndSend("list skills");
+    await waitForText("已知技能列表");
+    expect(document.querySelector(".bubble.draft .assistant-md h3")?.textContent).toContain(
+      "已知技能列表",
+    );
+    expect(document.querySelector(".bubble.draft .assistant-md table")?.textContent).toContain(
+      "report-a2ui",
+    );
+    expect(document.body.textContent).not.toContain("|:---|");
+  });
+
   it("renders model/error message missing", async () => {
     installFetch({
       turn: new Response(ERROR_SSE, {
