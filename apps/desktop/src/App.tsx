@@ -47,6 +47,8 @@ import { ReasoningRow } from "./ReasoningRow.tsx";
 import { AssistantMarkdown } from "./AssistantMarkdown.tsx";
 import { SessionStatsLine } from "./SessionStatsLine.tsx";
 import { ToolCallRow } from "./ToolCallRow.tsx";
+import { TrajectoryView } from "./TrajectoryView.tsx";
+import { buildTrajectoryFromEvents, type TrajectoryRecord } from "./trajectoryRecords.ts";
 import { TurnFooter } from "./TurnFooter.tsx";
 import { turnStatsFromEvent, type TurnStats } from "./turnStats.ts";
 import type { WorkbenchEvent } from "./types.ts";
@@ -83,6 +85,7 @@ import "./app.css";
 const SESSION_KEY = "flintloom.sessionId";
 
 type Page = "chat" | "plugins" | "models" | "settings";
+type ChatView = "chat" | "trajectory";
 
 function sessionId(): string {
   let id = sessionStorage.getItem(SESSION_KEY);
@@ -201,6 +204,44 @@ export function App() {
     reasoningDraft,
     sending,
   });
+  const [chatView, setChatView] = useState<ChatView>("chat");
+  const chatViewRef = useRef<ChatView>("chat");
+  const eventsRef = useRef<WorkbenchEvent[]>([]);
+  const [trajectoryRecords, setTrajectoryRecords] = useState<TrajectoryRecord[]>([]);
+  const [inspectCallId, setInspectCallId] = useState<string | null>(null);
+  const trajRafRef = useRef<number>(0);
+
+  function syncTrajectoryFromEvents(events: WorkbenchEvent[]) {
+    if (chatViewRef.current !== "trajectory") return;
+    setTrajectoryRecords(buildTrajectoryFromEvents(events));
+  }
+
+  function applyChatView(next: ChatView) {
+    chatViewRef.current = next;
+    setChatView(next);
+    if (next === "trajectory") {
+      syncTrajectoryFromEvents(eventsRef.current);
+    }
+  }
+
+  function inspectTool(callId: string) {
+    setInspectCallId(callId);
+    applyChatView("trajectory");
+  }
+
+  function scheduleTrajectory() {
+    if (chatViewRef.current !== "trajectory") return;
+    if (trajRafRef.current !== 0) return;
+    trajRafRef.current = requestAnimationFrame(() => {
+      trajRafRef.current = 0;
+      syncTrajectoryFromEvents(eventsRef.current);
+    });
+  }
+
+  function bindLogEl(el: HTMLElement | null) {
+    logRef.current = el;
+    if (el) el.inert = chatView !== "chat";
+  }
 
   function openFileFromChat(path: string) {
     setFilePaneCollapsed(false);
@@ -295,6 +336,9 @@ export function App() {
     sid.current = targetId;
     sessionStorage.setItem(SESSION_KEY, targetId);
     setBubbles([]);
+    eventsRef.current = [];
+    setTrajectoryRecords([]);
+    setInspectCallId(null);
     setDraft("");
     reasoningDraftRef.current = "";
     reasoningOpenRef.current = false;
@@ -311,6 +355,8 @@ export function App() {
     pinToBottom();
     const session = await fetchSession(targetId);
     if (!session) return;
+    eventsRef.current = session.events;
+    syncTrajectoryFromEvents(session.events);
     setBubbles(buildBubblesFromEvents(session.events, allocId));
     setTurnStatsList(statsFromEvents(session.events));
     const waiting = waitingTurnId(session.events);
@@ -325,6 +371,9 @@ export function App() {
     sessionStorage.setItem(SESSION_KEY, id);
     sid.current = id;
     setBubbles([]);
+    eventsRef.current = [];
+    setTrajectoryRecords([]);
+    setInspectCallId(null);
     setDraft("");
     reasoningDraftRef.current = "";
     reasoningOpenRef.current = false;
@@ -417,6 +466,11 @@ export function App() {
   }
 
   function handleEvent(event: WorkbenchEvent) {
+    eventsRef.current = [...eventsRef.current, event];
+    if (event.type === "guard/ask" || (event.type === "a2ui/surface" && event.wait)) {
+      applyChatView("chat");
+    }
+    scheduleTrajectory();
     if (event.type === "user/message") return;
     if (event.type === "turn/start") {
       turnIdRef.current = event.turnId;
@@ -557,6 +611,12 @@ export function App() {
   }
 
   useEffect(() => {
+    return () => {
+      if (trajRafRef.current !== 0) cancelAnimationFrame(trajRafRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
     applyTheme(theme);
   }, [theme]);
 
@@ -607,6 +667,8 @@ export function App() {
       });
     void fetchSession(sid.current).then((session) => {
       if (!session) return;
+      eventsRef.current = session.events;
+      syncTrajectoryFromEvents(session.events);
       const loaded = buildBubblesFromEvents(session.events, allocId);
       setBubbles(loaded);
       setTurnStatsList(statsFromEvents(session.events));
@@ -745,6 +807,7 @@ export function App() {
   ];
 
   const allocId = () => String(++nextId.current);
+  if (logRef.current) logRef.current.inert = chatView !== "chat";
 
   return (
     <div className="workbench">
@@ -888,12 +951,20 @@ export function App() {
         <div className="chat-column">
           <header className="chat-header">
             <h2 className="chat-title">{taskTitle}</h2>
+            <div className="chat-view-tabs" role="tablist" aria-label="会话视图">
+              <button type="button" role="tab" aria-selected={chatView === "chat"} onClick={() => applyChatView("chat")}>
+                对话
+              </button>
+              <button type="button" role="tab" aria-selected={chatView === "trajectory"} onClick={() => applyChatView("trajectory")}>
+                轨迹
+              </button>
+            </div>
             <div className="chat-header-actions">
               {sending ? <span className="chat-status">思考中…</span> : null}
               {waitingAction ? <span className="chat-status">等待操作</span> : null}
             </div>
           </header>
-          <main className="log" ref={logRef} onScroll={onLogScroll} onWheel={onLogWheel}>
+          <main className="log" ref={bindLogEl} hidden={chatView !== "chat"} onScroll={onLogScroll} onWheel={onLogWheel}>
             {bubbles.length === 0 && !draft && !reasoningDraft ? (
               <div className="log-empty">
                 <p className="log-empty-title">今天我能帮你做什么？</p>
@@ -910,11 +981,13 @@ export function App() {
                         <ToolCallRow
                           key={bubble.id}
                           name={bubble.name}
+                          callId={bubble.callId}
                           args={bubble.args}
                           result={bubble.result}
                           state={bubble.state}
                           step={bubble.step}
                           onOpenFile={openFileFromChat}
+                          onInspect={inspectTool}
                         />
                       ))}
                     </div>
@@ -963,11 +1036,13 @@ export function App() {
                 {bubble.kind === "tool-step" && (
                   <ToolCallRow
                     name={bubble.name}
+                    callId={bubble.callId}
                     args={bubble.args}
                     result={bubble.result}
                     state={bubble.state}
                     step={bubble.step}
                     onOpenFile={openFileFromChat}
+                    onInspect={inspectTool}
                   />
                 )}
                 {bubble.kind === "turn-footer" && (
@@ -1067,6 +1142,14 @@ export function App() {
               </div>
             ) : null}
           </main>
+          {chatView === "trajectory" ? (
+            <TrajectoryView
+              records={trajectoryRecords}
+              inspectCallId={inspectCallId}
+              onInspectDone={() => setInspectCallId(null)}
+              onOpenFile={openFileFromChat}
+            />
+          ) : null}
           <footer className="composer">
             <SessionStatsLine stats={turnStatsList} />
             <div className="composer-box">

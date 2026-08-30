@@ -3433,4 +3433,103 @@ describe("App", () => {
     };
     expect(body2).not.toHaveProperty("webSearch");
   });
+
+  it("keeps chat as default and does not mount trajectory ledger", async () => {
+    installFetch();
+    await mountApp();
+    await typeAndSend("typed locally");
+    expect(document.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("对话");
+    expect(document.querySelector(".trajectory-root")).toBeNull();
+  });
+
+  it("rebuilds trajectory from events without changing chat tool truncation", async () => {
+    const result = "r".repeat(2001);
+    const toolSse =
+      `data: ${JSON.stringify({ type: "tool/call", callId: "c1", name: "fs", args: { path: "a.txt" } })}\n\n` +
+      `data: ${JSON.stringify({ type: "tool/result", callId: "c1", name: "fs", text: result })}\n\n` +
+      `data: ${JSON.stringify({ type: "end", status: "ok" })}\n\n`;
+    installFetch({
+      turn: new Response(toolSse, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    });
+    await mountApp();
+    await typeAndSend("use tool");
+    await waitForText("File");
+    expect(document.querySelector(".trajectory-root")).toBeNull();
+    expect(document.body.textContent).not.toContain(result);
+
+    const trajTab = [...document.querySelectorAll('[role="tab"]')].find((el) => el.textContent === "轨迹");
+    await act(async () => {
+      (trajTab as HTMLButtonElement).click();
+    });
+    const panel = document.querySelector('[data-trajectory-id="tool:c1"]');
+    expect(panel).toBeTruthy();
+    await act(async () => {
+      (panel as HTMLElement).click();
+    });
+    expect(document.querySelector("[data-inspector-panel]")?.textContent).toContain(result);
+    expect(document.querySelector(".log")).toBeTruthy();
+  });
+
+  it("jumps from a tool row inspect button to the trajectory record", async () => {
+    const toolSse =
+      `data: ${JSON.stringify({ type: "tool/call", callId: "c1", name: "fs", args: { path: "a.txt" } })}\n\n` +
+      `data: ${JSON.stringify({ type: "tool/result", callId: "c1", name: "fs", text: "hello-out" })}\n\n` +
+      `data: ${JSON.stringify({ type: "end", status: "ok" })}\n\n`;
+    installFetch({
+      turn: new Response(toolSse, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    });
+    await mountApp();
+    await typeAndSend("use tool");
+    await waitForText("File");
+    const inspect = document.querySelector('[aria-label="在轨迹中查看"]') as HTMLButtonElement;
+    await act(async () => {
+      inspect.click();
+    });
+    expect(document.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("轨迹");
+    const row = document.querySelector('[data-trajectory-id="tool:c1"]');
+    expect(row?.getAttribute("aria-selected")).toBe("true");
+    expect(document.querySelector("[data-inspector-panel]")?.textContent).toContain("hello-out");
+  });
+
+  it("switches back to chat when guard ask arrives on trajectory", async () => {
+    installFetch({
+      turn: new Response(GUARD_SSE, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    });
+    await mountApp();
+    const trajTab = [...document.querySelectorAll('[role="tab"]')].find((el) => el.textContent === "轨迹");
+    await act(async () => {
+      (trajTab as HTMLButtonElement).click();
+    });
+    expect(document.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("轨迹");
+    await typeAndSend("run tool");
+    await waitForText("允许执行工具");
+    expect(document.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("对话");
+    expect(document.querySelector(".log")?.hasAttribute("hidden")).toBe(false);
+  });
+
+  it("switches back to chat when a2ui wait surface arrives on trajectory", async () => {
+    installFetch({
+      turn: new Response(SURFACE_SSE, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    });
+    await mountApp();
+    const trajTab = [...document.querySelectorAll('[role="tab"]')].find((el) => el.textContent === "轨迹");
+    await act(async () => {
+      (trajTab as HTMLButtonElement).click();
+    });
+    await typeAndSend("confirm");
+    await waitForText("Continue?");
+    expect(document.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("对话");
+  });
 });
