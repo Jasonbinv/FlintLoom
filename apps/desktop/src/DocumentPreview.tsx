@@ -7,7 +7,11 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { FilePreviewCloseButton } from "./FilePreviewContent.tsx";
+import {
+  FilePreviewCloseButton,
+  FilePreviewFullscreenButton,
+  type FilePreviewChromeProps,
+} from "./FilePreviewContent.tsx";
 import { ExportFormatButton } from "./ExportFormatButton.tsx";
 import {
   fetchFileBytes,
@@ -57,12 +61,10 @@ class OfficePreviewErrorBoundary extends Component<
 
 type OfficeKind = "pdf" | "docx" | "pptx";
 
-type Props = {
+type Props = FilePreviewChromeProps & {
   filePath: string;
   title: string;
   kind: OfficeKind;
-  onClose?: () => void;
-  onQuote?: () => void;
   onExported?: (path: string) => void;
 };
 
@@ -72,7 +74,16 @@ const BADGE: Record<OfficeKind, string> = {
   pptx: "PPT",
 };
 
-export function DocumentPreview({ filePath, title, kind, onClose, onQuote, onExported }: Props) {
+export function DocumentPreview({
+  filePath,
+  title,
+  kind,
+  onClose,
+  onQuote,
+  onExported,
+  fullscreen,
+  onToggleFullscreen,
+}: Props) {
   const [tab, setTab] = useState<"preview" | "edit">("preview");
   const [arrayBuffer, setArrayBuffer] = useState<ArrayBuffer>();
   const [bytesError, setBytesError] = useState<string>();
@@ -281,12 +292,16 @@ export function DocumentPreview({ filePath, title, kind, onClose, onQuote, onExp
               type="button"
               className="file-preview-header__action"
               onClick={onQuote}
-              title="将文件路径插入输入框，供对话引用"
+              title="引用到对话"
             >
               引用
             </button>
           ) : null}
           <span className="file-preview-header__badge">{BADGE[kind]}</span>
+          <FilePreviewFullscreenButton
+            fullscreen={fullscreen}
+            onToggleFullscreen={onToggleFullscreen}
+          />
           {onClose ? <FilePreviewCloseButton onClose={onClose} /> : null}
         </div>
       </header>

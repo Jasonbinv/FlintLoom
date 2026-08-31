@@ -13,13 +13,18 @@ import { InfographicView } from "./InfographicView.tsx";
 
 type PreviewKind = FilePreview["kind"] | "error";
 
-type Props = {
+export type FilePreviewChromeProps = {
+  onClose?: () => void;
+  onQuote?: () => void;
+  fullscreen?: boolean;
+  onToggleFullscreen?: () => void;
+};
+
+type Props = FilePreviewChromeProps & {
   filePath?: string;
   kind: PreviewKind;
   text: string;
   cacheKey?: number | string;
-  onClose?: () => void;
-  onQuote?: () => void;
   onExported?: (path: string) => void;
 };
 
@@ -75,6 +80,27 @@ function previewBadge(filePath: string | undefined, kind: PreviewKind): string {
   return EXT_LABELS[ext] ?? ext.toUpperCase();
 }
 
+export function FilePreviewFullscreenButton({
+  fullscreen,
+  onToggleFullscreen,
+}: {
+  fullscreen?: boolean;
+  onToggleFullscreen?: () => void;
+}) {
+  if (!onToggleFullscreen) return null;
+  return (
+    <button
+      type="button"
+      className="file-preview-header__action file-preview-header__fullscreen"
+      onClick={onToggleFullscreen}
+      aria-label={fullscreen ? "退出全屏" : "全屏预览"}
+      title={fullscreen ? "退出全屏" : "全屏预览"}
+    >
+      {fullscreen ? "⤓" : "⤢"}
+    </button>
+  );
+}
+
 function PreviewHeader({
   title,
   filePath,
@@ -82,13 +108,13 @@ function PreviewHeader({
   actions,
   onClose,
   onQuote,
-}: {
+  fullscreen,
+  onToggleFullscreen,
+}: FilePreviewChromeProps & {
   title: string;
   filePath?: string;
   badge: string;
   actions?: ReactNode;
-  onClose?: () => void;
-  onQuote?: () => void;
 }) {
   return (
     <header className="file-preview-header">
@@ -102,12 +128,16 @@ function PreviewHeader({
             type="button"
             className="file-preview-header__action"
             onClick={onQuote}
-            title="将文件路径插入输入框，供对话引用"
+            title="引用到对话"
           >
             引用
           </button>
         ) : null}
         <span className="file-preview-header__badge">{badge}</span>
+        <FilePreviewFullscreenButton
+          fullscreen={fullscreen}
+          onToggleFullscreen={onToggleFullscreen}
+        />
         {onClose ? (
           <button
             type="button"
@@ -145,13 +175,13 @@ function ImageFilePreview({
   cacheKey,
   onClose,
   onQuote,
-}: {
+  fullscreen,
+  onToggleFullscreen,
+}: FilePreviewChromeProps & {
   filePath: string;
   title: string;
   badge: string;
   cacheKey?: number | string;
-  onClose?: () => void;
-  onQuote?: () => void;
 }) {
   const [failed, setFailed] = useState(false);
   const src = `/v1/files/raw?path=${encodeURIComponent(filePath)}`;
@@ -168,6 +198,8 @@ function ImageFilePreview({
         badge={badge}
         onClose={onClose}
         onQuote={onQuote}
+        fullscreen={fullscreen}
+        onToggleFullscreen={onToggleFullscreen}
       />
       {failed ? (
         <div className="file-preview-empty">
@@ -287,7 +319,15 @@ export function FilePreviewContent({
   onClose,
   onQuote,
   onExported,
+  fullscreen,
+  onToggleFullscreen,
 }: Props) {
+  const chrome: FilePreviewChromeProps = {
+    onClose,
+    onQuote,
+    fullscreen,
+    onToggleFullscreen,
+  };
   const title = filePath ? basename(filePath) : "文件预览";
   const badge = previewBadge(filePath, kind);
   const isHtml = filePath ? isHtmlFilePath(filePath) : false;
@@ -308,9 +348,8 @@ export function FilePreviewContent({
       <SpreadsheetPreview
         filePath={filePath}
         title={title}
-        onClose={onClose}
-        onQuote={onQuote}
         onExported={onExported}
+        {...chrome}
       />
     );
   }
@@ -319,7 +358,12 @@ export function FilePreviewContent({
     const src = `/v1/files/raw?path=${encodeURIComponent(filePath)}`;
     return (
       <div className={`file-preview file-preview--${kind}`}>
-        <PreviewHeader title={title} filePath={filePath} badge={badge} onClose={onClose} onQuote={onQuote} />
+        <PreviewHeader
+          title={title}
+          filePath={filePath}
+          badge={badge}
+          {...chrome}
+        />
         <div className={`file-preview-media file-preview-media--${kind}`}>
           {kind === "audio" ? (
             <audio
@@ -349,8 +393,7 @@ export function FilePreviewContent({
         title={title}
         badge={badge}
         cacheKey={cacheKey}
-        onClose={onClose}
-        onQuote={onQuote}
+        {...chrome}
       />
     );
   }
@@ -364,9 +407,8 @@ export function FilePreviewContent({
         filePath={filePath}
         title={title}
         kind={kind}
-        onClose={onClose}
-        onQuote={onQuote}
         onExported={onExported}
+        {...chrome}
       />
     );
   }
@@ -379,8 +421,7 @@ export function FilePreviewContent({
           filePath={filePath}
           badge={badge}
           actions={headerActions}
-          onClose={onClose}
-          onQuote={onQuote}
+          {...chrome}
         />
         <InfographicView syntax={text} />
       </div>
@@ -390,7 +431,7 @@ export function FilePreviewContent({
   if (kind === "error") {
     return (
       <div className="file-preview file-preview--error">
-        <PreviewHeader title={title} badge={badge} onClose={onClose} onQuote={onQuote} />
+        <PreviewHeader title={title} badge={badge} {...chrome} />
         <div className="file-preview-empty">
           <p className="file-preview-empty__title">无法加载预览</p>
           <p className="file-preview-empty__hint">{text}</p>
@@ -402,7 +443,13 @@ export function FilePreviewContent({
   if (kind === "failed") {
     return (
       <div className="file-preview file-preview--failed">
-        <PreviewHeader title={title} filePath={filePath} badge={badge} actions={headerActions} onClose={onClose} onQuote={onQuote} />
+        <PreviewHeader
+          title={title}
+          filePath={filePath}
+          badge={badge}
+          actions={headerActions}
+          {...chrome}
+        />
         <div className="file-preview-empty">
           <p className="file-preview-empty__title">此文件暂不支持内嵌预览</p>
           <p className="file-preview-empty__hint">{text}</p>
@@ -430,7 +477,7 @@ export function FilePreviewContent({
           filePath={filePath}
           badge={badge}
           actions={headerActions}
-          onClose={onClose} onQuote={onQuote}
+          {...chrome}
         />
         <SafeHtmlInlinePreview filePath={filePath} />
       </div>
@@ -446,7 +493,7 @@ export function FilePreviewContent({
           filePath={filePath}
           badge={badge}
           actions={headerActions}
-          onClose={onClose} onQuote={onQuote}
+          {...chrome}
         />
         <article
           className="file-preview-prose"
@@ -463,7 +510,7 @@ export function FilePreviewContent({
         filePath={filePath}
         badge={badge}
         actions={headerActions}
-        onClose={onClose} onQuote={onQuote}
+        {...chrome}
       />
       <pre className="file-preview-code">
         <code>{text}</code>

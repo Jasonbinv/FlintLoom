@@ -1,46 +1,45 @@
 import {
   useCallback,
-  useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
 } from "react";
 import {
-  clampFilePaneWidth,
-  FILE_PANE_DEFAULT_WIDTH,
-  loadFilePaneWidth,
-  saveFilePaneWidth,
-} from "./filePaneWidth.ts";
+  clampFilePreviewWidth,
+  FILE_PREVIEW_DEFAULT_WIDTH,
+  loadFilePreviewWidth,
+  saveFilePreviewWidth,
+} from "./filePanePreviewWidth.ts";
 
 type Options = {
   stageRef: RefObject<HTMLElement | null>;
+  treeWidth: number;
   enabled: boolean;
-  reservedRight?: number;
 };
 
-export function useFilePaneResize({
+export function useFilePanePreviewResize({
   stageRef,
+  treeWidth,
   enabled,
-  reservedRight = 0,
 }: Options) {
-  const [width, setWidth] = useState(() => loadFilePaneWidth());
+  const [width, setWidth] = useState(() => loadFilePreviewWidth());
   const [dragging, setDragging] = useState(false);
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const widthRef = useRef(width);
   widthRef.current = width;
+  const treeWidthRef = useRef(treeWidth);
+  treeWidthRef.current = treeWidth;
 
   const measureStageWidth = useCallback(() => {
     const stage = stageRef.current;
     return stage?.getBoundingClientRect().width ?? window.innerWidth;
   }, [stageRef]);
 
-  const reservedRightRef = useRef(reservedRight);
-  reservedRightRef.current = reservedRight;
-
   const clampWidth = useCallback(
     (value: number) =>
-      clampFilePaneWidth(value, measureStageWidth(), reservedRightRef.current),
+      clampFilePreviewWidth(value, measureStageWidth(), treeWidthRef.current),
     [measureStageWidth],
   );
 
@@ -52,7 +51,7 @@ export function useFilePaneResize({
     });
   }, [clampWidth]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!enabled) return;
     syncWidthToStage();
 
@@ -70,14 +69,14 @@ export function useFilePaneResize({
       window.removeEventListener("resize", onResize);
       observer?.disconnect();
     };
-  }, [enabled, reservedRight, stageRef, syncWidthToStage]);
+  }, [enabled, stageRef, syncWidthToStage, treeWidth]);
 
   const endDrag = useCallback(() => {
     dragRef.current = null;
     setDragging(false);
     const next = clampWidth(widthRef.current);
     setWidth(next);
-    saveFilePaneWidth(next);
+    saveFilePreviewWidth(next);
   }, [clampWidth]);
 
   const onHandlePointerDown = useCallback(
@@ -117,6 +116,6 @@ export function useFilePaneResize({
     onHandlePointerMove,
     onHandlePointerUp,
     onHandlePointerCancel: onHandlePointerUp,
-    defaultWidth: FILE_PANE_DEFAULT_WIDTH,
+    defaultWidth: FILE_PREVIEW_DEFAULT_WIDTH,
   };
 }

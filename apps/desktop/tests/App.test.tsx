@@ -672,24 +672,28 @@ describe("App", () => {
     expect(document.querySelectorAll(".log > .message-tool-step .message-avatar")).toHaveLength(1);
   });
 
-  it("does not auto-open file preview and stacks it below the tree", async () => {
+  it("does not auto-open file preview and docks it beside the tree", async () => {
     installFetch();
     await mountApp();
     await waitForText("README.md");
     expect(document.querySelector(".file-preview-surface")).toBeNull();
+    const rail = document.querySelector(".file-pane-rail") as HTMLElement | null;
+    const closedWidth = Number.parseFloat(rail?.style.width ?? "0");
 
     await clickFileTreeItem("README.md");
     await waitForText("Hello");
     expect(document.querySelector(".file-preview-surface")).toBeTruthy();
+    expect(document.querySelector(".file-pane-shell--previewing")).toBeTruthy();
+    expect(document.querySelector(".file-tree-surface")).toBeTruthy();
 
     const tree = document.querySelector(".file-tree-surface") as HTMLElement | null;
-    expect(tree?.style.height).toMatch(/^\d+px$/);
-    expect(tree?.style.width).toBe("");
+    expect(tree?.style.height).toBe("");
     expect(
       document
         .querySelector(".file-pane-inner-split-handle")
         ?.getAttribute("aria-orientation"),
-    ).toBe("horizontal");
+    ).toBe("vertical");
+    expect(Number.parseFloat(rail?.style.width ?? "0")).toBeGreaterThan(closedWidth);
   });
 
   it("shows file tree and preview without inserting path on click", async () => {
@@ -717,12 +721,17 @@ describe("App", () => {
     await act(async () => {
       quoteButton.click();
     });
-    expect(textarea.value).toBe("README.md");
+    expect(textarea.value).toBe("");
+    const chips = document.querySelectorAll(".composer-attach-chip");
+    expect(chips).toHaveLength(1);
+    expect(chips[0]?.textContent).toContain("README.md");
+    expect(document.querySelector('[aria-label="待发送附件"]')).toBeTruthy();
 
     await act(async () => {
       quoteButton.click();
     });
-    expect(textarea.value).toBe("README.md");
+    expect(textarea.value).toBe("");
+    expect(document.querySelectorAll(".composer-attach-chip")).toHaveLength(1);
   });
 
   it("closes file preview with the header close button", async () => {
@@ -770,6 +779,38 @@ describe("App", () => {
     });
     expect(document.querySelector(".file-preview-surface")).toBeTruthy();
     await waitForText("Hello");
+  });
+
+  it("opens file preview fullscreen and exits with Escape without closing", async () => {
+    installFetch();
+    await mountApp();
+    await waitForText("README.md");
+    await clickFileTreeItem("README.md");
+    await waitForText("Hello");
+
+    const fullscreenBtn = document.querySelector(
+      '[aria-label="全屏预览"]',
+    ) as HTMLButtonElement | null;
+    if (!fullscreenBtn) throw new Error("no fullscreen button");
+    await act(async () => {
+      fullscreenBtn.click();
+    });
+
+    expect(document.querySelector(".file-preview-fs-root")).toBeTruthy();
+    expect(
+      document.querySelector(".file-preview-fs-root .file-preview-prose"),
+    ).toBeTruthy();
+    expect(
+      document.querySelector('[aria-label="退出全屏"]'),
+    ).toBeTruthy();
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+
+    expect(document.querySelector(".file-preview-fs-root")).toBeNull();
+    expect(document.querySelector(".file-preview-surface")).toBeTruthy();
+    expect(document.querySelector(".file-preview-prose")).toBeTruthy();
   });
 
   it("renders infographic preview as an image without json source", async () => {

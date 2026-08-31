@@ -1,9 +1,14 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import { FileActionDialog } from "./FileActionDialog.tsx";
 import { FileIcon } from "./FileIcon.tsx";
 import { FileMoveDialog } from "./FileMoveDialog.tsx";
 import { FilePaneResizeHandle } from "./FilePaneResizeHandle.tsx";
-import { FilePreviewCloseButton, FilePreviewContent } from "./FilePreviewContent.tsx";
+import {
+  FilePreviewCloseButton,
+  FilePreviewContent,
+  FilePreviewFullscreenButton,
+} from "./FilePreviewContent.tsx";
 import { FileTreeContextMenu } from "./FileTreeContextMenu.tsx";
 import {
   FileTreeNodeActionMenu,
@@ -12,7 +17,8 @@ import {
   type FileTreeNodeMenuActions,
 } from "./FileTreeNodeActions.tsx";
 import { KnowledgePane } from "./KnowledgePane.tsx";
-import { useFilePaneTreeResize } from "./useFilePaneTreeResize.ts";
+import { filePreviewExtraWidth } from "./filePanePreviewWidth.ts";
+import { useFilePanePreviewResize } from "./useFilePanePreviewResize.ts";
 import {
   childPath,
   createWorkspaceDirectory,
@@ -67,6 +73,9 @@ type Props = {
   onToggleCollapse?: () => void;
   requestedPath?: string;
   previewRequest?: number;
+  treeWidth?: number;
+  stageRef?: RefObject<HTMLElement | null>;
+  onPreviewExtraWidthChange?: (extraWidth: number) => void;
 };
 
 export function FilePane({
@@ -75,10 +84,14 @@ export function FilePane({
   onToggleCollapse,
   requestedPath,
   previewRequest,
+  treeWidth = 0,
+  stageRef,
+  onPreviewExtraWidthChange,
 }: Props) {
   const [tab, setTab] = useState<"files" | "knowledge">("files");
   const [selectedFile, setSelectedFile] = useState<string>();
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewFullscreen, setPreviewFullscreen] = useState(false);
   const [rootEntries, setRootEntries] = useState<FileEntry[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [children, setChildren] = useState<Record<string, FileEntry[]>>({});
@@ -90,7 +103,22 @@ export function FilePane({
   const [previewErrorText, setPreviewErrorText] = useState("host unreachable");
   const [previewNonce, setPreviewNonce] = useState(0);
   const previewAc = useRef<AbortController | undefined>(undefined);
-  const filePaneBodyRef = useRef<HTMLDivElement>(null);
+  const fallbackStageRef = useRef<HTMLDivElement>(null);
+  const previewStageRef = stageRef ?? fallbackStageRef;
+  const dockedPreview =
+    tab === "files" && previewOpen && !collapsed;
+  const {
+    width: previewWidth,
+    dragging: previewDragging,
+    onHandlePointerDown: onPreviewHandlePointerDown,
+    onHandlePointerMove: onPreviewHandlePointerMove,
+    onHandlePointerUp: onPreviewHandlePointerUp,
+    onHandlePointerCancel: onPreviewHandlePointerCancel,
+  } = useFilePanePreviewResize({
+    stageRef: previewStageRef,
+    treeWidth,
+    enabled: dockedPreview,
+  });
   const [treeContextMenu, setTreeContextMenu] = useState<{
     node: FileTreeNode;
     x: number;
@@ -106,21 +134,11 @@ export function FilePane({
   >(null);
   const [fileActionName, setFileActionName] = useState("");
   const [fileActionError, setFileActionError] = useState<string>();
-  const {
-    height: treeHeight,
-    dragging: treeDragging,
-    onHandlePointerDown: onTreeHandlePointerDown,
-    onHandlePointerMove: onTreeHandlePointerMove,
-    onHandlePointerUp: onTreeHandlePointerUp,
-    onHandlePointerCancel: onTreeHandlePointerCancel,
-  } = useFilePaneTreeResize({
-    bodyRef: filePaneBodyRef,
-    enabled: tab === "files" && previewOpen,
-  });
 
   const closeFilePreview = useCallback(() => {
     previewAc.current?.abort();
     setPreviewOpen(false);
+    setPreviewFullscreen(false);
     setSelectedFile(undefined);
     setPreviewText("");
     setPreviewKind("text");
@@ -128,14 +146,29 @@ export function FilePane({
     setPreviewErrorText("host unreachable");
   }, []);
 
+  useLayoutEffect(() => {
+    onPreviewExtraWidthChange?.(
+      filePreviewExtraWidth(dockedPreview, previewWidth),
+    );
+  }, [dockedPreview, onPreviewExtraWidthChange, previewWidth]);
+
+  useEffect(() => {
+    return () => onPreviewExtraWidthChange?.(0);
+  }, [onPreviewExtraWidthChange]);
+
   useEffect(() => {
     if (!previewOpen) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") closeFilePreview();
+      if (event.key !== "Escape") return;
+      if (previewFullscreen) {
+        setPreviewFullscreen(false);
+        return;
+      }
+      closeFilePreview();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [closeFilePreview, previewOpen]);
+  }, [closeFilePreview, previewFullscreen, previewOpen]);
 
   async function loadPreview(filePath: string, signal: AbortSignal) {
     const imageFile = isImageFilePath(filePath);
@@ -686,6 +719,113 @@ export function FilePane({
     });
   }
 
+  function togglePreviewFullscreen() {
+    setPreviewFullscreen((open) => !open);
+  }
+
+  function renderFilePreview() {
+    if (previewKind === "svg" && !previewError) {
+      return (
+        <div className="file-preview file-preview-svg">
+          <header className="file-preview-header">
+            <span className="file-preview-header__name">
+              {selectedFile ? selectedFile.split("/").pop() : "预览"}
+            </span>
+            <div className="file-preview-header__actions">
+              {selectedFile ? (
+                <button
+                  type="button"
+                  className="file-preview-header__action"
+                  onClick={() => quoteFile(selectedFile)}
+                  title="引用到对话"
+                >
+                  引用
+                </button>
+              ) : null}
+              <span className="file-preview-header__badge">SVG</span>
+              <FilePreviewFullscreenButton
+                fullscreen={previewFullscreen}
+                onToggleFullscreen={togglePreviewFullscreen}
+              />
+              <FilePreviewCloseButton onClose={closeFilePreview} />
+            </div>
+          </header>
+          <div className="file-preview-svg__frame">
+            <img
+              alt={selectedFile ?? ""}
+              src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(previewText)}`}
+            />
+          </div>
+        </div>
+      );
+    }
+    return (
+      <FilePreviewContent
+        filePath={selectedFile}
+        kind={previewError ? "error" : previewKind}
+        text={previewError ? previewErrorText : previewText}
+        cacheKey={previewNonce}
+        onClose={closeFilePreview}
+        onQuote={selectedFile ? () => quoteFile(selectedFile) : undefined}
+        fullscreen={previewFullscreen}
+        onToggleFullscreen={togglePreviewFullscreen}
+        onExported={(path) => {
+          void previewFile(path, false);
+        }}
+      />
+    );
+  }
+
+  const previewSurface = (
+    <div className="file-preview-surface">{renderFilePreview()}</div>
+  );
+
+  const previewColumn = dockedPreview ? (
+    <>
+      <div className="file-pane-inner-split-rail">
+        <FilePaneResizeHandle
+          className="file-pane-inner-split-handle"
+          ariaLabel="调整预览宽度"
+          title="拖动调整预览宽度"
+          orientation="vertical"
+          onPointerDown={onPreviewHandlePointerDown}
+          onPointerMove={onPreviewHandlePointerMove}
+          onPointerUp={onPreviewHandlePointerUp}
+          onPointerCancel={onPreviewHandlePointerCancel}
+        />
+      </div>
+      {previewFullscreen ? (
+        <div
+          className="file-preview-surface file-preview-surface--placeholder"
+          aria-hidden
+        />
+      ) : (
+        previewSurface
+      )}
+    </>
+  ) : null;
+
+  const fullscreenPortal =
+    dockedPreview && previewFullscreen
+      ? createPortal(
+          <div
+            className="file-preview-fs-root"
+            role="dialog"
+            aria-modal="true"
+            aria-label="全屏预览"
+          >
+            <button
+              type="button"
+              className="file-preview-fs-backdrop"
+              aria-label="退出全屏"
+              onClick={() => setPreviewFullscreen(false)}
+            />
+            <div className="file-preview-fs-shell">{previewSurface}</div>
+          </div>,
+          document.body,
+        )
+      : null;
+
   if (collapsed) {
     return (
       <aside className="file-pane file-pane--collapsed">
@@ -702,7 +842,17 @@ export function FilePane({
   }
 
   return (
-    <aside className="file-pane">
+    <div
+      className={`file-pane-shell${dockedPreview ? " file-pane-shell--previewing" : ""}${previewDragging ? " file-pane-shell--dragging" : ""}`}
+      ref={fallbackStageRef}
+      style={
+        dockedPreview
+          ? ({ "--file-preview-col-width": `${previewWidth}px` } as CSSProperties)
+          : undefined
+      }
+    >
+      {previewDragging ? <div className="file-pane-inner-drag-overlay" /> : null}
+      <aside className="file-pane">
       <header className="file-pane-header">
         <h3 className="file-pane-title">工作空间文件</h3>
         <div className="file-pane-header-actions">
@@ -744,14 +894,9 @@ export function FilePane({
         </button>
       </div>
       {tab === "files" ? (
-        <div
-          className={`file-pane-body${treeDragging ? " file-pane-body--dragging" : ""}${previewOpen ? "" : " file-pane-body--preview-closed"}`}
-          ref={filePaneBodyRef}
-        >
-          {treeDragging ? <div className="file-pane-inner-drag-overlay" /> : null}
+        <div className="file-pane-body file-pane-body--preview-closed">
           <div
             className="file-tree-surface"
-            style={previewOpen ? { height: `${treeHeight}px` } : undefined}
             onContextMenu={(event) => {
               if (isTreeRowTarget(event.target)) return;
               event.preventDefault();
@@ -812,67 +957,6 @@ export function FilePane({
               )}
             </div>
           </div>
-          {previewOpen ? (
-            <>
-              <div className="file-pane-inner-split-rail">
-                <FilePaneResizeHandle
-                  className="file-pane-inner-split-handle"
-                  ariaLabel="调整目录树高度"
-                  title="拖动调整高度"
-                  orientation="horizontal"
-                  onPointerDown={onTreeHandlePointerDown}
-                  onPointerMove={onTreeHandlePointerMove}
-                  onPointerUp={onTreeHandlePointerUp}
-                  onPointerCancel={onTreeHandlePointerCancel}
-                />
-              </div>
-              <div className="file-preview-surface">
-                {previewKind === "svg" && !previewError ? (
-                  <div className="file-preview file-preview-svg">
-                    <header className="file-preview-header">
-                      <span className="file-preview-header__name">
-                        {selectedFile ? selectedFile.split("/").pop() : "预览"}
-                      </span>
-                      <div className="file-preview-header__actions">
-                        {selectedFile ? (
-                          <button
-                            type="button"
-                            className="file-preview-header__action"
-                            onClick={() => quoteFile(selectedFile)}
-                            title="将文件路径插入输入框，供对话引用"
-                          >
-                            引用
-                          </button>
-                        ) : null}
-                        <span className="file-preview-header__badge">SVG</span>
-                        <FilePreviewCloseButton onClose={closeFilePreview} />
-                      </div>
-                    </header>
-                    <div className="file-preview-svg__frame">
-                      <img
-                        alt={selectedFile ?? ""}
-                        src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(previewText)}`}
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <FilePreviewContent
-                    filePath={selectedFile}
-                    kind={previewError ? "error" : previewKind}
-                    text={previewError ? previewErrorText : previewText}
-                    cacheKey={previewNonce}
-                    onClose={closeFilePreview}
-                    onQuote={
-                      selectedFile ? () => quoteFile(selectedFile) : undefined
-                    }
-                    onExported={(path) => {
-                      void previewFile(path, false);
-                    }}
-                  />
-                )}
-              </div>
-            </>
-          ) : null}
         </div>
       ) : (
         <KnowledgePane selectedPath={selectedFile} />
@@ -943,6 +1027,9 @@ export function FilePane({
           onCancel={() => setFileAction(null)}
         />
       ) : null}
-    </aside>
+      </aside>
+      {previewColumn}
+      {fullscreenPortal}
+    </div>
   );
 }

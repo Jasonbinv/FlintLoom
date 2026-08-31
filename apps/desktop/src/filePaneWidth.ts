@@ -21,10 +21,14 @@ export function saveFilePaneWidth(width: number): void {
   localStorage.setItem(STORAGE_KEY, String(width));
 }
 
-export function clampFilePaneWidth(width: number, stageWidth: number): number {
+export function clampFilePaneWidth(
+  width: number,
+  stageWidth: number,
+  reservedRight = 0,
+): number {
   const max = Math.max(
     FILE_PANE_MIN_WIDTH,
-    stageWidth - CHAT_COLUMN_MIN_WIDTH - FILE_PANE_HANDLE_WIDTH,
+    stageWidth - CHAT_COLUMN_MIN_WIDTH - FILE_PANE_HANDLE_WIDTH - reservedRight,
   );
   return Math.max(FILE_PANE_MIN_WIDTH, Math.min(width, max));
 }

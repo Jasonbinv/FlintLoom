@@ -33,4 +33,12 @@ describe("filePaneWidth", () => {
     expect(clampFilePaneWidth(9999, stageWidth)).toBe(max);
     expect(clampFilePaneWidth(360, stageWidth)).toBe(360);
   });
+
+  it("reserves the open preview column when clamping tree width", () => {
+    const stageWidth = 1200;
+    const reservedRight = 400;
+    const max =
+      stageWidth - CHAT_COLUMN_MIN_WIDTH - FILE_PANE_HANDLE_WIDTH - reservedRight;
+    expect(clampFilePaneWidth(9999, stageWidth, reservedRight)).toBe(max);
+  });
 });

@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FilePreviewCloseButton } from "./FilePreviewContent.tsx";
+import {
+  FilePreviewCloseButton,
+  FilePreviewFullscreenButton,
+  type FilePreviewChromeProps,
+} from "./FilePreviewContent.tsx";
 import { ExportFormatButton } from "./ExportFormatButton.tsx";
 import { fetchFileBytes, writeFileBytes } from "./files.ts";
 import { FileXlsxPreview, type FileXlsxPreviewHandle } from "./xlsx/FileXlsxPreview.tsx";
 
-type Props = {
+type Props = FilePreviewChromeProps & {
   filePath: string;
   title: string;
-  onClose?: () => void;
-  onQuote?: () => void;
   onExported?: (path: string) => void;
 };
 
@@ -68,7 +70,15 @@ export function useXlsxPreviewSave(args: {
   return { dirty, saving, saveError, markDirty, discardEdit, saveEdit };
 }
 
-export function SpreadsheetPreview({ filePath, title, onClose, onQuote, onExported }: Props) {
+export function SpreadsheetPreview({
+  filePath,
+  title,
+  onClose,
+  onQuote,
+  onExported,
+  fullscreen,
+  onToggleFullscreen,
+}: Props) {
   const [arrayBuffer, setArrayBuffer] = useState<ArrayBuffer>();
   const [loadError, setLoadError] = useState<string>();
   const [loading, setLoading] = useState(true);
@@ -162,12 +172,16 @@ export function SpreadsheetPreview({ filePath, title, onClose, onQuote, onExport
               type="button"
               className="file-preview-header__action"
               onClick={onQuote}
-              title="将文件路径插入输入框，供对话引用"
+              title="引用到对话"
             >
               引用
             </button>
           ) : null}
           <span className="file-preview-header__badge">Excel</span>
+          <FilePreviewFullscreenButton
+            fullscreen={fullscreen}
+            onToggleFullscreen={onToggleFullscreen}
+          />
           {onClose ? <FilePreviewCloseButton onClose={onClose} /> : null}
         </div>
       </header>

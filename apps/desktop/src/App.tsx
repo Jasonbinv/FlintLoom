@@ -14,7 +14,7 @@ import { OutputFormatInput } from "./OutputFormatInput.tsx";
 import { WebSearchToggle } from "./WebSearchToggle.tsx";
 import { VoiceInput } from "./VoiceInput.tsx";
 import { TtsPlay } from "./TtsPlay.tsx";
-import { insertPath, writeNewWorkspaceFile } from "./files.ts";
+import { fileNameOf, writeNewWorkspaceFile } from "./files.ts";
 import {
   appendAttachmentPaths,
   MAX_ATTACHMENTS,
@@ -154,6 +154,7 @@ export function App() {
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const pendingAttachmentsRef = useRef<PendingAttachment[]>([]);
   pendingAttachmentsRef.current = pendingAttachments;
+  const [pendingQuotes, setPendingQuotes] = useState<string[]>([]);
   const [outputFormat, setOutputFormat] = useState<OutputFormat | undefined>();
   const outputFormatForTurnRef = useRef<OutputFormat[]>([]);
   const [webSearch, setWebSearch] = useState(false);
@@ -170,6 +171,7 @@ export function App() {
   const [page, setPage] = useState<Page>("chat");
   const [filePaneCollapsed, setFilePaneCollapsed] = useState(false);
   const [filePaneKey, setFilePaneKey] = useState(0);
+  const [previewExtraWidth, setPreviewExtraWidth] = useState(0);
   const [previewPath, setPreviewPath] = useState<string>();
   const [previewRequest, setPreviewRequest] = useState(0);
   const [workspaceRoot, setWorkspaceRoot] = useState<string | undefined>();
@@ -195,6 +197,7 @@ export function App() {
   } = useFilePaneResize({
     stageRef: workbenchBodyRef,
     enabled: page === "chat" && !filePaneCollapsed,
+    reservedRight: previewExtraWidth,
   });
   const logRef = useRef<HTMLElement | null>(null);
   const { onScroll: onLogScroll, onWheel: onLogWheel, pinToBottom } = useChatLogFollow({
@@ -262,6 +265,15 @@ export function App() {
     }
     pendingAttachmentsRef.current = [];
     setPendingAttachments([]);
+    setPendingQuotes([]);
+  }
+
+  function quoteWorkspaceFile(path: string) {
+    const alreadyAttached = pendingAttachmentsRef.current.some((item) => item.path === path);
+    setPendingQuotes((current) => {
+      if (alreadyAttached || current.includes(path)) return current;
+      return [...current, path];
+    });
   }
 
   function removePendingAttachment(id: string) {
@@ -693,17 +705,20 @@ export function App() {
   async function send() {
     const typed = input.trim();
     const pending = pendingAttachments;
-    if ((!typed && pending.length === 0) || sending || waitingAction) return;
+    const quotes = pendingQuotes;
+    if ((!typed && pending.length === 0 && quotes.length === 0) || sending || waitingAction) return;
     setSending(true);
     let text = typed;
     let images = undefined;
     try {
-      if (pending.length > 0) {
-        const paths = pending.map((item) => item.path);
-        text = appendAttachmentPaths(typed, paths);
-        if (omniConfigured) {
-          images = await visionImagesFrom(pending);
-        }
+      if (pending.length > 0 || quotes.length > 0) {
+        text = appendAttachmentPaths(typed, [
+          ...pending.map((item) => item.path),
+          ...quotes,
+        ]);
+      }
+      if (pending.length > 0 && omniConfigured) {
+        images = await visionImagesFrom(pending);
       }
     } catch {
       setSending(false);
@@ -1156,7 +1171,7 @@ export function App() {
               {attachError ? (
                 <p className="composer-attach-error">{attachError}</p>
               ) : null}
-              {pendingAttachments.length > 0 ? (
+              {pendingAttachments.length > 0 || pendingQuotes.length > 0 ? (
                 <div className="composer-attachments" aria-label="待发送附件">
                   {pendingAttachments.map((item) => (
                     <span key={item.id} className="composer-attach-chip">
@@ -1193,6 +1208,44 @@ export function App() {
                       </button>
                     </span>
                   ))}
+                  {pendingQuotes
+                    .filter(
+                      (path) =>
+                        !pendingAttachments.some((item) => item.path === path),
+                    )
+                    .map((path) => (
+                      <span key={path} className="composer-attach-chip">
+                        <button
+                          type="button"
+                          className="composer-attach-open"
+                          title={`引用 ${path}`}
+                          onClick={() => {
+                            setFilePaneCollapsed(false);
+                            openFileFromChat(path);
+                          }}
+                        >
+                          <FileIcon name={fileNameOf(path)} />
+                          <span className="composer-attach-meta">
+                            <span className="composer-attach-name">
+                              {fileNameOf(path)}
+                            </span>
+                            <span className="composer-attach-path">{path}</span>
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          className="composer-attach-remove"
+                          aria-label={`移除 ${fileNameOf(path)}`}
+                          onClick={() =>
+                            setPendingQuotes((current) =>
+                              current.filter((item) => item !== path),
+                            )
+                          }
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
                   <button
                     type="button"
                     className="composer-tool-btn"
@@ -1260,7 +1313,10 @@ export function App() {
                   type="button"
                   className={composerBusy ? "btn-send btn-send--stop" : "btn-send"}
                   disabled={
-                    !composerBusy && !input.trim() && pendingAttachments.length === 0
+                    !composerBusy &&
+                    !input.trim() &&
+                    pendingAttachments.length === 0 &&
+                    pendingQuotes.length === 0
                   }
                   onClick={() => {
                     if (composerBusy) {
@@ -1303,16 +1359,19 @@ export function App() {
           style={
             filePaneCollapsed
               ? { width: `${FILE_PANE_COLLAPSED_WIDTH}px` }
-              : { width: `${filePaneWidth}px` }
+              : { width: `${filePaneWidth + previewExtraWidth}px` }
           }
         >
           <FilePane
             key={filePaneKey}
             collapsed={filePaneCollapsed}
             onToggleCollapse={() => setFilePaneCollapsed((v) => !v)}
-            onInsertPath={(p) => setInput((cur) => insertPath(cur, p))}
+            onInsertPath={quoteWorkspaceFile}
             requestedPath={previewPath}
             previewRequest={previewRequest}
+            treeWidth={filePaneWidth}
+            stageRef={workbenchBodyRef}
+            onPreviewExtraWidthChange={setPreviewExtraWidth}
           />
         </div>
       </div>
