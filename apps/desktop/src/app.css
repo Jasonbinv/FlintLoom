@@ -1383,6 +1383,16 @@ body,
   background: color-mix(in srgb, var(--accent-primary) 16%, var(--bg-secondary));
 }
 
+.file-tree__row--dragging {
+  opacity: 0.45;
+}
+
+.file-tree__row--drop-target {
+  background: color-mix(in srgb, var(--accent-primary) 18%, var(--bg-secondary));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-primary) 55%, transparent);
+  color: var(--text-primary);
+}
+
 .file-tree__chevron {
   flex: 0 0 12px;
   width: 12px;
@@ -1449,6 +1459,36 @@ body,
   cursor: pointer;
 }
 
+.file-tree-context-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.file-tree-context-menu__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--text-secondary);
+  line-height: 1;
+}
+
+.file-tree-context-menu__icon svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+.file-tree-context-menu__label {
+  min-width: 0;
+  line-height: 16px;
+}
+
 .file-tree-context-menu button:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
@@ -1456,6 +1496,10 @@ body,
 
 .file-tree-context-menu button.danger {
   color: var(--danger);
+}
+
+.file-tree-context-menu button.danger .file-tree-context-menu__icon {
+  color: currentColor;
 }
 
 .file-tree-context-menu button.danger:hover {

@@ -19,6 +19,7 @@ import {
 import { KnowledgePane } from "./KnowledgePane.tsx";
 import { filePreviewExtraWidth } from "./filePanePreviewWidth.ts";
 import { useFilePanePreviewResize } from "./useFilePanePreviewResize.ts";
+import { useFileTreeDragMove } from "./useFileTreeDragMove.ts";
 import {
   childPath,
   createWorkspaceDirectory,
@@ -134,6 +135,7 @@ export function FilePane({
   >(null);
   const [fileActionName, setFileActionName] = useState("");
   const [fileActionError, setFileActionError] = useState<string>();
+  const [treeMoveNotice, setTreeMoveNotice] = useState<string>();
 
   const closeFilePreview = useCallback(() => {
     previewAc.current?.abort();
@@ -525,30 +527,59 @@ export function FilePane({
     });
   }
 
+  function moveErrorMessage(err: unknown): string {
+    return err instanceof Error && err.message === "exists"
+      ? "目标文件夹中已存在同名文件或文件夹"
+      : "移动失败";
+  }
+
+  async function applyMove(node: FileTreeNode, dest: string) {
+    const to = childPath(dest, node.name);
+    await renameWorkspaceEntry(node.path, to);
+    if (selectedFile && pathIsInside(node.path, selectedFile)) {
+      const suffix = selectedFile.slice(node.path.length);
+      setSelectedFile(`${to}${suffix}`);
+    }
+    if (node.type === "dir") dropSubtree(node.path);
+    await reloadDir(parentPath(node.path));
+    await reloadDir(dest);
+    if (dest !== ROOT_TREE_PATH) {
+      await ensureDirExpanded(dest);
+    }
+  }
+
   async function submitMove(dest: string) {
     if (fileAction?.kind !== "move") return;
-    const node = fileAction.node;
-    const to = childPath(dest, node.name);
     try {
-      await renameWorkspaceEntry(node.path, to);
-      if (selectedFile && pathIsInside(node.path, selectedFile)) {
-        const suffix = selectedFile.slice(node.path.length);
-        setSelectedFile(`${to}${suffix}`);
-      }
-      if (node.type === "dir") dropSubtree(node.path);
-      await reloadDir(parentPath(node.path));
-      await reloadDir(dest);
-      if (dest !== ROOT_TREE_PATH) {
-        await ensureDirExpanded(dest);
-      }
+      await applyMove(fileAction.node, dest);
       setFileAction(null);
     } catch (err) {
-      setFileActionError(
-        err instanceof Error && err.message === "exists"
-          ? "目标文件夹中已存在同名文件或文件夹"
-          : "移动失败",
-      );
+      setFileActionError(moveErrorMessage(err));
     }
+  }
+
+  async function moveByDrag(node: FileTreeNode, dest: string) {
+    try {
+      await applyMove(node, dest);
+    } catch (err) {
+      setTreeMoveNotice(moveErrorMessage(err));
+    }
+  }
+
+  const { bindRow } = useFileTreeDragMove({
+    onMove: (node, dest) => moveByDrag(node, dest),
+    onExpandFolder: (path) => {
+      void ensureDirExpanded(path);
+    },
+    isFolderExpanded: (path) => expanded.has(path),
+  });
+
+  function treeRowBind(node: FileTreeNode, className: string) {
+    const drag = bindRow(node);
+    return {
+      ...drag,
+      className: `${className}${drag.className ? ` ${drag.className}` : ""}`,
+    };
   }
 
   function pathIsInside(parent: string, target: string): boolean {
@@ -664,7 +695,10 @@ export function FilePane({
               type="button"
               role="treeitem"
               aria-expanded={isOpen}
-              className="file-tree__row file-tree__row--folder"
+              {...treeRowBind(
+                { path, name: entry.name, type: "dir" },
+                "file-tree__row file-tree__row--folder",
+              )}
               onClick={() => void toggleDir(path)}
               onContextMenu={(event) =>
                 openNodeMenu({ path, name: entry.name, type: "dir" }, event)
@@ -699,7 +733,10 @@ export function FilePane({
             type="button"
             role="treeitem"
             aria-selected={isActive}
-            className={`file-tree__row${isActive ? " file-tree__row--active" : ""}`}
+            {...treeRowBind(
+              { path, name: entry.name, type: "file" },
+              `file-tree__row${isActive ? " file-tree__row--active" : ""}`,
+            )}
             onClick={() => void openFile(path)}
             onContextMenu={(event) =>
               openNodeMenu({ path, name: entry.name, type: "file" }, event)
@@ -919,7 +956,10 @@ export function FilePane({
                       type="button"
                       role="treeitem"
                       aria-expanded={expanded.has(ROOT_TREE_PATH)}
-                      className="file-tree__row file-tree__row--root"
+                      {...treeRowBind(
+                        WORKSPACE_ROOT_NODE,
+                        "file-tree__row file-tree__row--root",
+                      )}
                       onClick={() => {
                         setExpanded((prev) => {
                           const next = new Set(prev);
@@ -982,6 +1022,15 @@ export function FilePane({
           error={fileActionError}
           onPick={(dest) => void submitMove(dest)}
           onCancel={() => setFileAction(null)}
+        />
+      ) : null}
+      {treeMoveNotice ? (
+        <FileActionDialog
+          title="移动失败"
+          hint={treeMoveNotice}
+          confirmLabel="确定"
+          onConfirm={() => setTreeMoveNotice(undefined)}
+          onCancel={() => setTreeMoveNotice(undefined)}
         />
       ) : null}
       {fileAction && fileAction.kind !== "move" ? (

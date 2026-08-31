@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { MenuIcons } from "./FileTreeMenuIcons.tsx";
 
 export type FileTreeNode = {
   path: string;
@@ -36,17 +37,24 @@ type Props = {
 };
 
 function MenuButton({
+  icon,
   className,
   onClick,
   children,
 }: {
+  icon: ReactNode;
   className?: string;
   onClick: () => void;
   children: ReactNode;
 }) {
   return (
     <button type="button" role="menuitem" className={className} onClick={onClick}>
-      {children}
+      <span className="file-tree-context-menu__item">
+        <span className="file-tree-context-menu__icon" aria-hidden>
+          {icon}
+        </span>
+        <span className="file-tree-context-menu__label">{children}</span>
+      </span>
     </button>
   );
 }
@@ -67,6 +75,7 @@ export function FileTreeNodeActionMenu({
       <>
         {node.isRoot && actions.onExpandAllFolders ? (
           <MenuButton
+            icon={MenuIcons.expandAll}
             onClick={() => {
               onClose?.();
               actions.onExpandAllFolders?.();
@@ -77,6 +86,7 @@ export function FileTreeNodeActionMenu({
         ) : null}
         {node.isRoot && actions.onCollapseAllFolders ? (
           <MenuButton
+            icon={MenuIcons.collapseAll}
             onClick={() => {
               onClose?.();
               actions.onCollapseAllFolders?.();
@@ -86,29 +96,47 @@ export function FileTreeNodeActionMenu({
           </MenuButton>
         ) : null}
         {!node.isRoot ? (
-          <MenuButton onClick={closeAnd(actions.onToggleFolder)}>
+          <MenuButton
+            icon={folderExpanded ? MenuIcons.collapse : MenuIcons.expand}
+            onClick={closeAnd(actions.onToggleFolder)}
+          >
             {folderExpanded ? "收起" : "展开"}
           </MenuButton>
         ) : null}
         {actions.onRefresh ? (
-          <MenuButton onClick={closeAnd(actions.onRefresh)}>刷新</MenuButton>
+          <MenuButton icon={MenuIcons.refresh} onClick={closeAnd(actions.onRefresh)}>
+            刷新
+          </MenuButton>
         ) : null}
         {actions.onCreateFile ? (
-          <MenuButton onClick={closeAnd(actions.onCreateFile)}>新建文件</MenuButton>
+          <MenuButton icon={MenuIcons.filePlus} onClick={closeAnd(actions.onCreateFile)}>
+            新建文件
+          </MenuButton>
         ) : null}
         {actions.onCreateFolder ? (
-          <MenuButton onClick={closeAnd(actions.onCreateFolder)}>
+          <MenuButton
+            icon={MenuIcons.folderPlus}
+            onClick={closeAnd(actions.onCreateFolder)}
+          >
             {node.isRoot ? "新建文件夹" : "新建子文件夹"}
           </MenuButton>
         ) : null}
         {!node.isRoot && actions.onRename ? (
-          <MenuButton onClick={closeAnd(actions.onRename)}>重命名</MenuButton>
+          <MenuButton icon={MenuIcons.pencil} onClick={closeAnd(actions.onRename)}>
+            重命名
+          </MenuButton>
         ) : null}
         {!node.isRoot && actions.onMove ? (
-          <MenuButton onClick={closeAnd(actions.onMove)}>移动到文件夹</MenuButton>
+          <MenuButton icon={MenuIcons.folderMove} onClick={closeAnd(actions.onMove)}>
+            移动到文件夹
+          </MenuButton>
         ) : null}
         {!node.isRoot && actions.onDelete ? (
-          <MenuButton className="danger" onClick={closeAnd(actions.onDelete)}>
+          <MenuButton
+            icon={MenuIcons.trash}
+            className="danger"
+            onClick={closeAnd(actions.onDelete)}
+          >
             删除
           </MenuButton>
         ) : null}
@@ -119,19 +147,31 @@ export function FileTreeNodeActionMenu({
   return (
     <>
       {actions.onOpenFile ? (
-        <MenuButton onClick={closeAnd(actions.onOpenFile)}>打开预览</MenuButton>
+        <MenuButton icon={MenuIcons.eye} onClick={closeAnd(actions.onOpenFile)}>
+          打开预览
+        </MenuButton>
       ) : null}
       {actions.onQuoteFile ? (
-        <MenuButton onClick={closeAnd(actions.onQuoteFile)}>引用到对话</MenuButton>
+        <MenuButton icon={MenuIcons.quote} onClick={closeAnd(actions.onQuoteFile)}>
+          引用到对话
+        </MenuButton>
       ) : null}
       {actions.onRename ? (
-        <MenuButton onClick={closeAnd(actions.onRename)}>重命名</MenuButton>
+        <MenuButton icon={MenuIcons.pencil} onClick={closeAnd(actions.onRename)}>
+          重命名
+        </MenuButton>
       ) : null}
       {actions.onMove ? (
-        <MenuButton onClick={closeAnd(actions.onMove)}>移动到文件夹</MenuButton>
+        <MenuButton icon={MenuIcons.folderMove} onClick={closeAnd(actions.onMove)}>
+          移动到文件夹
+        </MenuButton>
       ) : null}
       {actions.onDelete ? (
-        <MenuButton className="danger" onClick={closeAnd(actions.onDelete)}>
+        <MenuButton
+          icon={MenuIcons.trash}
+          className="danger"
+          onClick={closeAnd(actions.onDelete)}
+        >
           删除
         </MenuButton>
       ) : null}

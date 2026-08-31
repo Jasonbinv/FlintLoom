@@ -1142,6 +1142,11 @@ describe("App", () => {
     expect(findContextMenuItem("重命名")).toBeTruthy();
     expect(findContextMenuItem("移动到文件夹")).toBeTruthy();
     expect(findContextMenuItem("删除")).toBeTruthy();
+    const menuItems = document.querySelectorAll(".file-tree-context-menu button");
+    expect(menuItems.length).toBeGreaterThan(0);
+    for (const item of menuItems) {
+      expect(item.querySelector(".file-tree-context-menu__icon")).toBeTruthy();
+    }
   });
 
   it("shows root folder context menu on right-click", async () => {
@@ -1441,6 +1446,144 @@ describe("App", () => {
     };
     expect(body.path).toBe("docs");
     expect(body.to).toBe("md/docs");
+  });
+
+  function createDataTransfer() {
+    const data = new Map<string, string>();
+    const types: string[] = [];
+    return {
+      dropEffect: "none" as DataTransfer["dropEffect"],
+      effectAllowed: "all" as DataTransfer["effectAllowed"],
+      files: [] as unknown as FileList,
+      items: [] as unknown as DataTransferItemList,
+      types,
+      setData(format: string, value: string) {
+        if (!data.has(format)) types.push(format);
+        data.set(format, value);
+      },
+      getData(format: string) {
+        return data.get(format) ?? "";
+      },
+      clearData(format?: string) {
+        if (format) {
+          data.delete(format);
+          const index = types.indexOf(format);
+          if (index >= 0) types.splice(index, 1);
+        } else {
+          data.clear();
+          types.length = 0;
+        }
+      },
+      setDragImage() {},
+    };
+  }
+
+  function fireDrag(
+    el: EventTarget,
+    type: string,
+    dataTransfer: ReturnType<typeof createDataTransfer>,
+  ) {
+    const event = new Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "dataTransfer", { value: dataTransfer });
+    el.dispatchEvent(event);
+  }
+
+  async function dragFileTreeItem(sourceName: string, targetName: string) {
+    const source = findFileTreeButton(sourceName);
+    const target = findFileTreeButton(targetName);
+    if (!source) throw new Error(`no ${sourceName} button`);
+    if (!target) throw new Error(`no ${targetName} button`);
+    const dataTransfer = createDataTransfer();
+    await act(async () => {
+      fireDrag(source, "dragstart", dataTransfer);
+      fireDrag(target, "dragenter", dataTransfer);
+      fireDrag(target, "dragover", dataTransfer);
+      fireDrag(target, "drop", dataTransfer);
+      fireDrag(source, "dragend", dataTransfer);
+    });
+  }
+
+  function findRenameCall() {
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    return fetchMock.mock.calls.find(([input, init]) => {
+      const url = requestUrl(input as RequestInfo | URL);
+      return (
+        url.includes("/v1/files/rename") &&
+        (init as RequestInit | undefined)?.method === "POST"
+      );
+    });
+  }
+
+  it("moves a file into a folder by dragging", async () => {
+    installFetch({
+      files: new Response(
+        JSON.stringify({
+          path: ".",
+          entries: [
+            { name: "docs", type: "dir" },
+            { name: "README.md", type: "file" },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    await waitForText("README.md");
+    await dragFileTreeItem("README.md", "docs");
+    const renameCall = findRenameCall();
+    expect(renameCall).toBeTruthy();
+    const body = JSON.parse(String((renameCall![1] as RequestInit).body)) as {
+      path: string;
+      to: string;
+    };
+    expect(body.path).toBe("README.md");
+    expect(body.to).toBe("docs/README.md");
+  });
+
+  it("moves a folder into another folder by dragging", async () => {
+    installFetch({
+      files: new Response(
+        JSON.stringify({
+          path: ".",
+          entries: [
+            { name: "docs", type: "dir" },
+            { name: "md", type: "dir" },
+            { name: "README.md", type: "file" },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    await waitForText("docs");
+    await dragFileTreeItem("docs", "md");
+    const renameCall = findRenameCall();
+    expect(renameCall).toBeTruthy();
+    const body = JSON.parse(String((renameCall![1] as RequestInit).body)) as {
+      path: string;
+      to: string;
+    };
+    expect(body.path).toBe("docs");
+    expect(body.to).toBe("md/docs");
+  });
+
+  it("does not move a file when dropped onto its current folder", async () => {
+    installFetch({
+      files: new Response(
+        JSON.stringify({
+          path: ".",
+          entries: [
+            { name: "docs", type: "dir" },
+            { name: "README.md", type: "file" },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    await waitForText("README.md");
+    await dragFileTreeItem("README.md", "工作空间");
+    expect(findRenameCall()).toBeUndefined();
   });
 
   it("shows 文件 and 知识库 tabs with 文件 default", async () => {

@@ -53,22 +53,40 @@ export function isValidEntryName(name: string): boolean {
 
 export type FileMoveTarget = { path: string; label: string };
 
+export function canMoveEntryTo(
+  movingPath: string,
+  movingIsDir: boolean,
+  destDir: string,
+): boolean {
+  if (destDir === parentPath(movingPath)) return false;
+  if (
+    movingIsDir &&
+    (destDir === movingPath || destDir.startsWith(`${movingPath}/`))
+  ) {
+    return false;
+  }
+  return true;
+}
+
+export function resolveTreeDropDestination(
+  movingPath: string,
+  movingIsDir: boolean,
+  hoverPath: string,
+  hoverIsDir: boolean,
+): string | null {
+  const dest = hoverIsDir ? hoverPath : parentPath(hoverPath);
+  if (!canMoveEntryTo(movingPath, movingIsDir, dest)) return null;
+  return dest;
+}
+
 export function buildFileMoveTargets(
   movingPath: string,
   movingIsDir: boolean,
   directories: FileMoveTarget[],
 ): FileMoveTarget[] {
-  const currentParent = parentPath(movingPath);
-  return directories.filter((dir) => {
-    if (dir.path === currentParent) return false;
-    if (
-      movingIsDir &&
-      (dir.path === movingPath || dir.path.startsWith(`${movingPath}/`))
-    ) {
-      return false;
-    }
-    return true;
-  });
+  return directories.filter((dir) =>
+    canMoveEntryTo(movingPath, movingIsDir, dir.path),
+  );
 }
 
 export function insertPath(input: string, filePath: string): string {
