@@ -777,6 +777,7 @@ describe("startHost", () => {
     expect(names).toContain("a2ui_emit");
     expect(names).toContain("infographic_get");
     expect(names).toContain("infographic_patch");
+    expect(names).toContain("infographic_render");
     expect(names).toContain("web_search");
   });
 

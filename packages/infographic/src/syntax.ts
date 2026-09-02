@@ -37,6 +37,7 @@ const TEMPLATE_ALIASES: Record<string, string> = {
   vs: ANTV_CHAT_TEMPLATES.compare,
   versus: ANTV_CHAT_TEMPLATES.compare,
   "compare-binary-simple-horizontal": ANTV_CHAT_TEMPLATES.compare,
+  swot: "compare-swot",
   tree: ANTV_CHAT_TEMPLATES.tree,
   hierarchy: ANTV_CHAT_TEMPLATES.tree,
   mindmap: ANTV_CHAT_TEMPLATES.mindmap,
@@ -66,6 +67,27 @@ const KNOWN_TEMPLATE_PREFIXES = [
   "quadrant-",
 ];
 
+const OFFICIAL_CHAT_TEMPLATES = [
+  ANTV_CHAT_TEMPLATES.steps,
+  ANTV_CHAT_TEMPLATES.timeline,
+  ANTV_CHAT_TEMPLATES.compare,
+  ANTV_CHAT_TEMPLATES.cards,
+  ANTV_CHAT_TEMPLATES.sequence,
+  ANTV_CHAT_TEMPLATES.mindmap,
+  ANTV_CHAT_TEMPLATES.tree,
+  ANTV_CHAT_TEMPLATES.org,
+  ANTV_CHAT_TEMPLATES.quadrant,
+  ANTV_CHAT_TEMPLATES.quadrantCircle,
+  "compare-swot",
+  "relation-dagre-flow-tb-simple-circle-node",
+  "sequence-interaction-default-compact-card",
+  "chart-line-plain-text",
+  "chart-bar-plain-text",
+  "chart-column-simple",
+  "chart-pie-plain-text",
+  "chart-wordcloud",
+];
+
 const STEP_RE = /^(?:step\s+)?(\d+)\s*[:：.、)]\s*(.+)$/i;
 const QUARTER_RE = /^(?:(20\d{2}|FY\s*\d{2,4})\s*)?(Q[1-4])\s*[:：.、)\-–—]\s*(.+)$/i;
 const MILESTONE_RE =
@@ -92,12 +114,25 @@ function normalizeTemplateKey(name: string): string {
   return name.trim().toLowerCase().replace(/[_\s]+/g, "-");
 }
 
+function completeOfficialTemplate(key: string): string | undefined {
+  const exact = OFFICIAL_CHAT_TEMPLATES.find((name) => name === key);
+  if (exact) return exact;
+  const matches = OFFICIAL_CHAT_TEMPLATES.filter((name) => name.startsWith(key) && name !== key);
+  if (matches.length === 0) return undefined;
+  matches.sort((a, b) => a.length - b.length);
+  return matches[0];
+}
+
+export function resolveChatTemplate(raw: string): string {
+  return resolveTemplateName(raw);
+}
+
 function resolveTemplateName(raw: string): string {
   const key = normalizeTemplateKey(raw);
   if (TEMPLATE_ALIASES[key]) return TEMPLATE_ALIASES[key];
   if (KNOWN_TEMPLATE_PREFIXES.some((prefix) => key.startsWith(prefix))) {
     if (key === "compare-binary-simple-horizontal") return ANTV_CHAT_TEMPLATES.compare;
-    return raw;
+    return completeOfficialTemplate(key) ?? raw;
   }
   return ANTV_CHAT_TEMPLATES.steps;
 }
@@ -518,6 +553,125 @@ function emitDataBlock(field: "lists" | "compares" | "sequences", items: Item[])
   ].join("\n");
 }
 
+function isObj(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function looksJsonish(body: string): boolean {
+  const text = body.trim();
+  if (/^data\s*\{/i.test(text)) return true;
+  if (/^\{/.test(text) && /(desc|label|children|compares|lists)\s*:/.test(text)) return true;
+  if (/\[\s*\{\s*(desc|label)\s*:/.test(text)) return true;
+  return false;
+}
+
+function coerceJsonish(body: string): unknown | undefined {
+  let text = body.trim().replace(/^data\s*:?\s*/i, "");
+  if (!text.startsWith("{") && !text.startsWith("[")) return undefined;
+  for (let pass = 0; pass < 4; pass += 1) {
+    text = text.replace(/([{\[,]\s*)([A-Za-z_][\w]*)\s*:/g, '$1"$2":');
+    text = text.replace(/("(?:\\.|[^"\\])*")\s+([A-Za-z_][\w]*)\s*:/g, '$1, "$2":');
+    text = text.replace(/\}\s*\{/g, "},{");
+    text = text.replace(/\]\s*\[/g, "],[");
+    text = text.replace(/,\s*([}\]])/g, "$1");
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+function jsonText(value: unknown): string {
+  return typeof value === "string" ? flattenIgValue(value) : "";
+}
+
+function jsonItemLabel(value: unknown): string {
+  if (typeof value === "string") return flattenIgValue(value);
+  if (!isObj(value)) return "";
+  for (const key of ["label", "desc", "title", "name"]) {
+    const text = jsonText(value[key]);
+    if (text) return text;
+  }
+  return "";
+}
+
+type JsonItem = { label: string; kids: string[] };
+
+function asJsonItem(value: unknown): JsonItem | undefined {
+  const label = jsonItemLabel(value);
+  if (!label) return undefined;
+  const kids: string[] = [];
+  if (isObj(value) && Array.isArray(value.children)) {
+    for (const child of value.children) {
+      const kid = jsonItemLabel(child);
+      if (kid) kids.push(kid);
+    }
+  }
+  return { label, kids };
+}
+
+function itemsFromJson(value: unknown): { title?: string; items: JsonItem[] } {
+  if (Array.isArray(value)) {
+    return { items: value.flatMap((item) => {
+      const parsed = asJsonItem(item);
+      return parsed ? [parsed] : [];
+    }) };
+  }
+  if (!isObj(value)) return { items: [] };
+  const buckets = [value.compares, value.lists, value.sequences, value.children, value.items];
+  for (const bucket of buckets) {
+    if (!Array.isArray(bucket) || bucket.length === 0) continue;
+    const items = bucket.flatMap((item) => {
+      const parsed = asJsonItem(item);
+      return parsed ? [parsed] : [];
+    });
+    if (items.length === 0) continue;
+    const heading = jsonText(value.title) || jsonText(value.desc) || jsonText(value.label);
+    return { title: heading || undefined, items };
+  }
+  const self = asJsonItem(value);
+  return self ? { items: [self] } : { items: [] };
+}
+
+function jsonToTree(value: unknown): TreeNode | undefined {
+  const label = jsonItemLabel(value);
+  if (!label) return undefined;
+  const children: TreeNode[] = [];
+  if (isObj(value) && Array.isArray(value.children)) {
+    for (const child of value.children) {
+      const node = jsonToTree(child);
+      if (node) children.push(node);
+    }
+  }
+  return { label, children, indent: 0 };
+}
+
+function emitJsonishBlock(template: string, value: unknown): string | undefined {
+  if (isHierarchyTemplate(template)) {
+    const rootVal = isObj(value) && isObj(value.root) ? value.root : value;
+    const tree = jsonToTree(rootVal);
+    if (tree) return emitTreeBlock(tree);
+  }
+  const { title, items } = itemsFromJson(value);
+  if (items.length === 0) return undefined;
+  const field = dataFieldFor(template);
+  const lines = ["data"];
+  if (title) lines.push(`  title ${flattenIgValue(title)}`);
+  lines.push(`  ${field}`);
+  for (const item of items) {
+    const label = template.startsWith("compare-swot") ? simplifySwotLabel(item.label) : item.label;
+    lines.push(`    - label ${label}`);
+    if (item.kids.length > 0) {
+      lines.push("      children");
+      for (const kid of item.kids) {
+        lines.push(`        - label ${kid}`);
+      }
+    }
+  }
+  return lines.join("\n");
+}
+
 export function repairAntvSyntax(raw: string): string {
   const text = raw.trim();
   const lines = text.split(/\r?\n/);
@@ -527,6 +681,11 @@ export function repairAntvSyntax(raw: string): string {
   const template = resolveTemplateName(head[1] ?? ANTV_CHAT_TEMPLATES.timeline);
   const bodyLines = lines.slice(1);
   const rest = bodyLines.join("\n");
+  if (looksJsonish(rest)) {
+    const parsed = coerceJsonish(rest);
+    const jsonBody = parsed !== undefined ? emitJsonishBlock(template, parsed) : undefined;
+    if (jsonBody) return finalizeRepaired(template, jsonBody);
+  }
   if (isHierarchyTemplate(template) && !isWellFormedHierarchy(rest)) {
     const tree = parseYamlishTree(bodyLines);
     if (tree) {

@@ -5,7 +5,7 @@ import toolsPlugin, { type ToolRegistry } from "@flintloom/tools";
 import plugin from "../src/plugin.ts";
 
 describe("infographic plugin", () => {
-  it("registers get/patch and stop() unregisters them", async () => {
+  it("registers get/patch/render and stop() unregisters them", async () => {
     const ctx = new Context();
     await ctx.plugin(modelsPlugin);
     await ctx.plugin(toolsPlugin);
@@ -14,10 +14,13 @@ describe("infographic plugin", () => {
     const names = tools.schemas().map((s) => s.name);
     expect(names).toContain("infographic_get");
     expect(names).toContain("infographic_patch");
-    const svc = ctx.require<{ parseDocument: (raw: string) => unknown }>("infographic");
+    expect(names).toContain("infographic_render");
+    const svc = ctx.require<{ parseDocument: (raw: string) => unknown; chatSurface: (syntax: string) => unknown[] }>("infographic");
     expect(typeof svc.parseDocument).toBe("function");
+    expect(typeof svc.chatSurface).toBe("function");
     stop();
     expect(tools.schemas().map((s) => s.name)).not.toContain("infographic_get");
     expect(tools.schemas().map((s) => s.name)).not.toContain("infographic_patch");
+    expect(tools.schemas().map((s) => s.name)).not.toContain("infographic_render");
   });
 });

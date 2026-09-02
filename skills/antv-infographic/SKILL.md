@@ -5,85 +5,84 @@ description: Use when the user wants an AntV infographic in FlintLoom chat or a 
 
 # AntV infographic in FlintLoom
 
-Two engines. Do not mix `syntax` with box-line `document`.
+Two engines. Do not mix AntV chat posters with box-line `document`.
 
-| Kind | Files / A2UI | Tools |
+| Kind | Files | Tools |
 |------|----------------|-------|
 | Box-line | `*.infographic.json` + `nodes` / `edges` | `infographic_get` / `infographic_patch` |
-| AntV (this skill) | `*.infographic.ig` or A2UI `syntax` | `a2ui_emit` with **only** `syntax` |
+| AntV (this skill) | chat poster or `*.infographic.ig` | **`infographic_render`** with `template` + `items` |
 
-Desktop already renders `@antv/infographic`. Do not write HTML, `unpkg`, or follow Infographic-repo creator skills.
+Desktop already renders `@antv/infographic`. Do not write HTML, `unpkg`, or follow Infographic-repo creator skills. Do not call `a2ui_emit` for infographics.
 
 ## Hard rules
 
-- First line: `infographic <template-name>`.
-- Two-space indent. `key value` (space, not `label:`). Lists: `- label …`.
-- One data field that matches the family.
-- No `http://` or `https://` (emit fails). Icons: keyword only (`rocket`, `shield check`), never URLs.
+- Call **`infographic_render`**. Pass `template` plus `items[{label, desc?, children?}]`. Optional `syntax` is a full official DSL block if items cannot express the graph (relation / chart).
 - Official names starting with `list-` / `sequence-` / `compare-` / `hierarchy-` / `relation-` / `chart-` pass through. Do not rename them to `stepList`.
-- Aliases `stepList` / `timeline` / `compare` / `cards` / `mindmap` / `tree` / `org` / `quadrant` / `四象限` are repaired.
+- Aliases `steps` / `timeline` / `compare` / `cards` / `mindmap` / `tree` / `org` / `quadrant` / `swot` / `四象限` are repaired.
 - 思维导图 / mind map → `mindmap` or `hierarchy-mindmap-*`. Never `stepList`.
-- 四象限图 / quadrant / 2×2 矩阵 / 艾森豪威尔 / Eisenhower → `compare-quadrant-*`. Never `compare-swot` (that is four letter-card columns, not XY axes). Never put AntV `compares` into A2UI `updateDataModel` — pass `syntax` only.
+- 四象限图 / quadrant / 2×2 矩阵 / 艾森豪威尔 / Eisenhower → `compare-quadrant-*`. Never `compare-swot` (that is four letter-card columns, not XY axes). Never put AntV `compares` into A2UI `updateDataModel`.
 - Do not invent `compare-binary-simple-horizontal` or `hierarchy-tree-simple`.
 - Do not fall back to A2UI Chart `kind: "bar"` when the user asked for an infographic.
+- No `http://` or `https://`. Icons: keyword only (`rocket`, `shield check`), never URLs.
 
 ## Pick a family, then one template
 
 | Want | Use this name | Data |
 |------|----------------|------|
-| Vertical steps | `list-column-simple-vertical-arrow` | `lists` |
-| Timeline / milestones | `list-row-simple-horizontal-arrow` | `lists` |
-| Numbered sequence | `sequence-steps-simple` | `sequences` |
-| Card grid | `list-grid-compact-card` | `lists` |
-| Two-side compare | `compare-binary-horizontal-simple-vs` | `compares` (exactly 2 roots; details in `children`) |
-| SWOT | `compare-swot` | `compares` (4 roots; each **must** have `children` `- label` points — never put points in root `desc`) |
-| 四象限 / 2×2 | `compare-quadrant-quarter-simple-card` | `compares` (exactly 4 roots: `label` + `desc` + optional `icon`. Never `compare-swot`) |
+| Vertical steps | `list-column-simple-vertical-arrow` or alias `steps` | `items` |
+| Timeline / milestones | `list-row-simple-horizontal-arrow` or alias `timeline` | `items` |
+| Numbered sequence | `sequence-steps-simple` | `items` |
+| Card grid | `list-grid-compact-card` | `items` |
+| Two-side compare | `compare-binary-horizontal-simple-vs` or alias `compare` | `items` (exactly 2 roots; details in `children`) |
+| SWOT | `compare-swot` or alias `swot` | `items` (4 roots; each **must** have `children` `- label` points — never put points in root `desc`) |
+| 四象限 / 2×2 | `compare-quadrant-quarter-simple-card` or alias `quadrant` | `items` (exactly 4 roots: `label` + `desc` + optional `icon`. Never `compare-swot`) |
 | 圆形四象限 | `compare-quadrant-quarter-circular` | same 4 roots (`label` + `desc`) |
-| Mind map | `hierarchy-mindmap-branch-gradient-capsule-item` | `root` + `children` |
-| Tree / org | `hierarchy-tree-tech-style-capsule-item` | `root` + `children` |
-| Relation / dependency | `relation-dagre-flow-tb-simple-circle-node` | `nodes` + `relations` |
-| Swimlane interaction | `sequence-interaction-default-compact-card` | `sequences` (lanes + `children`) + `relations` |
-| Numeric trend / compare | `chart-line-plain-text` / `chart-bar-plain-text` / `chart-column-simple` / `chart-pie-plain-text` | `values` |
-| Word cloud | `chart-wordcloud` | `values` |
+| Mind map | `hierarchy-mindmap-branch-gradient-capsule-item` or alias `mindmap` | `items` as branches (`label`; nest further labels in `children`) |
+| Tree / org | `hierarchy-tree-tech-style-capsule-item` | `items` as branches |
+| Relation / dependency | `relation-dagre-flow-tb-simple-circle-node` | optional `syntax` with `nodes` + `relations` |
+| Swimlane interaction | `sequence-interaction-default-compact-card` | optional `syntax` with `sequences` + `relations` |
+| Numeric trend / compare | `chart-line-plain-text` / `chart-bar-plain-text` / `chart-column-simple` / `chart-pie-plain-text` | optional `syntax` with `values` |
+| Word cloud | `chart-wordcloud` | optional `syntax` with `values` |
 
 Other real names in the same family are fine. Keep ≤12 items. Match label language to the user.
 
-Heading + bullet prose and YAML `root` / `label:` / `children:` are repaired for list / compare / mindmap only. SWOT, relation, chart, and sequence-interaction need the official nested DSL below. A true decision tree with many `->` branches is still better as box-line JSON or a `relation-*` graph, not `stepList`.
-
-## Official body
-
-```
-infographic <template>
-data
-  title 可选标题
-  lists|sequences|compares|root|nodes|values
-theme
-  palette #3b82f6 #8b5cf6 #f97316
-```
-
-- `compare-binary-*`: two roots only; items go in each side's `children`.
-- `compare-swot`: four roots (`优势` / `劣势` / `机遇` / `威胁`). The colored letter-card only shows the title; every bullet must be `children` / `- label`. Root `desc` is ignored.
-- `compare-quadrant-*`: exactly 4 roots in order 左上、右上、左下、右下. Use `label` + `desc` (optional `icon`). Do not use `children`. Never substitute `compare-swot`.
-- `relation-*`: `nodes` with `label` (optional `id`); `relations` as `A - 说明 -> B`.
-- `chart-*`: `values` with `label` + numeric `value`.
-- `hierarchy-*`: one `root`, nest `children` / `- label`.
+A true decision tree with many `->` branches is still better as box-line JSON or a `relation-*` graph, not `steps`.
 
 ## Show in chat
 
-Call `a2ui_emit` with **only** `syntax`.
+Call `infographic_render` with `template` and `items`. Do not call `a2ui_emit`.
+
+SWOT:
 
 ```json
-{"syntax":"infographic compare-swot\ndata\n  compares\n    - label 优势\n      children\n        - label 品牌认知\n    - label 劣势\n      children\n        - label 成本高\n    - label 机会\n      children\n        - label 新品类\n    - label 威胁\n      children\n        - label 竞品\n"}
+{
+  "template": "swot",
+  "items": [
+    { "label": "优势", "children": ["品牌认知"] },
+    { "label": "劣势", "children": ["成本高"] },
+    { "label": "机遇", "children": ["新品类"] },
+    { "label": "威胁", "children": ["竞品"] }
+  ]
+}
 ```
 
 四象限:
 
 ```json
-{"syntax":"infographic compare-quadrant-quarter-simple-card\ndata\n  title 风险控制\n  desc 风险频率与损失程度\n  compares\n    - label 高频高损\n      desc 直接规避风险\n    - label 低频高损\n      desc 采取风险控制措施\n    - label 高频低损\n      desc 通过保险转移风险\n    - label 低频低损\n      desc 选择接受风险\n"}
+{
+  "template": "quadrant",
+  "title": "风险控制",
+  "items": [
+    { "label": "高频高损", "desc": "直接规避风险" },
+    { "label": "低频高损", "desc": "采取风险控制措施" },
+    { "label": "高频低损", "desc": "通过保险转移风险" },
+    { "label": "低频低损", "desc": "选择接受风险" }
+  ]
+}
 ```
 
-Mind map: `infographic mindmap` plus title + branches, or official `data.root`. Relation: `nodes` + `relations`. Chart: `values`.
+Steps: `template` `steps` plus ordered `items` with `label` and optional `desc`. Mind map: `template` `mindmap` plus branch `items`. Relation / chart: pass `syntax` starting with `infographic <template>` and official `nodes`/`relations` or `values`.
 
-Saved file suffix must be `.infographic.ig`. `syntax`, `document`, `file`, and `data` are mutually exclusive.
+If you must pass `syntax`, first line is `infographic <template-name>`, two-space indent, `key value` (space, not `label:`), lists as `- label …`. One data field that matches the family.
 
-If you must emit envelopes, each item needs `"version": "v0.9"` and exactly one of `createSurface` / `updateComponents`. Never put `type` or `kind` on the envelope.
+Saved file suffix must be `.infographic.ig`.

@@ -6,6 +6,7 @@ import {
   resolveInside,
   type ToolDefinition,
 } from "@flintloom/tools";
+import { compileInfographic } from "./compile.ts";
 import { INFOGRAPHIC_MAX_BYTES, applyOps, parseDocument } from "./document.ts";
 import { isInfographicRelPath } from "./path.ts";
 import type { InfographicDocument } from "./types.ts";
@@ -196,6 +197,45 @@ export function createInfographicPatchTool(): ToolDefinition {
         nodes: doc.nodes.length,
         edges: doc.edges.length,
       });
+    },
+  };
+}
+
+export function createInfographicRenderTool(): ToolDefinition {
+  return {
+    name: "infographic_render",
+    description:
+      "Draw an AntV infographic in chat. Pass template plus items[{label, desc?, children?}]. Aliases: steps, timeline, swot, compare, quadrant, mindmap. Do not call a2ui_emit for infographics. Optional syntax: a full infographic DSL block. No http(s).",
+    parameters: {
+      type: "object",
+      properties: {
+        template: {
+          type: "string",
+          description:
+            "steps, timeline, swot, compare, quadrant, mindmap, or an official list-/compare-/sequence-/hierarchy- name.",
+        },
+        title: { type: "string" },
+        items: {
+          type: "array",
+          description: "Entries with label and optional desc or children labels.",
+        },
+        syntax: {
+          type: "string",
+          description: "Optional full AntV DSL starting with infographic <template>.",
+        },
+      },
+    },
+    async execute(args, exec) {
+      if (exec.signal.aborted) {
+        return "aborted";
+      }
+      try {
+        const syntax = compileInfographic(args);
+        return JSON.stringify({ status: "ok", syntax });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return `failed: ${message}`;
+      }
     },
   };
 }

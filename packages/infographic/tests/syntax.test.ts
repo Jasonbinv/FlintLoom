@@ -272,4 +272,46 @@ data
 `;
     expect(repairAntvSyntax(official).trim()).toBe(official.trim());
   });
+
+  it("rewrites JSON-ish data { desc/children } SWOT into official compares", () => {
+    const repaired = repairAntvSyntax(`infographic compare-swot
+data {
+  desc: "SWOT 分析" children:
+  [{ desc: "优势 (Strengths)" children: [ { desc: "核心竞争力" } { desc: "优质资源" } ] }
+  { desc: "劣势 (Weaknesses)" children: [ { desc: "资源匮乏" } { desc: "管理效率低" } ] }
+  { desc: "机遇 (Opportunities)" children: [ { desc: "市场增长" } { desc: "政策支持" } ] }
+  { desc: "威胁 (Threats)" children: [ { desc: "竞争加剧" } ] }]
+}
+`);
+    expect(repaired).toMatch(/^infographic compare-swot\n/);
+    expect(repaired).toContain("compares");
+    expect(repaired).not.toContain("data {");
+    expect(repaired).toContain("- label 优势");
+    expect(repaired).not.toContain("优势 (Strengths)");
+    expect(repaired).toContain("- label 核心竞争力");
+    expect(repaired).toContain("- label 优质资源");
+    expect(repaired).toContain("- label 劣势");
+    expect(repaired).toContain("- label 资源匮乏");
+    expect(repaired).toContain("- label 机遇");
+    expect(repaired).toContain("- label 威胁");
+    expect(repaired).toContain("- label 竞争加剧");
+  });
+
+  it("completes truncated official template names and rewrites JSON-ish lists", () => {
+    const repaired = repairAntvSyntax(`infographic list-column-simple-vertic
+data {
+  children: [
+    { desc: "规划目标" }
+    { desc: "拆解步骤" }
+    { desc: "执行交付" }
+  ]
+}
+`);
+    expect(repaired).toMatch(/^infographic list-column-simple-vertical-arrow\n/);
+    expect(repaired).toContain("data\n  lists");
+    expect(repaired).toContain("- label 规划目标");
+    expect(repaired).toContain("- label 拆解步骤");
+    expect(repaired).toContain("- label 执行交付");
+    expect(repaired).not.toContain("data {");
+  });
 });

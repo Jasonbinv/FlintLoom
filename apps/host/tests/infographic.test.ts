@@ -115,6 +115,7 @@ describe("infographic preview HTTP", () => {
     const names = ctx.require<ToolRegistry>("tools").schemas().map((s) => s.name);
     expect(names).not.toContain("infographic_get");
     expect(names).not.toContain("infographic_patch");
+    expect(names).not.toContain("infographic_render");
 
     const host = await startHost({ workspaceRoot, homeDir, port: 0 });
     close = host.close;
