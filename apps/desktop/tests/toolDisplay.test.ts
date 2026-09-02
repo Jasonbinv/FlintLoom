@@ -6,6 +6,10 @@ describe("toolDisplay", () => {
     expect(toolDisplayTitle("web_search")).toBe("Web");
   });
 
+  it("titles infographic_render as Infographic", () => {
+    expect(toolDisplayTitle("infographic_render")).toBe("Infographic");
+  });
+
   it("summarizes web_search by query", () => {
     expect(toolDisplaySummary("web_search", { query: "天气" })).toBe("天气");
   });

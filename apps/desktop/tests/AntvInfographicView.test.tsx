@@ -3,7 +3,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { AntvInfographicView } from "../src/AntvInfographicView.tsx";
+import { AntvInfographicView, antvDesignWidth, infographicFitSize } from "../src/AntvInfographicView.tsx";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -53,7 +53,7 @@ describe("AntvInfographicView", () => {
     mount(<AntvInfographicView syntax="infographic missing-data\n" />);
     expect(container!.querySelector(".a2ui-fallback")).toBeTruthy();
     expect(container!.textContent).toContain("信息图无法显示");
-    const host = container!.querySelector(".a2ui-infographic--antv");
+    const host = container!.querySelector(".a2ui-infographic-fit");
     expect(host).toBeTruthy();
     expect((host as HTMLElement).hidden).toBe(true);
     unmount();
@@ -74,7 +74,7 @@ describe("AntvInfographicView", () => {
     expect(syntax).toContain("data\n  lists");
     expect(syntax).toContain("接收指令");
     expect(container!.querySelector(".a2ui-fallback")).toBeNull();
-    expect((container!.querySelector(".a2ui-infographic--antv") as HTMLElement).hidden).toBe(false);
+    expect((container!.querySelector(".a2ui-infographic-fit") as HTMLElement).hidden).toBe(false);
     unmount();
   });
 
@@ -98,25 +98,54 @@ describe("AntvInfographicView", () => {
     unmount();
   });
 
-  it("scales the painted svg to the bubble width instead of letterboxing it", () => {
+  it("sizes the painted svg to the pane width and only shrinks when too tall", () => {
     renderImpl.mockImplementation((_syntax: string, el?: HTMLElement) => {
       const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
       svg.setAttribute("width", "800px");
-      svg.setAttribute("height", "360px");
-      svg.setAttribute("viewBox", "0 0 240 480");
+      svg.setAttribute("height", "400px");
+      svg.setAttribute("viewBox", "0 0 800 400");
       el?.appendChild(svg);
     });
-    mount(
-      <AntvInfographicView
-        syntax={"infographic list-column-simple-vertical-arrow\ndata\n  lists\n    - label A\n      desc Start\n"}
-      />,
-    );
-    const svg = container!.querySelector("svg");
-    expect(svg).toBeTruthy();
-    expect(svg?.getAttribute("width")).toBe("100%");
-    expect(svg?.getAttribute("height")).toBeNull();
-    expect(svg?.style.height).toBe("auto");
-    expect(svg?.getAttribute("preserveAspectRatio")).toBe("xMidYMin meet");
-    unmount();
+    const prevClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+      configurable: true,
+      get() {
+        return 520;
+      },
+    });
+    try {
+      mount(
+        <AntvInfographicView
+          syntax={"infographic list-column-simple-vertical-arrow\ndata\n  lists\n    - label A\n      desc Start\n"}
+        />,
+      );
+      const host = container!.querySelector(".a2ui-infographic--antv") as HTMLElement | null;
+      const svg = container!.querySelector("svg") as SVGSVGElement | null;
+      expect(svg).toBeTruthy();
+      expect(host?.style.transform).toBe("");
+      expect(svg?.getAttribute("viewBox")).toBe("0 0 800 400");
+      expect(Number.parseFloat(svg?.getAttribute("width") ?? "0")).toBe(520);
+      expect(Number.parseFloat(svg?.getAttribute("height") ?? "0")).toBe(260);
+    } finally {
+      unmount();
+      if (prevClientWidth) {
+        Object.defineProperty(HTMLElement.prototype, "clientWidth", prevClientWidth);
+      }
+    }
+  });
+
+  it("caps AntV design width so ultra-wide panes do not inflate the layout", () => {
+    expect(antvDesignWidth(0)).toBe(520);
+    expect(antvDesignWidth(400)).toBe(400);
+    expect(antvDesignWidth(900)).toBe(640);
+  });
+
+  it("fills pane width and only shrinks when the graphic would exceed max height", () => {
+    expect(infographicFitSize(800, 400, 400, 560)).toEqual({ width: 400, height: 200 });
+    expect(infographicFitSize(800, 1200, 400, 560)).toEqual({
+      width: (800 * 560) / 1200,
+      height: 560,
+    });
+    expect(infographicFitSize(0, 100, 400, 560)).toEqual({ width: 400, height: 0 });
   });
 });

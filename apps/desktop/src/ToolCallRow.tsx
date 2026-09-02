@@ -24,6 +24,7 @@ function toolIcon(name: string): string {
   if (name === "skill") return "🎯";
   if (name.startsWith("doc_")) return "📝";
   if (name === "a2ui_emit") return "🧩";
+  if (name.startsWith("infographic_")) return "📊";
   if (name.startsWith("mcp__")) return "🔌";
   return "🛠";
 }

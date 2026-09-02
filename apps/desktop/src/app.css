@@ -1758,6 +1758,11 @@ body,
   box-shadow: none;
 }
 
+.file-preview-fs-shell .a2ui-infographic-fit,
+.file-preview-fs-shell .a2ui-infographic svg {
+  max-height: min(80vh, 720px);
+}
+
 .file-preview-prose {
   flex: 1 1 auto;
   overflow: auto;
@@ -3544,21 +3549,44 @@ body,
   max-height: 240px;
 }
 
-.a2ui-infographic svg {
-  display: block;
+.a2ui-infographic {
+  width: 100%;
   max-width: 100%;
-  height: auto;
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
 }
 
-.a2ui-infographic--antv {
+.a2ui-infographic svg {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: min(42vh, 360px);
+}
+
+.a2ui-infographic-fit {
   width: 100%;
+  max-width: 100%;
+  display: flex;
+  justify-content: center;
+  overflow: visible;
+}
+
+.a2ui-infographic-fit[hidden] {
+  display: none !important;
+}
+
+.a2ui-infographic.a2ui-infographic--antv {
+  flex: 0 0 auto;
   min-height: 0;
+  overflow: visible;
 }
 
 .a2ui-infographic--antv svg {
   display: block;
-  width: 100%;
-  height: auto;
+  max-height: none;
+  overflow: visible;
 }
 
 .a2ui-infographic--antv[hidden] {

@@ -20,6 +20,7 @@ export function toolDisplayTitle(name: string): string {
     doc_ingest: "Doc ingest",
     infographic_get: "Infographic",
     infographic_patch: "Infographic",
+    infographic_render: "Infographic",
     image_generate: "Image",
     video_generate: "Video",
     web_search: "Web",
