@@ -1,5 +1,6 @@
 import { parseAntvSyntax } from "@flintloom/infographic";
 import { parseChartKind } from "./chartKinds.ts";
+import { flattenEmitMessages } from "./recoverSyntax.ts";
 import { A2UI_CATALOG_ID } from "./types.ts";
 
 const ENVELOPE_KEYS = ["createSurface", "updateComponents", "updateDataModel", "deleteSurface"] as const;
@@ -453,7 +454,7 @@ export function normalizeEmitMessages(raw: unknown): unknown {
   if (!Array.isArray(raw)) return raw;
   let clone: unknown[];
   try {
-    clone = cloneJson(raw);
+    clone = flattenEmitMessages(cloneJson(raw)) ?? cloneJson(raw);
   } catch {
     return raw;
   }

@@ -31,17 +31,12 @@ function confirmMessages(surfaceId = "main") {
 const exec = { workspaceRoot: "/tmp", signal: new AbortController().signal, channel: "cli" };
 
 describe("a2ui_emit", () => {
-  it("describes official AntV families instead of saying SWOT and relation cannot be drawn", () => {
+  it("describes interactive envelopes and points infographics at infographic_render", () => {
     const tool = createA2uiEmitTool(createA2uiService());
-    expect(tool.description).toContain("compare-swot");
-    expect(tool.description).toContain("compare-quadrant-quarter-simple-card");
-    expect(tool.description).toMatch(/never compare-swot/);
-    expect(tool.description).toMatch(/relation-/);
-    expect(tool.description).toMatch(/chart-/);
-    expect(tool.description).toContain("ONLY syntax");
-    expect(tool.description).not.toMatch(/not auto-drawn/);
-    expect(tool.parameters.properties.syntax.description).toMatch(/values|nodes/);
-    expect(tool.parameters.properties.syntax.description).toContain("mindmap");
+    expect(tool.description).toContain("infographic_render");
+    expect(tool.description).toContain("messages[]");
+    expect(tool.description).not.toContain("compare-swot");
+    expect(tool.parameters.properties).not.toHaveProperty("syntax");
   });
 
   it("returns short json without messages and rejects abort / missing messages", async () => {
@@ -58,6 +53,16 @@ describe("a2ui_emit", () => {
     const ac = new AbortController();
     ac.abort();
     expect(await tool.execute({ messages: confirmMessages() }, { ...exec, signal: ac.signal })).toBe("aborted");
+  });
+
+  it("rejects AntV syntax and tells the model to use infographic_render", async () => {
+    const tool = createA2uiEmitTool(createA2uiService());
+    expect(
+      await tool.execute(
+        { syntax: "infographic compare-swot\ndata\n  compares\n    - label 优势\n" },
+        exec,
+      ),
+    ).toBe("failed: use infographic_render");
   });
 
   it("repairs a fused Text+Chart radar emit instead of returning bad envelope", async () => {
@@ -99,66 +104,5 @@ describe("a2ui_emit", () => {
     expect(parsed.status).toBe("ok");
     const snap = svc.takeEmit(parsed.emitId);
     expect(snap?.messages.some((msg) => "updateComponents" in msg && msg.updateComponents.components.some((c) => c.id === "chart" && c.component === "Chart"))).toBe(true);
-  });
-
-  it("recovers Eisenhower compares stuffed into updateDataModel into a quadrant Infographic", async () => {
-    const svc = createA2uiService();
-    const tool = createA2uiEmitTool(svc);
-    const raw = await tool.execute(
-      {
-        messages: [
-          {
-            version: 0.9,
-            updateDataModel: {
-              compares: [
-                { desc: "立即执行 (Do)\n• 处理突发危机" },
-                { desc: "计划 (Schedule)\n• 长期规划" },
-                { desc: "委派他人 (Delegate)\n• 某些电话会议" },
-                { desc: "减少 (Minimize)\n• 消遣闲逛" },
-              ],
-            },
-          },
-        ],
-      },
-      exec,
-    );
-    expect(raw).not.toMatch(/^failed:/);
-    const parsed = JSON.parse(raw) as { status: string; emitId: string };
-    expect(parsed.status).toBe("ok");
-    const snap = svc.takeEmit(parsed.emitId);
-    const update = snap?.messages.find((msg) => "updateComponents" in msg);
-    const syntax =
-      update && "updateComponents" in update
-        ? update.updateComponents.components.find((c) => c.component === "Infographic")?.syntax
-        : undefined;
-    expect(typeof syntax).toBe("string");
-    expect(syntax).toContain("compare-quadrant-quarter-simple-card");
-    expect(syntax).toContain("立即执行");
-    expect(syntax).toContain("委派他人");
-    expect(syntax).toContain("desc 处理突发危机");
-  });
-
-  it("accepts a bare AntV syntax argument without envelopes", async () => {
-    const svc = createA2uiService();
-    const tool = createA2uiEmitTool(svc);
-    const raw = await tool.execute(
-      {
-        syntax:
-          "infographic list-row-simple-horizontal-arrow\ndata\n  lists\n    - label A\n      desc Start\n    - label B\n      desc Next\n    - label C\n      desc Done\n",
-      },
-      exec,
-    );
-    const parsed = JSON.parse(raw) as { status: string; emitId: string; wait: boolean };
-    expect(parsed.status).toBe("ok");
-    expect(parsed.wait).toBe(false);
-    const snap = svc.takeEmit(parsed.emitId);
-    const update = snap?.messages.find((msg) => "updateComponents" in msg);
-    expect(
-      update &&
-        "updateComponents" in update &&
-        update.updateComponents.components.some(
-          (c) => c.component === "Infographic" && typeof c.syntax === "string",
-        ),
-    ).toBe(true);
   });
 });
