@@ -370,6 +370,67 @@ describe("runTurn", () => {
     expect(session.events().some((e) => e.type === "turn/end")).toBe(true);
   });
 
+  it("projects infographic_render as a2ui/surface without waiting", async () => {
+    const syntax =
+      "infographic compare-swot\ndata\n  compares\n    - label 优势\n      children\n        - label 核心竞争力\n";
+    let streamCall = 0;
+    const fakeChat: ChatProvider = {
+      async *stream() {
+        streamCall += 1;
+        if (streamCall === 1) {
+          yield {
+            type: "tool_call",
+            id: "c1",
+            name: "infographic_render",
+            args: { template: "swot", items: [{ label: "优势", desc: "核心竞争力" }] },
+          };
+        } else {
+          yield { type: "text", text: "shown" };
+        }
+      },
+    };
+    const ctx = boot();
+    ctx.provide("infographic", {
+      chatSurface(s: string) {
+        return [
+          { version: "v0.9", createSurface: { surfaceId: "main", catalogId: "flintloom:a2ui:core" } },
+          {
+            version: "v0.9",
+            updateComponents: {
+              surfaceId: "main",
+              components: [{ id: "root", component: "Infographic", syntax: s }],
+            },
+          },
+        ];
+      },
+    });
+    ctx.require<ToolRegistry>("tools").register({
+      name: "infographic_render",
+      description: "draw",
+      parameters: { type: "object", properties: {} },
+      async execute() {
+        return JSON.stringify({ status: "ok", syntax });
+      },
+    });
+    ctx.require<ModelRegistry>("models").registerChat("fake", fakeChat);
+    ctx.require<ModelRegistry>("models").setDefault("chat", "fake");
+    const session = new Session("s-ig-render");
+    const result = await runTurn({
+      ctx,
+      session,
+      text: "画 SWOT",
+      workspaceRoot: process.cwd(),
+      channel: "host",
+      signal: new AbortController().signal,
+    });
+    expect(result.status).toBe("ok");
+    expect(session.events().some((e) => e.type === "turn/end")).toBe(true);
+    const surface = session.events().find((e) => e.type === "a2ui/surface");
+    expect(surface).toMatchObject({ wait: false, surfaceId: "main" });
+    expect(JSON.stringify(surface)).toContain("compare-swot");
+    expect(JSON.stringify(surface)).toContain("核心竞争力");
+  });
+
   it("uses omni provider when omni kind is configured", async () => {
     let chatCalled = false;
     let omniCalled = false;

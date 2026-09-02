@@ -121,5 +121,7 @@ describe("runTurn generationDir", () => {
     expect(systemContent).toContain(dir);
     expect(systemContent).toMatch(/do not use shell mkdir/i);
     expect(systemContent).toMatch(/do not invent dates/i);
+    expect(systemContent).toContain("infographic_render");
+    expect(systemContent).toMatch(/a2ui_emit only for buttons/);
   });
 });

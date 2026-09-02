@@ -13,7 +13,8 @@ const MAX_STEPS = 8;
 function conversationSystemMessage(webSearch: boolean, generationDir: string): string {
   let base =
     "You are FlintLoom, a real agent. Use tools to work in the workspace." +
-    `\nThis chat's output folder is ${generationDir}/. Write new files with fs using simple names like ket.md and ket.docx. Do not invent dates or folder names. Do not use shell mkdir; writing a file creates the folder. Then call doc_generate with source and out as those same filenames.`;
+    `\nThis chat's output folder is ${generationDir}/. Write new files with fs using simple names like ket.md and ket.docx. Do not invent dates or folder names. Do not use shell mkdir; writing a file creates the folder. Then call doc_generate with source and out as those same filenames.` +
+    "\nFor SWOT, steps, mind maps, and other infographics, call infographic_render with template and items. Use a2ui_emit only for buttons, pickers, tables, and A2UI charts.";
   if (!webSearch) return base;
   return `${base}\nYou may call web_search when you need current or external information. Do not search for questions you can answer from the workspace or your knowledge.`;
 }
@@ -26,6 +27,10 @@ function turnWebSearch(session: Session, turnId: string): boolean {
   }
   return false;
 }
+
+type InfographicLoopService = {
+  chatSurface(syntax: string): unknown[];
+};
 
 type A2uiLoopService = {
   takeEmit(emitId: string): { surfaceId: string; wait: boolean; messages: unknown[] } | undefined;
@@ -511,6 +516,25 @@ async function executeToolCall(
           stepWait.value = true;
         }
       }
+    }
+  }
+
+  if (call.name === "infographic_render") {
+    let parsed: { status?: string; syntax?: string };
+    try {
+      parsed = JSON.parse(resultText) as typeof parsed;
+    } catch {
+      parsed = {};
+    }
+    const infographic = input.ctx.get<InfographicLoopService>("infographic");
+    if (parsed.status === "ok" && typeof parsed.syntax === "string" && infographic) {
+      appendEvent(session, onEvent, {
+        type: "a2ui/surface",
+        turnId,
+        surfaceId: "main",
+        messages: infographic.chatSurface(parsed.syntax),
+        wait: false,
+      });
     }
   }
 
