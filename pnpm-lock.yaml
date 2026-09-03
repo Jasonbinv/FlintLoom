@@ -86,6 +86,9 @@ importers:
       '@flintloom/tools':
         specifier: workspace:*
         version: link:packages/tools
+      '@flintloom/weather':
+        specifier: workspace:*
+        version: link:packages/weather
       '@flintloom/web-search':
         specifier: workspace:*
         version: link:packages/web-search
@@ -591,6 +594,15 @@ importers:
       '@flintloom/models':
         specifier: workspace:*
         version: link:../models
+
+  packages/weather:
+    dependencies:
+      '@flintloom/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      '@flintloom/tools':
+        specifier: workspace:*
+        version: link:../tools
 
   packages/web-search:
     dependencies:

@@ -199,6 +199,7 @@ describe("startHost", () => {
     expect(src).not.toMatch(/createMcp/);
     expect(src).not.toMatch(/mcp__/);
     expect(src).not.toMatch(/@flintloom\/web-search/);
+    expect(src).not.toMatch(/@flintloom\/weather/);
   });
 
   it("default ASSEMBLY does not include mcp plugin", () => {
@@ -779,6 +780,7 @@ describe("startHost", () => {
     expect(names).toContain("infographic_patch");
     expect(names).toContain("infographic_render");
     expect(names).toContain("web_search");
+    expect(names).toContain("get_weather");
   });
 
   it("omitting web-search from yml omits web_search", async () => {
@@ -794,6 +796,22 @@ describe("startHost", () => {
     const { ctx } = await createRuntime(workspaceRoot, homeDir);
     const names = ctx.require<ToolRegistry>("tools").schemas().map((s) => s.name);
     expect(names).not.toContain("web_search");
+  });
+
+  it("omitting weather from yml omits get_weather", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-noweather-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
+    writeFileSync(
+      join(workspaceRoot, "flintloom.yml"),
+      ASSEMBLY.replace(
+        `  - id: weather\n    name: "@flintloom/weather"\n`,
+        "",
+      ),
+    );
+    const { ctx } = await createRuntime(workspaceRoot, homeDir);
+    const names = ctx.require<ToolRegistry>("tools").schemas().map((s) => s.name);
+    expect(names).not.toContain("get_weather");
+    expect(names).toContain("web_search");
   });
 
   it("turn without a chat key emits model/error and failed", async () => {

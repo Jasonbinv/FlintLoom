@@ -151,6 +151,44 @@ describe("guard ask in tools plugin", () => {
     expect(gated).toBe(0);
   });
 
+  it("skips guard-ask for get_weather even when gate would ask", async () => {
+    const ctx = new Context();
+    const models = new ModelRegistry();
+    let gated = 0;
+    models.registerGuard("g", {
+      async gate() {
+        gated += 1;
+        return "ask";
+      },
+      async steward() {
+        return { verdict: "ok", summary: "" };
+      },
+    });
+    models.setDefault("guard", "g");
+    ctx.provide("models", models);
+    await ctx.plugin(toolsPlugin);
+    const tools = ctx.require<ToolRegistry>("tools");
+    tools.register({
+      name: "get_weather",
+      description: "weather",
+      parameters: { type: "object", properties: {} },
+      async execute() {
+        return "weathered";
+      },
+    });
+    const out = await tools.execute(
+      "get_weather",
+      { city: "Beijing" },
+      {
+        workspaceRoot: "/tmp",
+        signal: new AbortController().signal,
+        channel: "host",
+      },
+    );
+    expect(out).toBe("weathered");
+    expect(gated).toBe(0);
+  });
+
   it("still asks for other tools when webSearch is true", async () => {
     const ctx = new Context();
     const models = new ModelRegistry();
