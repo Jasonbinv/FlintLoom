@@ -23,6 +23,7 @@ Desktop already renders `@antv/infographic`. Do not write HTML, `unpkg`, or foll
 - 四象限图 / quadrant / 2×2 矩阵 / 艾森豪威尔 / Eisenhower → `compare-quadrant-*`. Never `compare-swot` (that is four letter-card columns, not XY axes). Never put AntV `compares` into A2UI `updateDataModel`.
 - Do not invent `compare-binary-simple-horizontal` or `hierarchy-tree-simple`.
 - Do not fall back to A2UI Chart `kind: "bar"` when the user asked for an infographic.
+- If the user asked for a chart, table, button, or picker (not an infographic poster), use `a2ui_emit`. Do not offer infographic after `a2ui_emit` fails.
 - No `http://` or `https://`. Icons: keyword only (`rocket`, `shield check`), never URLs.
 
 ## Pick a family, then one template

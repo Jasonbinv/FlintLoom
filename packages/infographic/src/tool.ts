@@ -205,7 +205,7 @@ export function createInfographicRenderTool(): ToolDefinition {
   return {
     name: "infographic_render",
     description:
-      "Draw an AntV infographic in chat. Pass template plus items[{label, desc?, children?}]. Aliases: steps, timeline, swot, compare, quadrant, mindmap. Do not call a2ui_emit for infographics. Optional syntax: a full infographic DSL block. No http(s).",
+      "Draw an AntV infographic poster in chat when the user asked for SWOT, steps, mind map, or similar. Pass template plus items[{label, desc?, children?}]. Aliases: steps, timeline, swot, compare, quadrant, mindmap. Do not call a2ui_emit for infographics. Bar/line/pie/radar/heatmap charts use a2ui_emit, not this tool. Optional syntax: a full infographic DSL block. No http(s).",
     parameters: {
       type: "object",
       properties: {

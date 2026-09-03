@@ -33,6 +33,172 @@ function pickEnvelope(msg: Record<string, unknown>, key: (typeof ENVELOPE_KEYS)[
   return { version: "v0.9", [key]: msg[key] };
 }
 
+function rewriteCatalogId(id: unknown): string {
+  if (typeof id !== "string" || id.length === 0) return A2UI_CATALOG_ID;
+  if (id === A2UI_CATALOG_ID) return id;
+  if (/a2ui\.org/i.test(id) || /a2ui-project/i.test(id)) return A2UI_CATALOG_ID;
+  return id;
+}
+
+function liftLegacyKeys(msg: Record<string, unknown>): void {
+  if ("beginRendering" in msg && !("createSurface" in msg) && isRecord(msg.beginRendering)) {
+    const body = msg.beginRendering;
+    msg.createSurface = {
+      surfaceId: stringProp(body.surfaceId) ?? stringProp(body.id) ?? "main",
+      catalogId: A2UI_CATALOG_ID,
+    };
+    delete msg.beginRendering;
+  }
+  if ("surfaceUpdate" in msg && !("updateComponents" in msg)) {
+    msg.updateComponents = msg.surfaceUpdate;
+    delete msg.surfaceUpdate;
+  }
+  if ("dataModelUpdate" in msg && !("updateDataModel" in msg)) {
+    msg.updateDataModel = msg.dataModelUpdate;
+    delete msg.dataModelUpdate;
+  }
+}
+
+function splitCombinedEnvelope(msg: Record<string, unknown>): Record<string, unknown>[] {
+  const present = ENVELOPE_KEYS.filter((key) => key in msg);
+  if (present.length <= 1) return [msg];
+  return present.map((key) => ({ version: msg.version ?? "v0.9", [key]: msg[key] }));
+}
+
+function flattenDynamicValue(value: unknown): unknown {
+  if (!isRecord(value)) return value;
+  const keys = Object.keys(value);
+  if (keys.length === 1 && keys[0] === "path") return value;
+  if (typeof value.literalString === "string") return value.literalString;
+  if (typeof value.literalNumber === "number") return value.literalNumber;
+  if (typeof value.literalBoolean === "boolean") return value.literalBoolean;
+  return value;
+}
+
+function flattenChildList(value: unknown): unknown {
+  if (Array.isArray(value)) return value;
+  if (isRecord(value) && Array.isArray(value.explicitList)) return value.explicitList;
+  return value;
+}
+
+function flattenV08Component(comp: Record<string, unknown>): void {
+  if (!isRecord(comp.component)) return;
+  const names = Object.keys(comp.component);
+  if (names.length !== 1) return;
+  const name = names[0]!;
+  const props = comp.component[name];
+  comp.component = name;
+  if (!isRecord(props)) return;
+  for (const [key, val] of Object.entries(props)) {
+    if (!(key in comp)) comp[key] = val;
+  }
+}
+
+function mapOfficialComponent(comp: Record<string, unknown>): void {
+  if (comp.component === "Card" && typeof comp.child === "string") {
+    comp.component = "Column";
+    comp.children = [comp.child];
+    delete comp.child;
+    return;
+  }
+  if (comp.component === "List") {
+    comp.component = comp.direction === "horizontal" ? "Row" : "Column";
+    return;
+  }
+  if (comp.component === "MultipleChoice") {
+    comp.component = "ChoicePicker";
+    return;
+  }
+  if (comp.component === "Divider") {
+    comp.component = "Text";
+    if (typeof comp.text !== "string") comp.text = " ";
+  }
+}
+
+function flattenOfficialComponent(comp: Record<string, unknown>): void {
+  flattenV08Component(comp);
+  mapOfficialComponent(comp);
+  if ("children" in comp) comp.children = flattenChildList(comp.children);
+  if ("child" in comp) {
+    const child = flattenDynamicValue(comp.child);
+    if (typeof child === "string") comp.child = child;
+  }
+  if ("text" in comp) comp.text = flattenDynamicValue(comp.text);
+  if ("value" in comp) comp.value = flattenDynamicValue(comp.value);
+  if ("label" in comp) comp.label = flattenDynamicValue(comp.label);
+  if (Array.isArray(comp.options)) {
+    comp.options = comp.options.map((item) => {
+      if (!isRecord(item)) return item;
+      const next = { ...item };
+      if ("label" in next) next.label = flattenDynamicValue(next.label);
+      if ("value" in next) next.value = flattenDynamicValue(next.value);
+      return next;
+    });
+  }
+}
+
+function isBareComponent(msg: Record<string, unknown>): boolean {
+  if (envelopeKeyOf(msg) !== undefined) return false;
+  if (typeof msg.id !== "string" || msg.id.length === 0) return false;
+  if (typeof msg.component === "string" || isRecord(msg.component)) return true;
+  return typeof msg.type === "string" && msg.type !== "createSurface" && msg.type !== "updateComponents";
+}
+
+function wrapBareComponents(messages: unknown[]): unknown[] {
+  const out: unknown[] = [];
+  let pending: Record<string, unknown>[] = [];
+  const flush = () => {
+    if (pending.length === 0) return;
+    out.push({
+      version: "v0.9",
+      updateComponents: { components: pending },
+    });
+    pending = [];
+  };
+  for (const msg of messages) {
+    if (isRecord(msg) && isBareComponent(msg)) {
+      pending.push(msg);
+      continue;
+    }
+    flush();
+    out.push(msg);
+  }
+  flush();
+  return out;
+}
+
+function extractNestedComponents(messages: unknown[]): unknown[] {
+  const out: unknown[] = [];
+  for (const msg of messages) {
+    out.push(msg);
+    if (!isRecord(msg) || !isRecord(msg.createSurface) || !Array.isArray(msg.createSurface.components)) {
+      continue;
+    }
+    const components = msg.createSurface.components;
+    delete msg.createSurface.components;
+    if (components.length === 0) continue;
+    out.push({
+      version: "v0.9",
+      updateComponents: {
+        surfaceId: stringProp(msg.createSurface.surfaceId),
+        components,
+      },
+    });
+  }
+  return out;
+}
+
+function ensureCreateSurface(messages: unknown[]): unknown[] {
+  const hasCreate = messages.some((msg) => isRecord(msg) && "createSurface" in msg);
+  const pureDelete = messages.length > 0 && messages.every((msg) => isRecord(msg) && "deleteSurface" in msg);
+  if (hasCreate || pureDelete) return messages;
+  const surfaceId = inferSurfaceId(messages) ?? "main";
+  return [
+    { version: "v0.9", createSurface: { surfaceId, catalogId: A2UI_CATALOG_ID } },
+    ...messages,
+  ];
+}
+
 function liftTypedEnvelope(msg: Record<string, unknown>): Record<string, unknown> {
   coerceVersion(msg);
   let key = envelopeKeyOf(msg);
@@ -77,7 +243,7 @@ function liftTypedEnvelope(msg: Record<string, unknown>): Record<string, unknown
       msg.createSurface.surfaceId =
         stringProp(msg.createSurface.id) ?? stringProp(msg.id) ?? "main";
     }
-    if (typeof msg.createSurface.catalogId !== "string") msg.createSurface.catalogId = A2UI_CATALOG_ID;
+    msg.createSurface.catalogId = rewriteCatalogId(msg.createSurface.catalogId);
   }
   return pickEnvelope(msg, key);
 }
@@ -338,6 +504,7 @@ function firstSeriesValues(data: Record<string, unknown>): unknown[] | undefined
 }
 
 function coerceDashboardComponent(comp: Record<string, unknown>): Record<string, unknown> {
+  flattenOfficialComponent(comp);
   if (typeof comp.component !== "string" && typeof comp.type === "string") {
     const mapped = DASHBOARD_TYPE_TO_COMPONENT[comp.type.toLowerCase()];
     if (mapped) comp.component = mapped;
@@ -451,16 +618,26 @@ function normalizeMessage(msg: unknown, surfaceId: string | undefined): unknown 
 }
 
 export function normalizeEmitMessages(raw: unknown): unknown {
-  if (!Array.isArray(raw)) return raw;
+  const asArray = Array.isArray(raw) ? raw : isRecord(raw) ? [raw] : raw;
+  if (!Array.isArray(asArray)) return raw;
   let clone: unknown[];
   try {
-    clone = flattenEmitMessages(cloneJson(raw)) ?? cloneJson(raw);
+    clone = flattenEmitMessages(cloneJson(asArray)) ?? cloneJson(asArray);
   } catch {
     return raw;
   }
-  const lifted = clone.map((msg) => (isRecord(msg) ? liftTypedEnvelope(msg) : msg));
-  const surfaceId = inferSurfaceId(lifted) ?? "main";
-  const normalized = lifted.map((msg) => normalizeMessage(msg, surfaceId));
+  const withLegacy = clone.map((msg) => {
+    if (!isRecord(msg)) return msg;
+    liftLegacyKeys(msg);
+    return msg;
+  });
+  const split = withLegacy.flatMap((msg) => (isRecord(msg) ? splitCombinedEnvelope(msg) : [msg]));
+  const lifted = split.map((msg) => (isRecord(msg) ? liftTypedEnvelope(msg) : msg));
+  const extracted = extractNestedComponents(lifted);
+  const wrapped = wrapBareComponents(extracted);
+  const withSurface = ensureCreateSurface(wrapped);
+  const surfaceId = inferSurfaceId(withSurface) ?? "main";
+  const normalized = withSurface.map((msg) => normalizeMessage(msg, surfaceId));
   ensureRoot(normalized);
   return normalized;
 }

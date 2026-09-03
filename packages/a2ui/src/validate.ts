@@ -387,7 +387,7 @@ function validateMessages(raw: unknown): { messages: A2uiMessage[]; surfaceId: s
 
   const components = mergeComponents(messages);
   if (!pureDelete && !components.has("root")) {
-    fail("missing root");
+    fail('missing root: include updateComponents with a component id "root" in the same call');
   }
   validateRefs(components);
 

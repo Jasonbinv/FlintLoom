@@ -5,22 +5,20 @@ export function createA2uiEmitTool(svc: A2uiService): ToolDefinition {
   return {
     name: "a2ui_emit",
     description:
-      "Emit interactive A2UI in chat: buttons, choice pickers, tables, and A2UI Chart. Pass messages[]: each item must be version v0.9 and exactly one of createSurface, updateComponents, updateDataModel, or deleteSurface. Never put type/kind on the envelope. For SWOT, steps, mind maps, and other AntV infographics, call infographic_render instead.",
+      'Emit interactive A2UI v0.9 in chat: buttons, pickers, tables, and Chart. Pass messages[] in one call: createSurface then updateComponents. catalogId is flintloom:a2ui:core. One component id must be "root". Example: [{"version":"v0.9","createSurface":{"surfaceId":"main","catalogId":"flintloom:a2ui:core"}},{"version":"v0.9","updateComponents":{"surfaceId":"main","components":[{"id":"root","component":"Chart","kind":"bar","labels":["A"],"values":[1]}]}}]. If emit fails, fix this JSON and retry.',
     parameters: {
       type: "object",
       properties: {
         messages: {
           type: "array",
-          description: "A2UI v0.9 message envelopes for a single surface.",
+          description:
+            'A2UI v0.9 envelopes for one surface. Include createSurface and updateComponents together. Root component id is "root".',
         },
       },
     },
     async execute(args, exec) {
       if (exec.signal.aborted) {
         return "aborted";
-      }
-      if (typeof args.syntax === "string") {
-        return "failed: use infographic_render";
       }
       const messages = args.messages;
       if (messages === undefined) {

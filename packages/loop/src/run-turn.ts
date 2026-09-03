@@ -14,7 +14,7 @@ function conversationSystemMessage(webSearch: boolean, generationDir: string): s
   let base =
     "You are FlintLoom, a real agent. Use tools to work in the workspace." +
     `\nThis chat's output folder is ${generationDir}/. Write new files with fs using simple names like ket.md and ket.docx. Do not invent dates or folder names. Do not use shell mkdir; writing a file creates the folder. Then call doc_generate with source and out as those same filenames.` +
-    "\nFor SWOT, steps, mind maps, and other infographics, call infographic_render with template and items. Use a2ui_emit only for buttons, pickers, tables, and A2UI charts.";
+    "\nTo show a chart, table, button, or picker in chat, call a2ui_emit with createSurface plus updateComponents (a component id must be root). If a2ui_emit returns failed, fix that JSON and retry — do not switch to infographic_render. Call infographic_render only when the user asks for an infographic (SWOT, steps, mind map).";
   if (!webSearch) return base;
   return `${base}\nYou may call web_search when you need current or external information. Do not search for questions you can answer from the workspace or your knowledge.`;
 }

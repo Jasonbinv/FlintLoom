@@ -10,9 +10,9 @@ Use this skill whenever the user asks for an **interactive card**, **confirm bef
 ## Before you emit
 
 1. Call `skill` with `action: read`, `id: report-a2ui` if you need this checklist again.
-2. Call tool **`a2ui_emit`** with argument **`messages`** (array of envelopes). For an AntV infographic (steps, SWOT, mind map, relation, chart poster), call **`infographic_render`** instead (read skill `antv-infographic`). Never invent keys like `type`, `input`, `fields`, or `form`.
-3. If emit returns `failed: bad envelope`, fix the JSON shape below — **do not** tell the user the environment lacks UI. The workbench supports A2UI; the payload was wrong. Use `"version": "v0.9"` (not `"0.9"`).
-4. **Never fuse Chart into Text.** Close the Text object, then add a separate `{ "id", "component": "Chart", "kind", "labels", "values" }`. Do not put `kind` / `labels` / `values` on a Text node. Each `messages[]` item needs its own `"version": "v0.9"` (not only on the tool args).
+2. Call tool **`a2ui_emit`** with argument **`messages`** (array of envelopes). Never invent keys like `type`, `input`, `fields`, or `form`.
+3. If emit returns `failed: …`, fix the JSON shape below and **retry `a2ui_emit`**. Do **not** tell the user the environment lacks UI, and do **not** switch to `infographic_render` unless the user asked for an infographic. The workbench supports A2UI; the payload was wrong. Use `"version": "v0.9"` (not `"0.9"`).
+4. **Never fuse Chart into Text.** Close the Text object, then add a separate `{ "id", "component": "Chart", "kind", "labels", "values" }`. Do not put `kind` / `labels` / `values` on a Text node. Each `messages[]` item needs its own `"version": "v0.9"` (not only on the tool args). Send **createSurface and updateComponents in the same call** — a lone createSurface fails with `missing root`.
 
 ## Envelope rules (A2UI v0.9)
 
@@ -191,6 +191,7 @@ Heatmap example (do **not** use 1D `labels`/`values`):
 
 | Error | Cause | Fix |
 |-------|--------|-----|
+| `missing root` | Only `createSurface`, empty `components`, or no component `id` `"root"` | Same call must include `updateComponents` with a component `{ "id": "root", ... }` (or a Chart/Text that can be wrapped as root) |
 | `bad envelope` | Missing `version`, wrong top-level keys, or multiple keys besides version | Use only v0.9 + one envelope key per message |
 | `unknown component` | `Input`, `Form`, etc. | Use allowed components only |
 | `bad button` | Button missing `child` or `action.event.name` | Copy Template A button shape |

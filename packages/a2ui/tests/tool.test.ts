@@ -31,10 +31,13 @@ function confirmMessages(surfaceId = "main") {
 const exec = { workspaceRoot: "/tmp", signal: new AbortController().signal, channel: "cli" };
 
 describe("a2ui_emit", () => {
-  it("describes interactive envelopes and points infographics at infographic_render", () => {
+  it("describes A2UI envelopes with a root example and does not redirect to infographic_render", () => {
     const tool = createA2uiEmitTool(createA2uiService());
-    expect(tool.description).toContain("infographic_render");
     expect(tool.description).toContain("messages[]");
+    expect(tool.description).toMatch(/id["']?:\s*["']root["']/);
+    expect(tool.description).toContain("createSurface");
+    expect(tool.description).toContain("updateComponents");
+    expect(tool.description).not.toContain("infographic_render");
     expect(tool.description).not.toContain("compare-swot");
     expect(tool.parameters.properties).not.toHaveProperty("syntax");
   });
@@ -55,14 +58,14 @@ describe("a2ui_emit", () => {
     expect(await tool.execute({ messages: confirmMessages() }, { ...exec, signal: ac.signal })).toBe("aborted");
   });
 
-  it("rejects AntV syntax and tells the model to use infographic_render", async () => {
+  it("rejects AntV syntax without sending the model to infographic_render", async () => {
     const tool = createA2uiEmitTool(createA2uiService());
-    expect(
-      await tool.execute(
-        { syntax: "infographic compare-swot\ndata\n  compares\n    - label 优势\n" },
-        exec,
-      ),
-    ).toBe("failed: use infographic_render");
+    const result = await tool.execute(
+      { syntax: "infographic compare-swot\ndata\n  compares\n    - label 优势\n" },
+      exec,
+    );
+    expect(result).toMatch(/^failed:/);
+    expect(result).not.toContain("infographic_render");
   });
 
   it("repairs a fused Text+Chart radar emit instead of returning bad envelope", async () => {

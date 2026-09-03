@@ -1201,4 +1201,137 @@ describe("createA2uiService", () => {
     expect(byId.get("root")?.component).toBe("Column");
     expect(byId.get("root")?.children).toEqual(["x"]);
   });
+
+  it("repairs official v0.8 beginRendering/surfaceUpdate with nested components and explicitList", () => {
+    const svc = createA2uiService();
+    const snap = svc.validateEmit([
+      { beginRendering: { surfaceId: "main", root: "root" } },
+      {
+        surfaceUpdate: {
+          surfaceId: "main",
+          components: [
+            {
+              id: "root",
+              component: { Column: { children: { explicitList: ["title", "chart"] } } },
+            },
+            { id: "title", component: { Text: { text: { literalString: "Sales" } } } },
+            {
+              id: "chart",
+              component: "Chart",
+              kind: "bar",
+              labels: ["A", "B"],
+              values: [1, 4],
+            },
+          ],
+        },
+      },
+    ]);
+    expect(snap.surfaceId).toBe("main");
+    expect(snap.wait).toBe(false);
+    const byId = componentsById(snap.messages);
+    expect(byId.get("root")?.component).toBe("Column");
+    expect(byId.get("root")?.children).toEqual(["title", "chart"]);
+    expect(byId.get("title")?.text).toBe("Sales");
+    expect(byId.get("chart")?.component).toBe("Chart");
+    const create = snap.messages.find((msg) => "createSurface" in msg);
+    expect(create && "createSurface" in create && create.createSurface.catalogId).toBe("flintloom:a2ui:core");
+  });
+
+  it("repairs official catalogId, Card child, and ChildList children", () => {
+    const svc = createA2uiService();
+    const snap = svc.validateEmit([
+      {
+        version: "v0.9",
+        createSurface: {
+          surfaceId: "main",
+          catalogId: "https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json",
+        },
+      },
+      {
+        version: "v0.9",
+        updateComponents: {
+          surfaceId: "main",
+          components: [
+            { id: "root", component: "Card", child: "body" },
+            { id: "body", component: "Column", children: { explicitList: ["chart"] } },
+            {
+              id: "chart",
+              component: "Chart",
+              kind: "bar",
+              labels: ["Q1", "Q2"],
+              values: [10, 20],
+            },
+          ],
+        },
+      },
+    ]);
+    const byId = componentsById(snap.messages);
+    expect(byId.get("root")?.component).toBe("Column");
+    expect(byId.get("root")?.children).toEqual(["body"]);
+    expect(byId.get("body")?.children).toEqual(["chart"]);
+    const create = snap.messages.find((msg) => "createSurface" in msg);
+    expect(create && "createSurface" in create && create.createSurface.catalogId).toBe("flintloom:a2ui:core");
+  });
+
+  it("lifts components nested in createSurface and wraps a bare chart as root", () => {
+    const svc = createA2uiService();
+    const nested = svc.validateEmit([
+      {
+        version: "v0.9",
+        createSurface: {
+          surfaceId: "main",
+          catalogId: "flintloom:a2ui:core",
+          components: [
+            { id: "title", component: "Text", text: "Trend" },
+            { id: "chart", component: "Chart", kind: "line", labels: ["A"], values: [3] },
+          ],
+        },
+      },
+    ]);
+    const nestedById = componentsById(nested.messages);
+    expect(nestedById.get("root")?.component).toBe("Column");
+    expect(nestedById.get("chart")?.component).toBe("Chart");
+
+    const bare = svc.validateEmit([
+      { id: "root", component: "Chart", kind: "pie", labels: ["a", "b"], values: [1, 2] },
+    ]);
+    const bareById = componentsById(bare.messages);
+    expect(bareById.get("root")?.component).toBe("Chart");
+    expect(bareById.get("root")?.kind).toBe("pie");
+  });
+
+  it("splits a combined createSurface+updateComponents envelope used by official-style emits", () => {
+    const svc = createA2uiService();
+    const snap = svc.validateEmit([
+      {
+        version: "v0.9",
+        createSurface: { surfaceId: "main", catalogId: "flintloom:a2ui:core" },
+        updateComponents: {
+          surfaceId: "main",
+          components: [{ id: "root", component: "Text", text: "ok" }],
+        },
+      },
+    ]);
+    expect(snap.messages).toHaveLength(2);
+    expect(snap.messages[0] && "createSurface" in snap.messages[0]).toBe(true);
+    expect(snap.messages[1] && "updateComponents" in snap.messages[1]).toBe(true);
+  });
 });
+
+function componentsById(messages: unknown[]) {
+  const byId = new Map<string, { id: string; component: string; [key: string]: unknown }>();
+  for (const msg of messages) {
+    if (!isRecord(msg) || !isRecord(msg.updateComponents) || !Array.isArray(msg.updateComponents.components)) {
+      continue;
+    }
+    for (const comp of msg.updateComponents.components) {
+      if (!isRecord(comp) || typeof comp.id !== "string") continue;
+      byId.set(comp.id, comp as { id: string; component: string; [key: string]: unknown });
+    }
+  }
+  return byId;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
