@@ -24,6 +24,7 @@ export function toolDisplayTitle(name: string): string {
     image_generate: "Image",
     video_generate: "Video",
     web_search: "Web",
+    get_weather: "Weather",
   };
   return titles[name] ?? name;
 }
@@ -43,6 +44,9 @@ export function toolDisplaySummary(name: string, args: unknown): string {
     }
     if (typeof rec.query === "string") {
       return rec.query;
+    }
+    if (typeof rec.location === "string" && rec.location.length > 0) {
+      return rec.location;
     }
     if (typeof rec.pattern === "string") {
       return rec.pattern;
