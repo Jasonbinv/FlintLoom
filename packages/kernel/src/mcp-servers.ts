@@ -186,3 +186,11 @@ export function mergeMcpServersIntoConfig(
 
   return { plugins };
 }
+
+export const MCP_SERVER_STATUS_KEY = "mcp-server-status";
+
+export type McpServerRuntimeStatus = {
+  status: "loaded" | "error";
+  error?: string;
+  tools: string[];
+};

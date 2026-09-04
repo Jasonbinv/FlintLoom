@@ -3,8 +3,15 @@ export {
   loadMcpServersFile,
   MCP_SERVERS_HOME_REL,
   MCP_SERVERS_WORKSPACE_FILE,
+  MCP_SERVER_STATUS_KEY,
   type McpServerRow,
+  type McpServerRuntimeStatus,
 } from "./mcp-servers.ts";
+export {
+  isPluginToggleable,
+  pluginKind,
+  type PluginKind,
+} from "./plugin-kind.ts";
 export {
   needsWorkspaceRootOverlay,
   WORKSPACE_ROOT_OVERLAY_PACKAGES,
