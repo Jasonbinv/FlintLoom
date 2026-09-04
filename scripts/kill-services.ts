@@ -1,6 +1,7 @@
 import {
   ALL_SERVICE_PORTS,
   DESKTOP_PORTS,
+  killElectronShell,
   killPorts,
   WECHAT_BRIDGE_PORTS,
 } from "./kill-ports.ts";
@@ -26,8 +27,11 @@ if (!target || !(target in TARGET_PORTS)) {
 }
 
 const killed = killPorts(TARGET_PORTS[target]);
-if (killed.length === 0) {
+const electronKilled =
+  target === "desktop" || target === "all" ? killElectronShell() : [];
+const allKilled = [...killed, ...electronKilled];
+if (allKilled.length === 0) {
   console.log(`[stop] no listeners on ports: ${TARGET_PORTS[target].join(", ")}`);
 } else {
-  console.log(`[stop] killed PIDs: ${killed.join(", ")}`);
+  console.log(`[stop] killed PIDs: ${allKilled.join(", ")}`);
 }

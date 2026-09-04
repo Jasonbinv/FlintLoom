@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   DESKTOP_PORTS,
+  killElectronShell,
   killPorts,
   sleep,
   WECHAT_BRIDGE_PORTS,
@@ -64,8 +65,11 @@ if (!target || !(target in TARGETS)) {
 
 const config = TARGETS[target];
 const killed = killPorts(config.ports);
-if (killed.length > 0) {
-  console.log(`[restart] stopped PIDs: ${killed.join(", ")}`);
+const electronKilled =
+  target === "desktop" || target === "desktop:app" ? killElectronShell() : [];
+const allKilled = [...killed, ...electronKilled];
+if (allKilled.length > 0) {
+  console.log(`[restart] stopped PIDs: ${allKilled.join(", ")}`);
   await sleep(400);
 } else {
   console.log(`[restart] no listeners on ports: ${config.ports.join(", ")}`);
