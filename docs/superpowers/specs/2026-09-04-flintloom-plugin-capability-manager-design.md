@@ -1,7 +1,7 @@
 # FlintLoom 插件与 MCP 能力管理设计
 
 日期：2026-09-04  
-状态：待审阅  
+状态：已复核  
 产品：FlintLoom — A real agent. / 真正的 Agent。  
 范围：工作台「插件」页从只读列表改为可管理：stdio MCP 增删改开关（第一期）；可选能力插件开关（第二期）。写回工作区 YAML 的 `enabled`，保存后原子重载 host。单台 MCP 失败只标红，不拖垮内核。
 
@@ -19,12 +19,12 @@
 
 | 点 | 决定 |
 |---|---|
-| 分两期 | 第一期：MCP 管理 + 原子重载 + MCP 故障隔离。第二期：可选能力开关 + 提示词按工具裁剪 + 知识库/文档绑定。 |
+| 分两期 | 第一期：MCP 管理 + 原子重载 + MCP 故障隔离（含更新 `docs/mcp-servers.md`）。第二期：可选能力开关 + 提示词按工具裁剪 + 知识库/文档绑定。两期各一份实现计划，第一期可单独交付。 |
 | 配置落点 | 工作区 YAML。MCP → `mcp-servers.yml`；能力 → `flintloom.yml` 对应行。不写个人 overlay 当主开关。 |
 | `enabled` | 缺省 / 省略 = 开。只把 `enabled: false` 写进文件；打开则删除该键，不写 `enabled: true`。 |
 | 重载 | 先 `createRuntime` 成功，再 `stop` 旧实例并切换。新实例失败 → 旧实例继续服务。 |
-| 忙 | 有进行中的 turn → 409。若 YAML 已写：body `{ "error": "busy", "written": true }`。界面提示对话结束后点「重载 host」（现有 `POST /v1/settings/reload`）。 |
-| MCP 失败 | `apply` **不抛**。缺 env、initialize 超时、进程退出 → 该 id `status: error`，不登记工具，杀掉已 spawn 进程。其它插件照常。错误信息只含 `id` / `command` / env **名** / `timeout`，不含 token、env 值、`homeDir`。 |
+| 忙 | **先写 YAML**，再重载。有进行中的 turn → 新接口 409 JSON `{ "error": "busy", "written": true }`。现有 `POST /v1/settings/reload` 与 `POST /v1/plugins/install` 仍返回纯文本 `busy`（桌面已按 `err.message === "busy"`）。插件页提示对话结束后点「重载 host」。 |
+| MCP 失败 | `apply` **不抛**（含 `validateMcpConfig` 失败、缺 env、initialize 超时、进程退出）。该 id `status: error`，不登记工具，杀掉已 spawn 进程。其它插件照常。错误信息只含 `id` / `command` / `args` / `env` / env **名** / `timeout`，不含 token、env 值、`homeDir`。 |
 | 修订旧 MCP spec | `2026-08-22-flintloom-mcp-design.md` 里「缺 env / initialize 超时则拒绝启动整机」改为本片的隔离行为。工具名、成帧、8s/30s、`failed: mcp`、host 不 import `@flintloom/mcp` 仍有效。 |
 | MCP 传输 | 仍只 stdio + tools。不做 HTTP/SSE、resources、prompts、schema 编辑、按工具勾选。 |
 | 初始化超时 | 仍 8s。第一次 `npx` 拉包超时视为该行 `error`，用户改完或点重载再试。本片不延长超时、不做安装进度。 |
@@ -137,7 +137,7 @@
 | `DELETE /v1/mcp-servers/:id` | 从工作区文件删除该 id。个人-only → 400 `home`。 |
 | `POST /v1/mcp-servers/:id/copy` | 把个人条目写入工作区（字段原样）。工作区已有该 id → 400 `id`。 |
 
-校验失败 400（`id` / `command` / `args` / `env` / `home`）。写成功、重载因 busy 失败 → 409 且 `written: true`。写成功、`createRuntime` 仍失败（yml 坏、内核插件抛）→ 500，**旧 runtime 仍在**，YAML 保持新内容，界面可再点重载。
+HTTP 入参校验失败 400（`id` / `command` / `args` / `env` / `home`）——此时 **不写文件**。已落盘的 YAML 里若有坏 command：开机/重载时该行 `error`，不 500。写成功、重载因 busy 失败 → 409 JSON 且 `written: true`。写成功、`createRuntime` 仍失败（flintloom.yml 坏、内核插件抛）→ 500，**旧 runtime 仍在**（先起新再停旧），YAML 保持新内容。原子重载后 `GET /v1/models` 必须仍 200。
 
 成功 200：`{ ok: true, server: <与 GET 单项相同> }`（DELETE 为 `{ ok: true, id }`）。
 
@@ -172,8 +172,7 @@ body：`{ enabled: boolean }`。`toggleable: false` → 400。关 `knowledge` �
 
 ### 5.6 `@flintloom/mcp`
 
-- `buildChildEnv` 缺值不再作为「整机启动失败」向上抛出到 `applyConfig`；由 `apply` catch，写入状态表
-- initialize / list 超时同样 catch
+- `validateMcpConfig` / `buildChildEnv` / initialize 失败都由 `apply` catch，写入状态表后 return，不让 `applyConfig` 回滚其它行
 - 成功则状态 `loaded` + tools；`ctx.effect` 仍在成功路径登记 unregister + kill
 - 失败路径：kill 孤儿进程，不 register 工具
 
@@ -247,8 +246,7 @@ body：`{ enabled: boolean }`。`toggleable: false` → 400。关 `knowledge` �
 
 ## 9. 实现顺序
 
-1. kernel：`enabled` 解析、apply 跳过、MCP 合并跳过禁用、YAML 原子写 `enabled`、`pluginKind`。
-2. mcp：apply 捕获失败 + 状态表。
-3. host：原子 `reloadRuntime`；`/v1/mcp-servers*`。
-4. desktop：插件页 MCP 块；内核块暂用现有 `GET /v1/plugins` 并过滤 MCP 行。
-5. （第二期）`GET /v1/plugins/declared` + `PATCH /v1/plugins/:id`；docforge 对缺失 knowledge 不抛；loop 提示词；能力块 UI；知识库空态；内核块改读 `declared`。
+计划拆成两份，互不混进同一 PR 节奏：
+
+1. `docs/superpowers/plans/2026-09-04-flintloom-mcp-server-manager.md`（第一期）
+2. `docs/superpowers/plans/2026-09-04-flintloom-optional-plugin-toggles.md`（第二期，依赖第一期的 `enabled` / 原子重载 / YAML 写入）
