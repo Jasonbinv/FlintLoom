@@ -2,21 +2,34 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   deleteWorkspaceMcpServer,
   listMcpServerDeclarations,
   loadMcpServersFile,
   MCP_SERVERS_HOME_REL,
   MCP_SERVERS_WORKSPACE_FILE,
+  replaceYmlAtomic,
   setWorkspaceMcpEnabled,
   upsertWorkspaceMcpServer,
 } from "../src/index.ts";
+import { replaceYmlAtomic as replaceYmlAtomicImpl } from "../src/yaml-atomic.ts";
+
+vi.mock("../src/yaml-atomic.ts", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../src/yaml-atomic.ts")>();
+  return {
+    ...orig,
+    replaceYmlAtomic: vi.fn((ymlPath: string, dumped: string) => {
+      orig.replaceYmlAtomic(ymlPath, dumped);
+    }),
+  };
+});
 
 function tmpDirs(): { workspaceRoot: string; homeDir: string } {
   return {
@@ -116,6 +129,29 @@ describe("upsertWorkspaceMcpServer", () => {
         env: ["FAKE_TOKEN"],
       },
     ]);
+  });
+
+  it("does not leave a dest file if atomic replace throws on first create", () => {
+    const { workspaceRoot } = tmpDirs();
+    const dest = join(workspaceRoot, MCP_SERVERS_WORKSPACE_FILE);
+    vi.mocked(replaceYmlAtomicImpl).mockImplementationOnce(() => {
+      throw new Error("atomic-fail");
+    });
+    expect(() =>
+      upsertWorkspaceMcpServer(workspaceRoot, {
+        id: "fake",
+        command: "node",
+      }),
+    ).toThrow("atomic-fail");
+    expect(existsSync(dest)).toBe(false);
+  });
+
+  it("replaceYmlAtomic creates a missing dest by tmp rename without bak leftovers", () => {
+    const dir = mkdtempSync(join(tmpdir(), "flintloom-yml-new-"));
+    const dest = join(dir, "mcp-servers.yml");
+    replaceYmlAtomic(dest, "servers: []\n");
+    expect(readFileSync(dest, "utf8")).toBe("servers: []\n");
+    expect(readdirSync(dir)).toEqual(["mcp-servers.yml"]);
   });
 
   it("replaces an existing workspace row with the same id", () => {

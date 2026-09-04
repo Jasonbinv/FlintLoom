@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { isMap, isSeq, parseDocument, YAMLMap, YAMLSeq } from "yaml";
 import { isPluginId } from "./plugin-entry.ts";
@@ -112,13 +112,9 @@ function findServerIndex(servers: YAMLSeq, id: string): number {
 function dumpAndReplace(
   path: string,
   doc: ReturnType<typeof parseDocument>,
-  existed: boolean,
 ): void {
   const dumped = String(doc);
   loadMcpServersFile(dumped);
-  if (!existed) {
-    writeFileSync(path, "servers: []\n", "utf8");
-  }
   replaceYmlAtomic(path, dumped);
 }
 
@@ -130,8 +126,7 @@ export function upsertWorkspaceMcpServer(
     throw new Error("id");
   }
   const path = workspacePath(workspaceRoot);
-  const existed = existsSync(path);
-  const text = existed ? readFileSync(path, "utf8") : "servers: []\n";
+  const text = existsSync(path) ? readFileSync(path, "utf8") : "servers: []\n";
   const doc = parseDocument(text);
   const servers = requireServersSeq(doc);
   const idx = findServerIndex(servers, server.id);
@@ -145,7 +140,7 @@ export function upsertWorkspaceMcpServer(
   } else {
     servers.add(rowToPlain(server));
   }
-  dumpAndReplace(path, doc, existed);
+  dumpAndReplace(path, doc);
 }
 
 function loadWorkspaceDoc(workspaceRoot: string): {
@@ -171,7 +166,7 @@ export function deleteWorkspaceMcpServer(
     throw new Error("home");
   }
   servers.delete(idx);
-  dumpAndReplace(path, doc, true);
+  dumpAndReplace(path, doc);
 }
 
 export function setWorkspaceMcpEnabled(
@@ -193,5 +188,5 @@ export function setWorkspaceMcpEnabled(
   } else {
     item.set("enabled", false);
   }
-  dumpAndReplace(path, doc, true);
+  dumpAndReplace(path, doc);
 }
