@@ -64,6 +64,29 @@ describe("startHost", () => {
     expect(body.some((row) => row.id === "loop")).toBe(true);
   });
 
+  it("GET /v1/plugins omits flintloom.yml rows with enabled false", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-plugins-off-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-plugins-off-home-"));
+    writeFileSync(
+      join(workspaceRoot, "flintloom.yml"),
+      ASSEMBLY.replace(
+        `  - id: weather\n    name: "@flintloom/weather"\n`,
+        `  - id: weather\n    name: "@flintloom/weather"\n    enabled: false\n`,
+      ),
+    );
+
+    const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+    close = host.close;
+    const token = loadOrCreateToken(homeDir);
+    const auth = await fetch(`${host.url}/v1/plugins`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(auth.status).toBe(200);
+    const body = (await auth.json()) as { id: string; name: string; status: string }[];
+    expect(body.some((row) => row.id === "weather")).toBe(false);
+    expect(body.some((row) => row.id === "loop")).toBe(true);
+  });
+
   it("rejects start when flintloom.yml exists but is invalid", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-badyml-"));
     const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));

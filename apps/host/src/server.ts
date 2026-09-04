@@ -513,11 +513,13 @@ export async function createRuntime(
     runtimeConfigById,
     workspaceRoot,
   });
-  const plugins: PluginSnapshot[] = config.plugins.map((row) => ({
-    id: row.id,
-    name: row.name,
-    status: "loaded",
-  }));
+  const plugins: PluginSnapshot[] = config.plugins
+    .filter((row) => row.enabled !== false)
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      status: "loaded",
+    }));
   return { ctx, stop, plugins };
 }
 
