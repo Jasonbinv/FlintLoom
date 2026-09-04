@@ -12,6 +12,7 @@ import { cancelWaitingTurn, handleTurnActions, sessionHasWaitingTurn } from "./a
 import { handleTurnGuard } from "./guard.ts";
 import { handleSettingsRequest } from "./settings.ts";
 import { handlePluginInstallRequest } from "./plugin-install.ts";
+import { handleMcpServersRequest } from "./mcp-servers-http.ts";
 import { handleWecomCallback } from "@flintloom/channel-wecom";
 import type { WecomConfig } from "@flintloom/channel-wecom";
 import {
@@ -1026,6 +1027,20 @@ async function handleRequest(
       }
       send(res, 500);
     }
+    return;
+  }
+
+  if (
+    await handleMcpServersRequest(req, res, {
+      pathname,
+      method: req.method ?? "GET",
+      homeDir: opts.homeDir,
+      workspaceRoot,
+      busy,
+      reloadRuntime: opts.reloadRuntime,
+      runtimeRef: opts.runtimeRef,
+    })
+  ) {
     return;
   }
 

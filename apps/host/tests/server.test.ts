@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -353,6 +353,371 @@ describe("startHost", () => {
         process.env.FAKE_TOKEN = prev;
       }
     }
+  });
+
+  it("GET /v1/mcp-servers is empty without a file and 401 without a token", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-mcp-http-empty-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-mcp-http-empty-home-"));
+    writeAssembly(workspaceRoot);
+    const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+    close = host.close;
+
+    const unauth = await fetch(`${host.url}/v1/mcp-servers`);
+    expect(unauth.status).toBe(401);
+
+    const token = loadOrCreateToken(homeDir);
+    const auth = await fetch(`${host.url}/v1/mcp-servers`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(auth.status).toBe(200);
+    expect(await auth.json()).toEqual({ servers: [] });
+  });
+
+  it("GET /v1/mcp-servers returns loaded fake server tools", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-mcp-http-get-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-mcp-http-get-home-"));
+    const fixture = fileURLToPath(
+      new URL("../../../packages/mcp/fixtures/fake-mcp-server.mjs", import.meta.url),
+    );
+    const id = "fake";
+    writeFileSync(
+      join(workspaceRoot, "flintloom.yml"),
+      `plugins:
+  - id: models
+    name: "@flintloom/models"
+  - id: tools
+    name: "@flintloom/tools"
+`,
+    );
+    writeFileSync(
+      join(workspaceRoot, "mcp-servers.yml"),
+      `servers:
+  - id: ${id}
+    command: ${JSON.stringify(process.execPath)}
+    args: [${JSON.stringify(fixture)}]
+    env: [FAKE_TOKEN]
+`,
+    );
+    writeFileSync(join(workspaceRoot, ".env"), "FAKE_TOKEN=from-dotenv\n", "utf8");
+    const prev = process.env.FAKE_TOKEN;
+    delete process.env.FAKE_TOKEN;
+    try {
+      const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+      close = host.close;
+      const token = loadOrCreateToken(homeDir);
+      const res = await fetch(`${host.url}/v1/mcp-servers`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        servers: {
+          id: string;
+          enabled: boolean;
+          status: string;
+          tools: string[];
+          error: string | null;
+        }[];
+      };
+      const row = body.servers.find((server) => server.id === id);
+      expect(row).toMatchObject({
+        id,
+        enabled: true,
+        status: "loaded",
+        error: null,
+      });
+      expect(row?.tools).toContain(`${"mcp"}__${id}__echo`);
+    } finally {
+      if (prev === undefined) {
+        delete process.env.FAKE_TOKEN;
+      } else {
+        process.env.FAKE_TOKEN = prev;
+      }
+    }
+  });
+
+  it("GET /v1/mcp-servers isolates a bad command as error", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-mcp-http-bad-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-mcp-http-bad-home-"));
+    const fixture = fileURLToPath(
+      new URL("../../../packages/mcp/fixtures/fake-mcp-server.mjs", import.meta.url),
+    );
+    const id = "fake";
+    writeFileSync(
+      join(workspaceRoot, "flintloom.yml"),
+      `plugins:
+  - id: models
+    name: "@flintloom/models"
+  - id: tools
+    name: "@flintloom/tools"
+`,
+    );
+    writeFileSync(
+      join(workspaceRoot, "mcp-servers.yml"),
+      `servers:
+  - id: ${id}
+    command: ${JSON.stringify(process.execPath)}
+    args: [${JSON.stringify(fixture)}]
+    env: [FAKE_TOKEN]
+  - id: bad
+    command: __no_such__
+`,
+    );
+    writeFileSync(join(workspaceRoot, ".env"), "FAKE_TOKEN=from-dotenv\n", "utf8");
+    const prev = process.env.FAKE_TOKEN;
+    delete process.env.FAKE_TOKEN;
+    try {
+      const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+      close = host.close;
+      const token = loadOrCreateToken(homeDir);
+      const res = await fetch(`${host.url}/v1/mcp-servers`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        servers: { id: string; status: string; tools: string[] }[];
+      };
+      expect(body.servers.find((server) => server.id === "bad")).toMatchObject({
+        id: "bad",
+        status: "error",
+      });
+      const fake = body.servers.find((server) => server.id === id);
+      expect(fake).toMatchObject({ id, status: "loaded" });
+      expect(fake?.tools).toContain(`${"mcp"}__${id}__echo`);
+    } finally {
+      if (prev === undefined) {
+        delete process.env.FAKE_TOKEN;
+      } else {
+        process.env.FAKE_TOKEN = prev;
+      }
+    }
+  });
+
+  it("POST /v1/mcp-servers writes workspace yml and returns the server", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-mcp-http-post-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-mcp-http-post-home-"));
+    const fixture = fileURLToPath(
+      new URL("../../../packages/mcp/fixtures/fake-mcp-server.mjs", import.meta.url),
+    );
+    writeAssembly(workspaceRoot);
+    writeFileSync(join(workspaceRoot, ".env"), "FAKE_TOKEN=from-dotenv\n", "utf8");
+    const prev = process.env.FAKE_TOKEN;
+    delete process.env.FAKE_TOKEN;
+    try {
+      const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+      close = host.close;
+      const token = loadOrCreateToken(homeDir);
+      const id = "fake";
+      const created = await fetch(`${host.url}/v1/mcp-servers`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id,
+          command: process.execPath,
+          args: [fixture],
+          env: ["FAKE_TOKEN"],
+        }),
+      });
+      expect(created.status).toBe(200);
+      const createdBody = (await created.json()) as { ok: boolean; server: { id: string } };
+      expect(createdBody.ok).toBe(true);
+      expect(createdBody.server.id).toBe(id);
+      expect(existsSync(join(workspaceRoot, "mcp-servers.yml"))).toBe(true);
+      expect(readFileSync(join(workspaceRoot, "mcp-servers.yml"), "utf8")).toContain("fake");
+
+      const listed = await fetch(`${host.url}/v1/mcp-servers`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(listed.status).toBe(200);
+      const body = (await listed.json()) as { servers: { id: string }[] };
+      expect(body.servers.some((server) => server.id === id)).toBe(true);
+    } finally {
+      if (prev === undefined) {
+        delete process.env.FAKE_TOKEN;
+      } else {
+        process.env.FAKE_TOKEN = prev;
+      }
+    }
+  });
+
+  it("POST /v1/mcp-servers rejects flintloom.yml plugin id tools", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-mcp-http-conflict-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-mcp-http-conflict-home-"));
+    writeAssembly(workspaceRoot);
+    const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+    close = host.close;
+    const token = loadOrCreateToken(homeDir);
+    const created = await fetch(`${host.url}/v1/mcp-servers`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ id: "tools", command: process.execPath }),
+    });
+    expect(created.status).toBe(400);
+    expect(await created.text()).toBe("id");
+    expect(existsSync(join(workspaceRoot, "mcp-servers.yml"))).toBe(false);
+  });
+
+  it("PATCH /v1/mcp-servers/:id disables a server", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-mcp-http-patch-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-mcp-http-patch-home-"));
+    const fixture = fileURLToPath(
+      new URL("../../../packages/mcp/fixtures/fake-mcp-server.mjs", import.meta.url),
+    );
+    const id = "fake";
+    writeAssembly(workspaceRoot);
+    writeFileSync(
+      join(workspaceRoot, "mcp-servers.yml"),
+      `servers:
+  - id: ${id}
+    command: ${JSON.stringify(process.execPath)}
+    args: [${JSON.stringify(fixture)}]
+    env: [FAKE_TOKEN]
+`,
+    );
+    writeFileSync(join(workspaceRoot, ".env"), "FAKE_TOKEN=from-dotenv\n", "utf8");
+    const prev = process.env.FAKE_TOKEN;
+    delete process.env.FAKE_TOKEN;
+    try {
+      const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+      close = host.close;
+      const token = loadOrCreateToken(homeDir);
+      const patched = await fetch(`${host.url}/v1/mcp-servers/${id}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ enabled: false }),
+      });
+      expect(patched.status).toBe(200);
+
+      const listed = await fetch(`${host.url}/v1/mcp-servers`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(listed.status).toBe(200);
+      const body = (await listed.json()) as {
+        servers: { id: string; enabled: boolean; status: string; tools: string[] }[];
+      };
+      expect(body.servers.find((server) => server.id === id)).toMatchObject({
+        id,
+        enabled: false,
+        status: "disabled",
+        tools: [],
+      });
+    } finally {
+      if (prev === undefined) {
+        delete process.env.FAKE_TOKEN;
+      } else {
+        process.env.FAKE_TOKEN = prev;
+      }
+    }
+  });
+
+  it("DELETE /v1/mcp-servers/:id removes the id from GET", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-mcp-http-del-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-mcp-http-del-home-"));
+    writeAssembly(workspaceRoot);
+    writeFileSync(
+      join(workspaceRoot, "mcp-servers.yml"),
+      `servers:
+  - id: fake
+    command: __no_such__
+`,
+    );
+    const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+    close = host.close;
+    const token = loadOrCreateToken(homeDir);
+    const deleted = await fetch(`${host.url}/v1/mcp-servers/fake`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(deleted.status).toBe(200);
+    expect(await deleted.json()).toEqual({ ok: true, id: "fake" });
+
+    const listed = await fetch(`${host.url}/v1/mcp-servers`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const body = (await listed.json()) as { servers: { id: string }[] };
+    expect(body.servers.some((server) => server.id === "fake")).toBe(false);
+  });
+
+  it("PUT /v1/mcp-servers home-only is 400 home and copy is writable", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-mcp-http-copy-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-mcp-http-copy-home-"));
+    writeAssembly(workspaceRoot);
+    mkdirSync(join(homeDir, ".flintloom"), { recursive: true });
+    writeFileSync(
+      join(homeDir, ".flintloom", "mcp-servers.yml"),
+      `servers:
+  - id: personal
+    command: __no_such__
+`,
+    );
+    const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+    close = host.close;
+    const token = loadOrCreateToken(homeDir);
+    const put = await fetch(`${host.url}/v1/mcp-servers/personal`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ command: process.execPath, args: ["x.mjs"] }),
+    });
+    expect(put.status).toBe(400);
+    expect(await put.text()).toBe("home");
+
+    const copied = await fetch(`${host.url}/v1/mcp-servers/personal/copy`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(copied.status).toBe(200);
+    const copiedBody = (await copied.json()) as {
+      ok: boolean;
+      server: { id: string; writable: boolean; source: string };
+    };
+    expect(copiedBody.ok).toBe(true);
+    expect(copiedBody.server).toMatchObject({
+      id: "personal",
+      writable: true,
+      source: "workspace",
+    });
+    expect(readFileSync(join(workspaceRoot, "mcp-servers.yml"), "utf8")).toContain("personal");
+
+    const listed = await fetch(`${host.url}/v1/mcp-servers`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const body = (await listed.json()) as { servers: { id: string; writable: boolean }[] };
+    expect(body.servers.find((server) => server.id === "personal")?.writable).toBe(true);
+  });
+
+  it("POST /v1/mcp-servers returns 409 JSON when busy after writing", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-mcp-http-busy-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-mcp-http-busy-home-"));
+    writeAssembly(workspaceRoot);
+    const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+    close = host.close;
+    const token = loadOrCreateToken(homeDir);
+    host.runtime.ctx.require<Set<string>>("turnBusy").add("session-busy");
+    const created = await fetch(`${host.url}/v1/mcp-servers`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ id: "busy-mcp", command: process.execPath }),
+    });
+    expect(created.status).toBe(409);
+    expect(JSON.parse(await created.text()) as { error: string; written: boolean }).toEqual({
+      error: "busy",
+      written: true,
+    });
+    expect(readFileSync(join(workspaceRoot, "mcp-servers.yml"), "utf8")).toContain("busy-mcp");
   });
 
   it("returns 500 text/plain with the error message and redacts the api key", async () => {
