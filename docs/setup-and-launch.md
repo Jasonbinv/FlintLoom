@@ -172,7 +172,7 @@ Models 页会显示 `embedding` / `rerank` 配置状态。本地 llama 仅 overl
 | `pnpm flint plugin add <路径>` | 向工作区安装本地插件 |
 | `tsx apps/host/src/listen.ts` | **仅启动 Host**（不起 Vite，默认端口 7331） |
 
-停止：在终端按 `Ctrl+C`。关闭 Electron 窗口会结束 `desktop:app` 进程。
+停止：在终端按 `Ctrl+C`，或 `pnpm desktop:app:stop`。关闭 Electron 窗口时，若选择最小化到托盘，进程继续运行（托盘图标可恢复窗口）；选退出、托盘菜单「退出」，或设置「关闭窗口时 = 退出」后再关窗口，才会结束 `desktop:app`。
 
 ---
 
@@ -260,6 +260,8 @@ pnpm desktop:app
 Electron 加载地址由环境变量 `FLINT_DESKTOP_URL` 控制，默认 `http://127.0.0.1:5173`。
 
 侧栏 **「选择工作区」** 在 Electron 下会打开系统原生文件夹选择对话框（比浏览器模式的路径输入更方便）。
+
+关闭窗口默认会询问：最小化到托盘，或退出。可在设置 → 窗口 →「关闭窗口时」改成记住其中一项。最小化按钮仍进入任务栏，不进托盘。
 
 ### 8.1 打开开发者工具
 
