@@ -1571,12 +1571,14 @@ export async function startHost(opts: {
   const fileWatch = createFileWatch({ root: workspaceRootRef.current });
 
   const reloadRuntime = async (): Promise<void> => {
-    runtimeRef.current.stop();
-    runtimeRef.current = await createRuntime(workspaceRootRef.current, opts.homeDir, {
+    const next = await createRuntime(workspaceRootRef.current, opts.homeDir, {
       pollChannels: true,
     });
-    busyRef.current = runtimeRef.current.ctx.require<Set<string>>("turnBusy");
+    const prev = runtimeRef.current;
+    runtimeRef.current = next;
+    busyRef.current = next.ctx.require<Set<string>>("turnBusy");
     fileWatch.setRoot(workspaceRootRef.current);
+    prev.stop();
   };
 
   const server = createServer((req, res) => {

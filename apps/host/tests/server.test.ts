@@ -718,6 +718,25 @@ describe("startHost", () => {
     await host.close();
   });
 
+  it("reload keeps old runtime when createRuntime fails", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-reload-keep-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-reload-keep-home-"));
+    writeAssembly(workspaceRoot);
+    const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+    close = host.close;
+    const token = loadOrCreateToken(homeDir);
+    writeFileSync(join(workspaceRoot, "flintloom.yml"), "foo: 1\n");
+    const reload = await fetch(`${host.url}/v1/settings/reload`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(reload.status).toBe(500);
+    const models = await fetch(`${host.url}/v1/models`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(models.status).toBe(200);
+  });
+
   it("POST /v1/settings/reload returns 409 when busy", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-settings-busy-"));
     const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
