@@ -15,6 +15,7 @@ export type McpServerRow = {
   command: string;
   args?: string[];
   env?: string[];
+  enabled?: boolean;
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -67,12 +68,23 @@ export function loadMcpServersFile(text: string): McpServerRow[] {
       env = row.env;
     }
 
-    servers.push({
+    const serverRow: McpServerRow = {
       id,
       command,
       args,
       env,
-    });
+    };
+
+    if (row.enabled !== undefined) {
+      if (typeof row.enabled !== "boolean") {
+        throw new Error("enabled");
+      }
+      if (row.enabled === false) {
+        serverRow.enabled = false;
+      }
+    }
+
+    servers.push(serverRow);
   }
 
   return servers;
@@ -163,6 +175,9 @@ export function mergeMcpServersIntoConfig(
   const plugins = [...config.plugins];
   for (const server of merged.values()) {
     if (existingIds.has(server.id)) {
+      continue;
+    }
+    if (server.enabled === false) {
       continue;
     }
     plugins.push(toPluginRow(server, fileEnv));

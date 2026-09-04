@@ -150,6 +150,44 @@ describe("applyConfig", () => {
     expect(() => ctx2.require("async-fail.k")).toThrow(/async-fail\.k/);
   });
 
+  it("enabled false 不 import 但仍占用 id", async () => {
+    const ctx = new Context();
+    const imported: string[] = [];
+    await applyConfig(
+      ctx,
+      {
+        plugins: [
+          { id: "a", name: "pkg-a", enabled: false },
+          { id: "b", name: "pkg-b" },
+        ],
+      },
+      {
+        importFn: async (name) => {
+          imported.push(name);
+          return plugin(name, (c) => {
+            c.provide(name, true);
+          });
+        },
+      },
+    );
+    expect(imported).toEqual(["pkg-b"]);
+    expect(ctx.get("pkg-a")).toBeUndefined();
+    expect(ctx.require("pkg-b")).toBe(true);
+
+    await expect(
+      applyConfig(
+        ctx,
+        {
+          plugins: [
+            { id: "a", name: "pkg-a", enabled: false },
+            { id: "a", name: "pkg-a2" },
+          ],
+        },
+        { importFn: async () => plugin("x", () => {}) },
+      ),
+    ).rejects.toThrow(/id/);
+  });
+
   it("默认 importFn 从绝对路径目录加载 apply", async () => {
     const dir = mkdtempSync(join(tmpdir(), "flintloom-abs-plugin-"));
     writeFileSync(

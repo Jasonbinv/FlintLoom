@@ -4,6 +4,7 @@ export type FlintloomPluginRow = {
   id: string;
   name: string;
   config?: Record<string, unknown>;
+  enabled?: boolean;
 };
 
 export type FlintloomConfig = {
@@ -52,6 +53,15 @@ export function loadConfig(text: string): FlintloomConfig {
         throw new Error("config");
       }
       pluginRow.config = row.config;
+    }
+
+    if (row.enabled !== undefined) {
+      if (typeof row.enabled !== "boolean") {
+        throw new Error("enabled");
+      }
+      if (row.enabled === false) {
+        pluginRow.enabled = false;
+      }
     }
 
     plugins.push(pluginRow);

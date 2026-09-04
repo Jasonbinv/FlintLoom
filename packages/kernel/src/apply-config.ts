@@ -54,6 +54,9 @@ export async function applyConfig(
         throw new Error("id");
       }
       seen.add(row.id);
+      if (row.enabled === false) {
+        continue;
+      }
       const mod = await importFn(row.name);
       const plugin = unwrapPlugin(mod, row.name);
       const overlayRuntime = { ...(runtime[row.id] ?? {}) };

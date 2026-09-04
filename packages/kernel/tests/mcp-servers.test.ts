@@ -28,6 +28,32 @@ servers:
     ]);
   });
 
+  it("enabled false 写入行；缺省视为开；非布尔抛 enabled", () => {
+    const off = loadMcpServersFile(`
+servers:
+  - id: fake
+    command: node
+    enabled: false
+`);
+    expect(off[0]?.enabled).toBe(false);
+
+    const on = loadMcpServersFile(`
+servers:
+  - id: fake
+    command: node
+`);
+    expect(on[0]?.enabled).toBeUndefined();
+
+    expect(() =>
+      loadMcpServersFile(`
+servers:
+  - id: fake
+    command: node
+    enabled: "false"
+`),
+    ).toThrow(/enabled/);
+  });
+
   it("rejects bad shape and FLINTLOOM env names", () => {
     expect(() => loadMcpServersFile("foo: 1\n")).toThrow(/servers/);
     expect(() =>
@@ -114,5 +140,26 @@ describe("mergeMcpServersIntoConfig", () => {
 
     expect(merged.plugins.map((p) => p.id)).toEqual(["shared", "tools", "ws-only"]);
     expect(merged.plugins[2]?.config?.command).toBe("ws2");
+  });
+
+  it("skips enabled false servers when merging", () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-mcp-off-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-mcp-off-home-"));
+    writeFileSync(
+      join(workspaceRoot, MCP_SERVERS_WORKSPACE_FILE),
+      `servers:
+  - id: fake
+    command: node
+    enabled: false
+  - id: live
+    command: node
+`,
+      "utf8",
+    );
+    const merged = mergeMcpServersIntoConfig(
+      { plugins: [{ id: "tools", name: "@flintloom/tools" }] },
+      { workspaceRoot, homeDir },
+    );
+    expect(merged.plugins.map((p) => p.id)).toEqual(["tools", "live"]);
   });
 });
