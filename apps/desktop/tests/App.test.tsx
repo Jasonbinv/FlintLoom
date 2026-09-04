@@ -121,6 +121,7 @@ function installFetch(opts: {
   knowledgeSearch?: Response | Error;
   knowledgeImport?: Response | Error;
   pluginInstall?: Response | Error;
+  mcpServers?: Response | Error;
 } = {}) {
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = requestUrl(input);
@@ -336,6 +337,20 @@ function installFetch(opts: {
       if (opts.models instanceof Error) throw opts.models;
       if (opts.models) return opts.models.clone();
       return new Response(JSON.stringify([{ kind: "chat", configured: false }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (url.includes("/v1/mcp-servers")) {
+      if (opts.mcpServers instanceof Error) throw opts.mcpServers;
+      if (init?.method && init.method !== "GET") {
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (opts.mcpServers) return opts.mcpServers.clone();
+      return new Response(JSON.stringify({ servers: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -2472,6 +2487,25 @@ describe("App", () => {
         ]),
         { status: 200, headers: { "Content-Type": "application/json" } },
       ),
+      mcpServers: new Response(
+        JSON.stringify({
+          servers: [
+            {
+              id: "fake",
+              command: "node",
+              args: ["packages/mcp/fixtures/fake-mcp-server.mjs"],
+              env: ["FAKE_TOKEN"],
+              enabled: true,
+              source: "workspace",
+              writable: true,
+              status: "loaded",
+              tools: ["mcp__fake__echo"],
+              error: null,
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
     });
     await mountApp();
     const pluginsTab = findNavTab("插件");
@@ -2482,9 +2516,62 @@ describe("App", () => {
     await waitForText("@flintloom/loop");
     expect(document.body.textContent).toContain("loop");
     expect(document.body.textContent).toContain("loaded");
-    expect(document.querySelector(".plugin-tag.mcp")).toBeTruthy();
+    expect(document.querySelector(".plugin-tag.mcp")).toBeNull();
+    const coreTable = document.querySelector(".settings-table");
+    expect(coreTable?.textContent).toContain("@flintloom/loop");
+    expect(coreTable?.textContent).not.toContain("@flintloom/mcp");
+    expect(document.body.textContent).toContain("mcp__fake__echo");
+    expect(document.body.textContent).toContain("添加服务器");
+    expect(document.body.textContent).toContain("重载 host");
     expect(document.body.textContent).toContain("mcp-servers.yml");
+    expect(document.body.textContent).not.toContain("联网");
     expect(document.querySelector("textarea")).toBeNull();
+    expect(
+      vi.mocked(globalThis.fetch).mock.calls.some((c) =>
+        String(c[0]).includes("/v1/mcp-servers"),
+      ),
+    ).toBe(true);
+    expect(
+      vi.mocked(globalThis.fetch).mock.calls.some((c) => {
+        const url = String(c[0]);
+        return url.includes("/v1/plugins") && !url.includes("/v1/mcp-servers");
+      }),
+    ).toBe(true);
+  });
+
+  it("shows MCP server error without token on Plugins page", async () => {
+    installFetch({
+      mcpServers: new Response(
+        JSON.stringify({
+          servers: [
+            {
+              id: "bad",
+              command: "node",
+              args: [],
+              env: ["FAKE_TOKEN"],
+              enabled: true,
+              source: "workspace",
+              writable: true,
+              status: "error",
+              tools: [],
+              error: "command not found",
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    const pluginsTab = findNavTab("插件");
+    if (!pluginsTab) throw new Error("no 插件 tab");
+    await act(async () => {
+      pluginsTab.click();
+    });
+    await waitForText("command not found");
+    expect(document.body.textContent).toContain("添加服务器");
+    expect(document.body.textContent).not.toContain("sk-secret-token");
+    expect(document.body.textContent).not.toContain("from-dotenv");
+    expect(document.body.textContent).not.toContain("联网");
   });
 
   it("shows model kinds on Models page", async () => {

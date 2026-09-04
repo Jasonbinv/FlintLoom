@@ -936,6 +936,22 @@ body,
   color: var(--accent);
 }
 
+.settings-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.settings-pane-inner details {
+  margin-top: var(--space-3);
+}
+
+.settings-pane-inner summary {
+  cursor: pointer;
+}
+
 /* ── Chat workbench ── */
 
 .workbench-body {

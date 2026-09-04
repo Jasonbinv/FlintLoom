@@ -65,6 +65,113 @@ export async function fetchPlugins(
   return (await res.json()) as { id: string; name: string; status: "loaded" }[];
 }
 
+export type McpServerSnapshot = {
+  id: string;
+  command: string;
+  args: string[];
+  env: string[];
+  enabled: boolean;
+  source: "workspace" | "home";
+  writable: boolean;
+  status: "loaded" | "disabled" | "error";
+  tools: string[];
+  error: string | null;
+};
+
+async function throwIfMcpMutationFailed(res: Response): Promise<void> {
+  if (res.status === 409) {
+    try {
+      const body = (await res.json()) as { written?: unknown };
+      if (body.written === true) {
+        throw new Error("busy");
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message === "busy") throw err;
+    }
+    throw new Error("busy");
+  }
+  if (res.status === 400) {
+    const text = (await res.text()).trim();
+    throw new Error(text.length > 0 ? text : "invalid");
+  }
+  if (!res.ok) throw new Error("mcp failed");
+}
+
+export async function fetchMcpServers(
+  signal?: AbortSignal,
+): Promise<{ servers: McpServerSnapshot[] }> {
+  const res = await fetch("/v1/mcp-servers", { signal });
+  if (!res.ok) throw new Error("host unreachable");
+  return (await res.json()) as { servers: McpServerSnapshot[] };
+}
+
+export async function createMcpServer(body: {
+  id: string;
+  command: string;
+  args?: string[];
+  env?: string[];
+}): Promise<void> {
+  const res = await fetch("/v1/mcp-servers", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  await throwIfMcpMutationFailed(res);
+}
+
+export async function updateMcpServer(
+  id: string,
+  body: { command: string; args?: string[]; env?: string[] },
+): Promise<void> {
+  const res = await fetch(`/v1/mcp-servers/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  await throwIfMcpMutationFailed(res);
+}
+
+export async function setMcpServerEnabled(
+  id: string,
+  enabled: boolean,
+): Promise<{ written?: boolean; busy?: boolean }> {
+  const res = await fetch(`/v1/mcp-servers/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  });
+  if (res.status === 409) {
+    let written = false;
+    try {
+      const body = (await res.json()) as { written?: unknown };
+      written = body.written === true;
+    } catch {
+      /* text busy */
+    }
+    return { written: written || undefined, busy: true };
+  }
+  if (res.status === 400) {
+    const text = (await res.text()).trim();
+    throw new Error(text.length > 0 ? text : "invalid");
+  }
+  if (!res.ok) throw new Error("mcp failed");
+  return { written: true };
+}
+
+export async function deleteMcpServer(id: string): Promise<void> {
+  const res = await fetch(`/v1/mcp-servers/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  await throwIfMcpMutationFailed(res);
+}
+
+export async function copyMcpServer(id: string): Promise<void> {
+  const res = await fetch(`/v1/mcp-servers/${encodeURIComponent(id)}/copy`, {
+    method: "POST",
+  });
+  await throwIfMcpMutationFailed(res);
+}
+
 export async function installPlugin(
   sourcePath: string,
   id?: string,
