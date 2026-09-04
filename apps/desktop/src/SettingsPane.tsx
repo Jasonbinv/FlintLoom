@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchCredentialSettings,
   installPlugin,
@@ -72,6 +72,12 @@ type Props = {
   onSaved?: () => void;
 };
 
+type CloseAction = "ask" | "tray" | "quit";
+
+function hasShellPrefs(): boolean {
+  return typeof window.flintloom?.getShellPrefs === "function";
+}
+
 export function SettingsPane({ onSaved }: Props) {
   const [slots, setSlots] = useState<CredentialSlotSnapshot[] | undefined>();
   const [webhook, setWebhook] = useState<{ url: string; hint: string } | undefined>();
@@ -82,6 +88,10 @@ export function SettingsPane({ onSaved }: Props) {
   const [pluginPath, setPluginPath] = useState("");
   const [pluginId, setPluginId] = useState("");
   const [installing, setInstalling] = useState(false);
+  const [closeAction, setCloseAction] = useState<CloseAction>("ask");
+  const [shellPrefsReady, setShellPrefsReady] = useState(false);
+  const [savingCloseAction, setSavingCloseAction] = useState(false);
+  const closeActionSaveGeneration = useRef(0);
 
   const load = useCallback(() => {
     const ac = new AbortController();
@@ -107,6 +117,50 @@ export function SettingsPane({ onSaved }: Props) {
   useEffect(() => {
     return load();
   }, [load]);
+
+  useEffect(() => {
+    if (!hasShellPrefs()) return;
+    let cancelled = false;
+    void window.flintloom!.getShellPrefs().then(
+      (prefs) => {
+        if (cancelled) return;
+        if (
+          prefs.closeAction === "ask" ||
+          prefs.closeAction === "tray" ||
+          prefs.closeAction === "quit"
+        ) {
+          setCloseAction(prefs.closeAction);
+          setShellPrefsReady(true);
+        }
+      },
+      () => {
+        /* 读失败则不显示区块 */
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function onCloseActionChange(next: CloseAction) {
+    const generation = ++closeActionSaveGeneration.current;
+    const prev = closeAction;
+    setCloseAction(next);
+    setSavingCloseAction(true);
+    setMessage(undefined);
+    try {
+      await window.flintloom!.setShellPrefs({ closeAction: next });
+    } catch {
+      if (closeActionSaveGeneration.current === generation) {
+        setCloseAction(prev);
+        setMessage("保存失败");
+      }
+    } finally {
+      if (closeActionSaveGeneration.current === generation) {
+        setSavingCloseAction(false);
+      }
+    }
+  }
 
   function installErrorMessage(err: unknown): string {
     if (!(err instanceof Error)) return "安装失败";
@@ -228,6 +282,33 @@ export function SettingsPane({ onSaved }: Props) {
         <code>.env</code> 为准。保存后会重载 host runtime。
       </p>
       {message ? <p className="settings-message">{message}</p> : null}
+      {shellPrefsReady ? (
+        <section className="settings-section">
+          <h3 className="settings-section-title">窗口</h3>
+          <div className="settings-card">
+            <div className="settings-form-row">
+              <label>
+                关闭窗口时
+                <select
+                  aria-label="关闭窗口时"
+                  value={closeAction}
+                  disabled={savingCloseAction}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    if (next === "ask" || next === "tray" || next === "quit") {
+                      void onCloseActionChange(next);
+                    }
+                  }}
+                >
+                  <option value="ask">每次询问</option>
+                  <option value="tray">最小化到托盘</option>
+                  <option value="quit">退出</option>
+                </select>
+              </label>
+            </div>
+          </div>
+        </section>
+      ) : null}
       <section className="settings-section">
         <h3 className="settings-section-title">Providers</h3>
         {providerSlots.map((slot) => {

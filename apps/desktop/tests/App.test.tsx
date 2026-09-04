@@ -2932,6 +2932,7 @@ describe("App", () => {
     expect(document.body.textContent).toContain("/v1/hooks");
     expect(document.body.textContent).toContain("插件安装");
     expect(document.body.textContent).toContain("个人微信桥接");
+    expect(document.body.textContent).not.toContain("关闭窗口时");
     expect(document.querySelector("textarea")).toBeNull();
   });
 
