@@ -8,4 +8,5 @@ export {
   type RunTurnInput,
   type RunTurnResult,
 } from "./run-turn.ts";
+export { generationDirOf } from "./generationDir.ts";
 export { default } from "./plugin.ts";

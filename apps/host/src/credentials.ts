@@ -1,7 +1,15 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-export type CredentialSlotId = "chat" | "media" | "guard" | "telegram";
+export type CredentialSlotId =
+  | "chat"
+  | "media"
+  | "guard"
+  | "telegram"
+  | "discord"
+  | "slack"
+  | "feishu"
+  | "wecom";
 export type CredentialSource = "env" | "credentials" | "none";
 
 export type CredentialsStore = {

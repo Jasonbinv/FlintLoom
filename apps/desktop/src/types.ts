@@ -8,13 +8,42 @@ export type TurnEnd = {
   status: "ok" | "failed" | "cancelled" | "awaiting_action";
 };
 export type WorkbenchEvent =
-  | { type: "turn/start"; turnId: string }
+  | { type: "turn/start"; turnId: string; startedAt: number }
+  | { type: "step/start"; turnId: string; step: number }
+  | {
+      type: "step/stats";
+      turnId: string;
+      step: number;
+      llmMs: number;
+      ttftMs?: number;
+      decodeMs?: number;
+      inputTokens: number;
+      outputTokens: number;
+      cacheReadTokens: number;
+    }
+  | {
+      type: "turn/stats";
+      turnId: string;
+      steps: number;
+      toolCalls: number;
+      durationMs: number;
+      llmMs?: number;
+      toolMs?: number;
+      ttftMs?: number;
+      ttftSteps?: number;
+      decodeMs?: number;
+      inputTokens?: number;
+      outputTokens?: number;
+      cacheReadTokens?: number;
+      guard: { allow: number; deny: number; ask: number; suspicious: number };
+    }
   | { type: "turn/end"; turnId: string; status: "ok" | "failed" | "cancelled" }
   | { type: "user/message"; text: string; images?: UserImage[] }
   | { type: "assistant/chunk"; text: string }
+  | { type: "assistant/reasoning-chunk"; text: string }
   | { type: "assistant/message"; text: string }
   | { type: "tool/call"; callId: string; name: string; args: unknown }
-  | { type: "tool/result"; callId: string; name: string; text: string }
+  | { type: "tool/result"; callId: string; name: string; text: string; durationMs?: number }
   | { type: "model/error"; kind: string; message: string }
   | { type: "guard/decision"; tool: string; decision: "allow" | "deny" | "ask" }
   | {

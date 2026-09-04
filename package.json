@@ -8,7 +8,15 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "flint": "tsx apps/cli/src/bin.ts",
     "desktop": "tsx scripts/desktop-dev.ts",
-    "desktop:app": "tsx scripts/desktop-electron.ts"
+    "desktop:stop": "tsx scripts/kill-services.ts desktop",
+    "desktop:restart": "tsx scripts/restart.ts desktop",
+    "desktop:app": "tsx scripts/desktop-electron.ts",
+    "desktop:app:stop": "tsx scripts/kill-services.ts desktop",
+    "desktop:app:restart": "tsx scripts/restart.ts desktop:app",
+    "wechat-bridge": "tsx apps/wechat-bridge/src/bin.ts",
+    "wechat-bridge:stop": "tsx scripts/kill-services.ts wechat-bridge",
+    "wechat-bridge:restart": "tsx scripts/restart.ts wechat-bridge",
+    "services:stop": "tsx scripts/kill-services.ts all"
   },
   "engines": {
     "node": ">=22"
@@ -19,6 +27,10 @@
     "@flintloom/channel-acp": "workspace:*",
     "@flintloom/channel-webhook": "workspace:*",
     "@flintloom/channel-telegram": "workspace:*",
+    "@flintloom/channel-discord": "workspace:*",
+    "@flintloom/channel-slack": "workspace:*",
+    "@flintloom/channel-feishu": "workspace:*",
+    "@flintloom/channel-wecom": "workspace:*",
     "@flintloom/docforge": "workspace:*",
     "@flintloom/fs": "workspace:*",
     "@flintloom/grep": "workspace:*",
@@ -36,6 +48,8 @@
     "@flintloom/shell": "workspace:*",
     "@flintloom/skill": "workspace:*",
     "@flintloom/tools": "workspace:*",
+    "@flintloom/web-search": "workspace:*",
+    "@flintloom/weather": "workspace:*",
     "@types/node": "^22.20.1",
     "tsx": "^4.20.5",
     "typescript": "^5.8.3",

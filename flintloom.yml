@@ -18,6 +18,10 @@ plugins:
     name: "@flintloom/grep"
   - id: shell
     name: "@flintloom/shell"
+  - id: web-search
+    name: "@flintloom/web-search"
+  - id: weather
+    name: "@flintloom/weather"
   - id: knowledge
     name: "@flintloom/knowledge"
   - id: docforge
@@ -38,5 +42,13 @@ plugins:
     name: "@flintloom/channel-webhook"
   - id: channel-telegram
     name: "@flintloom/channel-telegram"
+  - id: channel-discord
+    name: "@flintloom/channel-discord"
+  - id: channel-slack
+    name: "@flintloom/channel-slack"
+  - id: channel-feishu
+    name: "@flintloom/channel-feishu"
+  - id: channel-wecom
+    name: "@flintloom/channel-wecom"
   - id: channel-acp
     name: "@flintloom/channel-acp"

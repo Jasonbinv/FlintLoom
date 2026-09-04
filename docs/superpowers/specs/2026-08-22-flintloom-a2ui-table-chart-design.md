@@ -22,15 +22,19 @@
 ### Chart
 
 ```ts
-{ id, component: "Chart", kind?: "bar" | "line", labels: string[], values: number[] }
+{ id, component: "Chart", kind?: "bar" | "hbar" | "line" | "area" | "scatter" | "pie" | "doughnut" | "radar" | "heatmap", labels: string[], values: number[] }
+// heatmap instead:
+{ id, component: "Chart", kind: "heatmap", xLabels: string[], yLabels: string[], values: number[][] }
 // 或
-{ id, component: "Chart", kind?: "bar" | "line", data: { path: "/chart" } }
-// data model: { labels: string[], values: number[] }
+{ id, component: "Chart", kind?: "...", data: { path: "/chart" } }
+// series data model: { labels: string[], values: number[] }
+// heatmap data model: { xLabels: string[], yLabels: string[], values: number[][] }
 ```
 
 - labels：1–24 项，每项 ≤80 字符  
 - values：与 labels 等长，有限 number  
-- kind 默认 `bar`  
+- heatmap：`xLabels`/`yLabels` 各 1–24 项；`values` 为 `number[][]`，行数 = yLabels，每行长度 = xLabels  
+- kind 默认 `bar`；别名 `column`→`bar`，`donut`→`doughnut`，`barh`/`horizontalBar`→`hbar`，`spider`→`radar`，`heat_map`/`heat-map`→`heatmap`  
 - 桌面用内联 SVG 渲染，禁止远程资源
 
 ## 2. 非目标

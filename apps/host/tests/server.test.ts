@@ -7,6 +7,7 @@ import { ModelRegistry } from "@flintloom/models";
 import { Session } from "@flintloom/session";
 import { ToolRegistry } from "@flintloom/tools";
 import { createRuntime, loadOrCreateToken, startHost } from "../src/index.ts";
+import { readPersistedWorkspace } from "../src/workspace.ts";
 import { ASSEMBLY, writeAssembly } from "./assembly.ts";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
@@ -197,6 +198,8 @@ describe("startHost", () => {
     expect(src).not.toMatch(/@flintloom\/mcp/);
     expect(src).not.toMatch(/createMcp/);
     expect(src).not.toMatch(/mcp__/);
+    expect(src).not.toMatch(/@flintloom\/web-search/);
+    expect(src).not.toMatch(/@flintloom\/weather/);
   });
 
   it("default ASSEMBLY does not include mcp plugin", () => {
@@ -617,6 +620,47 @@ describe("startHost", () => {
     }
   });
 
+  it("POST /v1/settings/workspace switches workspace and persists", async () => {
+    const workspaceA = mkdtempSync(join(tmpdir(), "flintloom-host-ws-a-"));
+    const workspaceB = mkdtempSync(join(tmpdir(), "flintloom-host-ws-b-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-ws-home-"));
+    writeAssembly(workspaceA);
+    writeAssembly(workspaceB);
+    const host = await startHost({ workspaceRoot: workspaceA, homeDir, port: 0 });
+    const store = JSON.parse(
+      readFileSync(join(homeDir, ".flintloom", "credentials"), "utf8"),
+    ) as { hostToken: string };
+    const headers = { Authorization: `Bearer ${store.hostToken}` };
+
+    const getRes = await fetch(`${host.url}/v1/settings/workspace`, { headers });
+    expect(getRes.status).toBe(200);
+    expect(((await getRes.json()) as { workspaceRoot: string }).workspaceRoot).toBe(
+      workspaceA,
+    );
+
+    const postRes = await fetch(`${host.url}/v1/settings/workspace`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ workspaceRoot: workspaceB }),
+    });
+    expect(postRes.status).toBe(200);
+    expect(((await postRes.json()) as { workspaceRoot: string }).workspaceRoot).toBe(
+      workspaceB,
+    );
+
+    const getAfter = await fetch(`${host.url}/v1/settings/workspace`, { headers });
+    expect(((await getAfter.json()) as { workspaceRoot: string }).workspaceRoot).toBe(
+      workspaceB,
+    );
+    expect(readPersistedWorkspace(homeDir)).toBe(workspaceB);
+
+    const filesRes = await fetch(`${host.url}/v1/files?path=.`, { headers });
+    const filesBody = (await filesRes.json()) as { entries: { name: string }[] };
+    expect(filesBody.entries.some((e) => e.name === "flintloom.yml")).toBe(true);
+
+    await host.close();
+  });
+
   it("GET /v1/settings/credentials returns masked slots", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-settings-get-"));
     const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
@@ -734,6 +778,40 @@ describe("startHost", () => {
     expect(names).toContain("a2ui_emit");
     expect(names).toContain("infographic_get");
     expect(names).toContain("infographic_patch");
+    expect(names).toContain("infographic_render");
+    expect(names).toContain("web_search");
+    expect(names).toContain("get_weather");
+  });
+
+  it("omitting web-search from yml omits web_search", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-noweb-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
+    writeFileSync(
+      join(workspaceRoot, "flintloom.yml"),
+      ASSEMBLY.replace(
+        `  - id: web-search\n    name: "@flintloom/web-search"\n`,
+        "",
+      ),
+    );
+    const { ctx } = await createRuntime(workspaceRoot, homeDir);
+    const names = ctx.require<ToolRegistry>("tools").schemas().map((s) => s.name);
+    expect(names).not.toContain("web_search");
+  });
+
+  it("omitting weather from yml omits get_weather", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-host-noweather-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-host-home-"));
+    writeFileSync(
+      join(workspaceRoot, "flintloom.yml"),
+      ASSEMBLY.replace(
+        `  - id: weather\n    name: "@flintloom/weather"\n`,
+        "",
+      ),
+    );
+    const { ctx } = await createRuntime(workspaceRoot, homeDir);
+    const names = ctx.require<ToolRegistry>("tools").schemas().map((s) => s.name);
+    expect(names).not.toContain("get_weather");
+    expect(names).toContain("web_search");
   });
 
   it("turn without a chat key emits model/error and failed", async () => {

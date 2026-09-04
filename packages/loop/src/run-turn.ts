@@ -5,11 +5,32 @@ import {
   type ModelRegistry,
 } from "@flintloom/models";
 import { Session, type SessionEvent, type UserImage } from "@flintloom/session";
-import { isGuardAskError, type ToolRegistry } from "@flintloom/tools";
+import { isGuardAskError, type ToolExec, type ToolRegistry } from "@flintloom/tools";
+import { generationDirOf } from "./generationDir.ts";
 
-const SYSTEM_MESSAGE =
-  "You are FlintLoom, a real agent. Use tools to work in the workspace.";
 const MAX_STEPS = 8;
+
+function conversationSystemMessage(webSearch: boolean, generationDir: string): string {
+  let base =
+    "You are FlintLoom, a real agent. Use tools to work in the workspace." +
+    `\nThis chat's output folder is ${generationDir}/. Write new files with fs using simple names like ket.md and ket.docx. Do not invent dates or folder names. Do not use shell mkdir; writing a file creates the folder. Then call doc_generate with source and out as those same filenames.` +
+    "\nTo show a chart, table, button, or picker in chat, call a2ui_emit with createSurface plus updateComponents (a component id must be root). If a2ui_emit returns failed, fix that JSON and retry — do not switch to infographic_render. Call infographic_render only when the user asks for an infographic (SWOT, steps, mind map).";
+  if (!webSearch) return base;
+  return `${base}\nYou may call web_search when you need current or external information. Do not search for questions you can answer from the workspace or your knowledge.`;
+}
+
+function turnWebSearch(session: Session, turnId: string): boolean {
+  for (const event of session.events()) {
+    if (event.type === "turn/start" && event.turnId === turnId) {
+      return event.webSearch === true;
+    }
+  }
+  return false;
+}
+
+type InfographicLoopService = {
+  chatSurface(syntax: string): unknown[];
+};
 
 type A2uiLoopService = {
   takeEmit(emitId: string): { surfaceId: string; wait: boolean; messages: unknown[] } | undefined;
@@ -27,6 +48,7 @@ export interface RunTurnInput {
   workspaceRoot: string;
   channel: string;
   signal: AbortSignal;
+  webSearch?: boolean;
   onEvent?: (event: SessionEvent) => void;
 }
 
@@ -65,14 +87,142 @@ type RunStepsInput = {
   ctx: Context;
   session: Session;
   turnId: string;
+  startedAt: number;
   workspaceRoot: string;
   channel: string;
   signal: AbortSignal;
+  webSearch?: boolean;
   onEvent?: (event: SessionEvent) => void;
   pendingToolCalls?: ChatChunkToolCall[];
 };
 
 type TurnEndStatus = Exclude<RunTurnResult["status"], "awaiting_action">;
+
+type TurnGuardStats = {
+  allow: number;
+  deny: number;
+  ask: number;
+  suspicious: number;
+};
+
+function toolExec(
+  input: {
+    session: Session;
+    workspaceRoot: string;
+    signal: AbortSignal;
+    channel: string;
+    webSearch?: boolean;
+  },
+  extra?: { guardBypass?: boolean },
+): ToolExec {
+  return {
+    workspaceRoot: input.workspaceRoot,
+    signal: input.signal,
+    channel: input.channel,
+    webSearch: input.webSearch === true,
+    generationDir: generationDirOf(input.session),
+    ...extra,
+  };
+}
+
+function emptyGuardStats(): TurnGuardStats {
+  return { allow: 0, deny: 0, ask: 0, suspicious: 0 };
+}
+
+function computeTurnStats(
+  session: Session,
+  turnId: string,
+  startedAt: number,
+): Extract<SessionEvent, { type: "turn/stats" }> {
+  const guard = emptyGuardStats();
+  let steps = 0;
+  let toolCalls = 0;
+  let llmMs = 0;
+  let toolMs = 0;
+  let ttftMs = 0;
+  let ttftSteps = 0;
+  let decodeMs = 0;
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let cacheReadTokens = 0;
+  let inTurn = false;
+
+  for (const event of session.events()) {
+    if (event.type === "turn/start" && event.turnId === turnId) {
+      inTurn = true;
+      continue;
+    }
+    if (!inTurn) {
+      continue;
+    }
+    if (event.type === "turn/end" && event.turnId === turnId) {
+      break;
+    }
+    if (event.type === "step/start" && event.turnId === turnId) {
+      steps += 1;
+    }
+    if (event.type === "step/stats" && event.turnId === turnId) {
+      llmMs += event.llmMs;
+      inputTokens += event.inputTokens;
+      outputTokens += event.outputTokens;
+      cacheReadTokens += event.cacheReadTokens;
+      if (event.ttftMs !== undefined) {
+        ttftMs += event.ttftMs;
+        ttftSteps += 1;
+      }
+      if (event.decodeMs !== undefined) {
+        decodeMs += event.decodeMs;
+      }
+    }
+    if (event.type === "tool/call") {
+      toolCalls += 1;
+    }
+    if (event.type === "tool/result" && event.durationMs !== undefined) {
+      toolMs += event.durationMs;
+    }
+    if (event.type === "guard/decision") {
+      if (event.decision === "allow") guard.allow += 1;
+      if (event.decision === "deny") guard.deny += 1;
+      if (event.decision === "ask") guard.ask += 1;
+    }
+    if (event.type === "guard/response") {
+      if (event.decision === "allow") guard.allow += 1;
+      else guard.deny += 1;
+    }
+    if (event.type === "guard/steward" && event.verdict === "suspicious") {
+      guard.suspicious += 1;
+    }
+    if (event.type === "tool/result" && event.text.startsWith("guard denied:")) {
+      guard.deny += 1;
+    }
+  }
+
+  return {
+    type: "turn/stats",
+    turnId,
+    steps,
+    toolCalls,
+    durationMs: Math.max(0, Date.now() - startedAt),
+    llmMs,
+    toolMs,
+    ttftMs,
+    ttftSteps,
+    decodeMs,
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    guard,
+  };
+}
+
+function emitTurnStats(
+  session: Session,
+  onEvent: RunTurnInput["onEvent"],
+  turnId: string,
+  startedAt: number,
+): void {
+  appendEvent(session, onEvent, computeTurnStats(session, turnId, startedAt));
+}
 
 function appendEvent(
   session: Session,
@@ -81,6 +231,15 @@ function appendEvent(
 ): void {
   session.append(event);
   onEvent?.(event);
+}
+
+function turnStartedAt(session: Session, turnId: string): number {
+  for (const event of session.events()) {
+    if (event.type === "turn/start" && event.turnId === turnId) {
+      return event.startedAt;
+    }
+  }
+  return Date.now();
 }
 
 function parseToolArgs(args: unknown): Record<string, unknown> {
@@ -275,13 +434,10 @@ async function executeToolCall(
     args: call.args,
   });
 
+  const toolStartedAt = Date.now();
   let resultText: string;
   try {
-    resultText = await tools.execute(call.name, parseToolArgs(call.args), {
-      workspaceRoot,
-      signal,
-      channel,
-    });
+    resultText = await tools.execute(call.name, parseToolArgs(call.args), toolExec(input));
   } catch (err) {
     if (signal.aborted) {
       return { turnId, status: "cancelled" } as RunTurnResult;
@@ -313,6 +469,7 @@ async function executeToolCall(
     }
     resultText = err instanceof Error ? err.message : String(err);
   }
+  const durationMs = Math.max(0, Date.now() - toolStartedAt);
 
   if (!resultText.startsWith("guard denied:")) {
     await maybeAppendGuardSteward(
@@ -334,6 +491,7 @@ async function executeToolCall(
     callId: call.id,
     name: call.name,
     text: resultText,
+    durationMs,
   });
 
   if (call.name === "a2ui_emit") {
@@ -361,6 +519,25 @@ async function executeToolCall(
     }
   }
 
+  if (call.name === "infographic_render") {
+    let parsed: { status?: string; syntax?: string };
+    try {
+      parsed = JSON.parse(resultText) as typeof parsed;
+    } catch {
+      parsed = {};
+    }
+    const infographic = input.ctx.get<InfographicLoopService>("infographic");
+    if (parsed.status === "ok" && typeof parsed.syntax === "string" && infographic) {
+      appendEvent(session, onEvent, {
+        type: "a2ui/surface",
+        turnId,
+        surfaceId: "main",
+        messages: infographic.chatSurface(parsed.syntax),
+        wait: false,
+      });
+    }
+  }
+
   if (signal.aborted) {
     return { turnId, status: "cancelled" };
   }
@@ -380,6 +557,7 @@ async function runStepIterations(input: RunStepsInput): Promise<RunTurnResult> {
   } = input;
 
   const finish = async (status: TurnEndStatus): Promise<RunTurnResult> => {
+    emitTurnStats(session, onEvent, turnId, input.startedAt);
     appendEvent(session, onEvent, { type: "turn/end", turnId, status });
     await maybeDeliver(input.ctx, channel, session, turnId, signal);
     return { turnId, status };
@@ -390,6 +568,38 @@ async function runStepIterations(input: RunStepsInput): Promise<RunTurnResult> {
       return await finish("cancelled");
     }
 
+    appendEvent(session, onEvent, { type: "step/start", turnId, step: step + 1 });
+    const stepNumber = step + 1;
+    const stepStartedAt = Date.now();
+    let firstTokenAt: number | undefined;
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let cacheReadTokens = 0;
+
+    const emitStepStats = (): void => {
+      const endedAt = Date.now();
+      const stats: Extract<SessionEvent, { type: "step/stats" }> = {
+        type: "step/stats",
+        turnId,
+        step: stepNumber,
+        llmMs: Math.max(0, endedAt - stepStartedAt),
+        inputTokens,
+        outputTokens,
+        cacheReadTokens,
+      };
+      if (firstTokenAt !== undefined) {
+        stats.ttftMs = Math.max(0, firstTokenAt - stepStartedAt);
+        stats.decodeMs = Math.max(0, endedAt - firstTokenAt);
+      }
+      appendEvent(session, onEvent, stats);
+    };
+
+    const markFirstToken = (): void => {
+      if (firstTokenAt === undefined) {
+        firstTokenAt = Date.now();
+      }
+    };
+
     let chatProvider;
     let modelKind: "chat" | "omni" = "chat";
     try {
@@ -398,8 +608,10 @@ async function runStepIterations(input: RunStepsInput): Promise<RunTurnResult> {
       modelKind = resolved.kind;
     } catch (err) {
       if (signal.aborted) {
+        emitStepStats();
         return await finish("cancelled");
       }
+      emitStepStats();
       if (err instanceof ModelKindMissingError) {
         return await failChat(session, onEvent, finish, err, err.kind);
       }
@@ -407,7 +619,7 @@ async function runStepIterations(input: RunStepsInput): Promise<RunTurnResult> {
     }
 
     const messages = [
-      { role: "system" as const, content: SYSTEM_MESSAGE },
+      { role: "system" as const, content: conversationSystemMessage(input.webSearch === true, generationDirOf(input.session)) },
       ...session.deriveMessages(),
     ];
 
@@ -416,25 +628,46 @@ async function runStepIterations(input: RunStepsInput): Promise<RunTurnResult> {
 
     try {
       for await (const chunk of chatProvider.stream(
-        { messages, tools: tools.schemas() },
+        {
+          messages,
+          tools: tools.schemas().filter(
+            (s) => input.webSearch === true || s.name !== "web_search",
+          ),
+        },
         signal,
       )) {
         if (signal.aborted) {
+          emitStepStats();
           return await finish("cancelled");
         }
 
         switch (chunk.type) {
           case "text":
+            markFirstToken();
             accumulatedText += chunk.text;
             appendEvent(session, onEvent, {
               type: "assistant/chunk",
               text: chunk.text,
             });
             break;
+          case "reasoning":
+            markFirstToken();
+            appendEvent(session, onEvent, {
+              type: "assistant/reasoning-chunk",
+              text: chunk.text,
+            });
+            break;
           case "tool_call":
+            markFirstToken();
             toolCalls.push(chunk);
             break;
+          case "usage":
+            inputTokens += chunk.inputTokens;
+            outputTokens += chunk.outputTokens;
+            cacheReadTokens += chunk.cacheReadTokens;
+            break;
           case "error":
+            emitStepStats();
             appendEvent(session, onEvent, {
               type: "model/error",
               kind: modelKind,
@@ -445,14 +678,19 @@ async function runStepIterations(input: RunStepsInput): Promise<RunTurnResult> {
       }
     } catch (err) {
       if (signal.aborted) {
+        emitStepStats();
         return await finish("cancelled");
       }
+      emitStepStats();
       return await failChat(session, onEvent, finish, err);
     }
 
     if (signal.aborted) {
+      emitStepStats();
       return await finish("cancelled");
     }
+
+    emitStepStats();
 
     if (toolCalls.length === 0) {
       appendEvent(session, onEvent, {
@@ -501,15 +739,22 @@ export async function runTurn(input: RunTurnInput): Promise<RunTurnResult> {
     onEvent,
   } = input;
 
+  const webSearch = input.webSearch === true;
   const turnId = crypto.randomUUID();
-  appendEvent(session, onEvent, { type: "turn/start", turnId });
+  const startedAt = Date.now();
+  appendEvent(session, onEvent, {
+    type: "turn/start",
+    turnId,
+    startedAt,
+    ...(webSearch ? { webSearch: true } : {}),
+  });
   if (images !== undefined && images.length > 0) {
     appendEvent(session, onEvent, { type: "user/message", text, images });
   } else {
     appendEvent(session, onEvent, { type: "user/message", text });
   }
 
-  return runStepIterations({ ...input, turnId });
+  return runStepIterations({ ...input, turnId, startedAt, webSearch });
 }
 
 export async function continueGuardTurn(
@@ -532,6 +777,9 @@ export async function continueGuardTurn(
     throw new Error("not waiting");
   }
 
+  const startedAt = turnStartedAt(session, turnId);
+  const webSearch = turnWebSearch(session, turnId);
+
   appendEvent(session, onEvent, {
     type: "guard/response",
     turnId,
@@ -540,15 +788,24 @@ export async function continueGuardTurn(
   });
 
   let resultText: string;
+  const toolStartedAt = Date.now();
   if (decision === "deny") {
     resultText = `guard denied: ${call.name}`;
   } else {
-    resultText = await tools.execute(call.name, parseToolArgs(call.args), {
-      workspaceRoot: input.workspaceRoot,
-      signal: input.signal,
-      channel: input.channel,
-      guardBypass: true,
-    });
+    resultText = await tools.execute(
+      call.name,
+      parseToolArgs(call.args),
+      toolExec(
+        {
+          session,
+          workspaceRoot: input.workspaceRoot,
+          signal: input.signal,
+          channel: input.channel,
+          webSearch,
+        },
+        { guardBypass: true },
+      ),
+    );
     await maybeAppendGuardSteward(
       input.ctx,
       session,
@@ -568,12 +825,13 @@ export async function continueGuardTurn(
     callId,
     name: call.name,
     text: resultText,
+    durationMs: Math.max(0, Date.now() - toolStartedAt),
   });
 
   const stepWait = { value: false };
   for (const remaining of ask.remainingCalls) {
     const paused = await executeToolCall(
-      { ...input, turnId },
+      { ...input, turnId, startedAt, webSearch },
       {
         type: "tool_call",
         id: remaining.id,
@@ -584,6 +842,7 @@ export async function continueGuardTurn(
     );
     if (paused !== undefined) {
       if (paused.status === "cancelled") {
+        emitTurnStats(session, onEvent, turnId, startedAt);
         appendEvent(session, onEvent, { type: "turn/end", turnId, status: "cancelled" });
         await maybeDeliver(input.ctx, input.channel, session, turnId, input.signal);
         return paused;
@@ -596,7 +855,7 @@ export async function continueGuardTurn(
     return { turnId, status: "awaiting_action" };
   }
 
-  return runStepIterations({ ...input, turnId });
+  return runStepIterations({ ...input, turnId, startedAt, webSearch });
 }
 
 export async function continueTurn(input: ContinueTurnInput): Promise<RunTurnResult> {
@@ -626,5 +885,10 @@ export async function continueTurn(input: ContinueTurnInput): Promise<RunTurnRes
     ...(action.data !== undefined ? { data: action.data } : {}),
   });
 
-  return runStepIterations({ ...input, turnId });
+  return runStepIterations({
+    ...input,
+    turnId,
+    startedAt: turnStartedAt(session, turnId),
+    webSearch: turnWebSearch(session, turnId),
+  });
 }

@@ -13,6 +13,7 @@ export type TurnBody = {
   sessionId: string;
   text: string;
   images?: UserImage[];
+  webSearch?: boolean;
 };
 
 function decodeBase64Length(data: string): number | undefined {
@@ -71,10 +72,19 @@ export function parseTurnBody(raw: string): TurnBody | undefined {
     if (images === "invalid") {
       return undefined;
     }
+    const webSearch = (parsed as { webSearch?: unknown }).webSearch;
+    if (webSearch !== undefined && typeof webSearch !== "boolean") {
+      return undefined;
+    }
     if (text.trim().length === 0 && images === undefined) {
       return undefined;
     }
-    return { sessionId, text, images };
+    return {
+      sessionId,
+      text,
+      images,
+      ...(webSearch === true ? { webSearch: true } : {}),
+    };
   } catch {
     return undefined;
   }

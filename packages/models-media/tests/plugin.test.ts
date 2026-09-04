@@ -13,6 +13,8 @@ describe("models-media plugin", () => {
     expect(models.snapshot().find((r) => r.kind === "tts")?.configured).toBe(true);
     expect(models.snapshot().find((r) => r.kind === "asr")?.configured).toBe(true);
     expect(models.snapshot().find((r) => r.kind === "t2v")?.configured).toBe(true);
+    expect(models.snapshot().find((r) => r.kind === "embedding")?.configured).toBe(true);
+    expect(models.snapshot().find((r) => r.kind === "rerank")?.configured).toBe(true);
   });
 
   it("no apiKey leaves media kinds unconfigured", () => {

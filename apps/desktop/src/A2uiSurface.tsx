@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
-import { chartSvg, type ChartKind } from "./a2ui-chart.tsx";
+import { chartSvg, heatmapSvg, parseChartKind, type ChartKind } from "./a2ui-chart.tsx";
 import { InfographicView } from "./InfographicView.tsx";
 import type { InfographicDocument } from "@flintloom/infographic";
 
@@ -24,8 +24,12 @@ type Comp = {
   labels?: unknown;
   values?: unknown;
   kind?: unknown;
+  type?: unknown;
+  xLabels?: unknown;
+  yLabels?: unknown;
   document?: unknown;
   file?: unknown;
+  syntax?: unknown;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -186,35 +190,144 @@ function resolveTable(comp: Comp, model: unknown): { headers: string[]; rows: st
   return undefined;
 }
 
-function resolveChart(comp: Comp, model: unknown): { labels: string[]; values: number[]; kind: ChartKind } | undefined {
-  const kind: ChartKind =
-    comp.kind === "line" ? "line" : comp.kind === "bar" ? "bar" : "bar";
-  const path = bindingPath(comp.data);
-  if (path) {
-    const value = getAtPath(model, path);
-    if (!isRecord(value)) return undefined;
-    const labels = value.labels;
-    const values = value.values;
-    if (
-      !Array.isArray(labels) ||
-      !labels.every((l) => typeof l === "string") ||
-      !Array.isArray(values) ||
-      values.length !== labels.length ||
-      !values.every((v) => typeof v === "number" && Number.isFinite(v))
-    ) {
-      return undefined;
-    }
-    return { labels, values, kind };
-  }
-  if (Array.isArray(comp.labels) && Array.isArray(comp.values)) {
-    const labels = comp.labels.filter((l): l is string => typeof l === "string");
-    const values = comp.values.filter(
-      (v): v is number => typeof v === "number" && Number.isFinite(v),
-    );
-    if (labels.length === 0 || values.length !== labels.length) return undefined;
-    return { labels, values, kind };
+type ResolvedSeriesChart = { kind: Exclude<ChartKind, "heatmap">; labels: string[]; values: number[] };
+type ResolvedHeatmap = { kind: "heatmap"; xLabels: string[]; yLabels: string[]; values: number[][] };
+type ResolvedChart = ResolvedSeriesChart | ResolvedHeatmap;
+
+function asFiniteNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
   }
   return undefined;
+}
+
+function parseStringList(value: unknown): string[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const labels = value.filter((item): item is string => typeof item === "string");
+  return labels.length === value.length ? labels : undefined;
+}
+
+function parseNumberList(value: unknown, expected?: number): number[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const values: number[] = [];
+  for (const item of value) {
+    const n = asFiniteNumber(item);
+    if (n === undefined) return undefined;
+    values.push(n);
+  }
+  if (expected !== undefined && values.length !== expected) return undefined;
+  return values;
+}
+
+function firstSeriesValues(data: Record<string, unknown>): unknown {
+  if (!Array.isArray(data.series)) return undefined;
+  for (const item of data.series) {
+    if (isRecord(item) && Array.isArray(item.data)) return item.data;
+  }
+  return undefined;
+}
+
+function parsePairList(source: unknown[]): { labels: string[]; values: number[] } | undefined {
+  const labels: string[] = [];
+  const values: number[] = [];
+  for (const item of source) {
+    if (Array.isArray(item) && item.length >= 2 && typeof item[0] === "string") {
+      const n = asFiniteNumber(item[1]);
+      if (n === undefined) return undefined;
+      labels.push(item[0]);
+      values.push(n);
+      continue;
+    }
+    if (isRecord(item)) {
+      const label =
+        typeof item.label === "string"
+          ? item.label
+          : typeof item.name === "string"
+            ? item.name
+            : typeof item.key === "string"
+              ? item.key
+              : undefined;
+      const n = asFiniteNumber(item.value ?? item.y ?? item.count);
+      if (label === undefined || n === undefined) return undefined;
+      labels.push(label);
+      values.push(n);
+      continue;
+    }
+    return undefined;
+  }
+  return labels.length > 0 ? { labels, values } : undefined;
+}
+
+function parseSeriesChart(source: unknown): { labels: string[]; values: number[] } | undefined {
+  if (Array.isArray(source)) return parsePairList(source);
+  if (!isRecord(source)) return undefined;
+  const labels = parseStringList(source.labels) ?? parseStringList(source.categories);
+  const values =
+    parseNumberList(source.values, labels?.length) ??
+    (labels ? parseNumberList(firstSeriesValues(source), labels.length) : undefined);
+  if (labels && values && labels.length === values.length) return { labels, values };
+
+  const mapLabels: string[] = [];
+  const mapValues: number[] = [];
+  for (const [key, value] of Object.entries(source)) {
+    if (key === "kind" || key === "type" || key === "component" || key === "id") continue;
+    const n = asFiniteNumber(value);
+    if (n === undefined) continue;
+    mapLabels.push(key);
+    mapValues.push(n);
+  }
+  return mapLabels.length > 0 ? { labels: mapLabels, values: mapValues } : undefined;
+}
+
+function parseHeatmapMatrix(raw: unknown): { xLabels: string[]; yLabels: string[]; values: number[][] } | undefined {
+  if (!isRecord(raw)) return undefined;
+  const xLabels = Array.isArray(raw.xLabels)
+    ? raw.xLabels.filter((l): l is string => typeof l === "string")
+    : [];
+  const yLabels = Array.isArray(raw.yLabels)
+    ? raw.yLabels.filter((l): l is string => typeof l === "string")
+    : [];
+  if (xLabels.length === 0 || yLabels.length === 0 || !Array.isArray(raw.values)) {
+    return undefined;
+  }
+  const values: number[][] = [];
+  for (const row of raw.values) {
+    if (!Array.isArray(row) || row.length !== xLabels.length) return undefined;
+    const cells: number[] = [];
+    for (const cell of row) {
+      const n =
+        typeof cell === "number"
+          ? cell
+          : typeof cell === "string" && cell.trim() !== ""
+            ? Number(cell)
+            : Number.NaN;
+      if (!Number.isFinite(n)) return undefined;
+      cells.push(n);
+    }
+    values.push(cells);
+  }
+  if (values.length !== yLabels.length) return undefined;
+  return { xLabels, yLabels, values };
+}
+
+function resolveChart(comp: Comp, model: unknown): ResolvedChart | undefined {
+  const kind = parseChartKind(comp.kind ?? comp.type) ?? "bar";
+  const path = bindingPath(comp.data);
+  const bound = path ? getAtPath(model, path) : undefined;
+  const source: unknown = bound !== undefined ? bound : path ? undefined : comp;
+  if (kind === "heatmap") {
+    const heat = parseHeatmapMatrix(source) ?? (!path ? parseHeatmapMatrix(comp) : undefined);
+    if (!heat) return undefined;
+    return { kind, ...heat };
+  }
+  const series =
+    parseSeriesChart(source) ??
+    (!path ? parseSeriesChart(comp) : undefined) ??
+    (!path && isRecord(comp.data) ? parseSeriesChart(comp.data) : undefined);
+  if (!series) return undefined;
+  return { ...series, kind };
 }
 
 function resolveInfographic(comp: Comp, model: unknown): InfographicDocument | undefined {
@@ -325,21 +438,30 @@ function renderComp(
     }
     case "Chart": {
       const chart = resolveChart(comp, model);
-      if (!chart) return null;
+      if (!chart) {
+        return <p className="a2ui-fallback">图表数据无法显示</p>;
+      }
+      const html =
+        chart.kind === "heatmap"
+          ? heatmapSvg(chart.xLabels, chart.yLabels, chart.values)
+          : chartSvg(chart.labels, chart.values, chart.kind);
       return (
         <div
           className="a2ui-chart"
           dangerouslySetInnerHTML={{
-            __html: chartSvg(chart.labels, chart.values, chart.kind),
+            __html: html,
           }}
         />
       );
     }
     case "Infographic": {
+      if (typeof comp.syntax === "string") {
+        return <InfographicView syntax={comp.syntax} />;
+      }
       const doc = resolveInfographic(comp, model);
       if (doc) return <InfographicView document={doc} />;
       if (typeof comp.file === "string") return <InfographicView file={comp.file} />;
-      return null;
+      return <p className="a2ui-fallback">信息图无法显示</p>;
     }
     case "Button": {
       const name = actionName(comp);

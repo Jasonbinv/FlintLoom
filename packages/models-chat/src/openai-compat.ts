@@ -128,6 +128,37 @@ function accumulateToolCalls(
   }
 }
 
+function asNonNegInt(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.round(value)
+    : undefined;
+}
+
+function parseUsageChunk(raw: unknown): ChatChunk | undefined {
+  if (typeof raw !== "object" || raw === null) {
+    return undefined;
+  }
+  const rec = raw as {
+    prompt_tokens?: unknown;
+    completion_tokens?: unknown;
+    prompt_cache_hit_tokens?: unknown;
+    prompt_tokens_details?: { cached_tokens?: unknown };
+  };
+  const inputTokens = asNonNegInt(rec.prompt_tokens);
+  const outputTokens = asNonNegInt(rec.completion_tokens);
+  if (inputTokens === undefined && outputTokens === undefined) {
+    return undefined;
+  }
+  const cachedFromHit = asNonNegInt(rec.prompt_cache_hit_tokens);
+  const cachedFromDetails = asNonNegInt(rec.prompt_tokens_details?.cached_tokens);
+  return {
+    type: "usage",
+    inputTokens: inputTokens ?? 0,
+    outputTokens: outputTokens ?? 0,
+    cacheReadTokens: cachedFromHit ?? cachedFromDetails ?? 0,
+  };
+}
+
 function handleSseLine(
   line: string,
   toolCalls: Map<number, ToolCallAccumulator>,
@@ -148,21 +179,38 @@ function handleSseLine(
     return { done: false, chunks: [] };
   }
 
+  const chunks: ChatChunk[] = [];
   const delta = (parsed as { choices?: { delta?: unknown }[] })?.choices?.[0]
     ?.delta;
-  if (typeof delta !== "object" || delta === null) {
-    return { done: false, chunks: [] };
+  if (typeof delta === "object" && delta !== null) {
+    const deltaRec = delta as {
+      content?: unknown;
+      reasoning_content?: unknown;
+      reasoning?: unknown;
+    };
+    const reasoning =
+      typeof deltaRec.reasoning_content === "string"
+        ? deltaRec.reasoning_content
+        : typeof deltaRec.reasoning === "string"
+          ? deltaRec.reasoning
+          : "";
+    if (reasoning !== "") {
+      chunks.push({ type: "reasoning", text: reasoning });
+    }
+    const content = deltaRec.content;
+    if (typeof content === "string" && content !== "") {
+      chunks.push({ type: "text", text: content });
+    }
+
+    const deltaToolCalls = (delta as { tool_calls?: unknown[] }).tool_calls;
+    if (Array.isArray(deltaToolCalls)) {
+      accumulateToolCalls(toolCalls, deltaToolCalls);
+    }
   }
 
-  const chunks: ChatChunk[] = [];
-  const content = (delta as { content?: unknown }).content;
-  if (typeof content === "string" && content !== "") {
-    chunks.push({ type: "text", text: content });
-  }
-
-  const deltaToolCalls = (delta as { tool_calls?: unknown[] }).tool_calls;
-  if (Array.isArray(deltaToolCalls)) {
-    accumulateToolCalls(toolCalls, deltaToolCalls);
+  const usage = parseUsageChunk((parsed as { usage?: unknown }).usage);
+  if (usage !== undefined) {
+    chunks.push(usage);
   }
 
   return { done: false, chunks };
@@ -179,6 +227,7 @@ export function createOpenAiCompatChat(
       const body: Record<string, unknown> = {
         model,
         stream: true,
+        stream_options: { include_usage: true },
         messages: mapMessages(req),
       };
       const tools = mapTools(req);

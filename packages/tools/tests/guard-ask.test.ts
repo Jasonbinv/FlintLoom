@@ -111,4 +111,118 @@ describe("guard ask in tools plugin", () => {
     );
     expect(out).toBe("guard denied: touch");
   });
+
+  it("skips guard-ask for web_search even when gate would ask", async () => {
+    const ctx = new Context();
+    const models = new ModelRegistry();
+    let gated = 0;
+    models.registerGuard("g", {
+      async gate() {
+        gated += 1;
+        return "ask";
+      },
+      async steward() {
+        return { verdict: "ok", summary: "" };
+      },
+    });
+    models.setDefault("guard", "g");
+    ctx.provide("models", models);
+    await ctx.plugin(toolsPlugin);
+    const tools = ctx.require<ToolRegistry>("tools");
+    tools.register({
+      name: "web_search",
+      description: "search",
+      parameters: { type: "object", properties: {} },
+      async execute() {
+        return "searched";
+      },
+    });
+    const out = await tools.execute(
+      "web_search",
+      { query: "q" },
+      {
+        workspaceRoot: "/tmp",
+        signal: new AbortController().signal,
+        channel: "host",
+        webSearch: true,
+      },
+    );
+    expect(out).toBe("searched");
+    expect(gated).toBe(0);
+  });
+
+  it("skips guard-ask for get_weather even when gate would ask", async () => {
+    const ctx = new Context();
+    const models = new ModelRegistry();
+    let gated = 0;
+    models.registerGuard("g", {
+      async gate() {
+        gated += 1;
+        return "ask";
+      },
+      async steward() {
+        return { verdict: "ok", summary: "" };
+      },
+    });
+    models.setDefault("guard", "g");
+    ctx.provide("models", models);
+    await ctx.plugin(toolsPlugin);
+    const tools = ctx.require<ToolRegistry>("tools");
+    tools.register({
+      name: "get_weather",
+      description: "weather",
+      parameters: { type: "object", properties: {} },
+      async execute() {
+        return "weathered";
+      },
+    });
+    const out = await tools.execute(
+      "get_weather",
+      { city: "Beijing" },
+      {
+        workspaceRoot: "/tmp",
+        signal: new AbortController().signal,
+        channel: "host",
+      },
+    );
+    expect(out).toBe("weathered");
+    expect(gated).toBe(0);
+  });
+
+  it("still asks for other tools when webSearch is true", async () => {
+    const ctx = new Context();
+    const models = new ModelRegistry();
+    models.registerGuard("g", {
+      async gate() {
+        return "ask";
+      },
+      async steward() {
+        return { verdict: "ok", summary: "" };
+      },
+    });
+    models.setDefault("guard", "g");
+    ctx.provide("models", models);
+    await ctx.plugin(toolsPlugin);
+    const tools = ctx.require<ToolRegistry>("tools");
+    tools.register({
+      name: "touch",
+      description: "touch",
+      parameters: { type: "object", properties: {} },
+      async execute() {
+        return "ok";
+      },
+    });
+    await expect(
+      tools.execute(
+        "touch",
+        {},
+        {
+          workspaceRoot: "/tmp",
+          signal: new AbortController().signal,
+          channel: "host",
+          webSearch: true,
+        },
+      ),
+    ).rejects.toThrow(GuardAskError);
+  });
 });

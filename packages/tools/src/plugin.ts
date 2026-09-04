@@ -11,7 +11,7 @@ const plugin: FlintPlugin = {
     ctx.provide("tools", registry);
     ctx.hook(TOOLS_PRE_EXECUTE, async (payload, next) => {
       const p = payload as ToolPreExecutePayload;
-      if (p.guardBypass === true) {
+      if (p.guardBypass === true || p.tool === "web_search" || p.tool === "get_weather") {
         return next();
       }
       const models = ctx.require<ModelRegistry>("models");

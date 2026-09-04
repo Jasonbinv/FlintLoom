@@ -1,0 +1,19 @@
+{
+  "name": "@flintloom/wechat-bridge",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "wechat-bridge": "./src/bin.ts"
+  },
+  "scripts": {
+    "start": "tsx src/bin.ts"
+  },
+  "peerDependencies": {
+    "wechaty": "^1.20.0",
+    "wechaty-puppet-wechat4u": "^1.14.0"
+  },
+  "peerDependenciesMeta": {
+    "wechaty": { "optional": true },
+    "wechaty-puppet-wechat4u": { "optional": true }
+  }
+}

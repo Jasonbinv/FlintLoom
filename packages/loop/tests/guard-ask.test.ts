@@ -82,4 +82,66 @@ describe("guard ask in runTurn", () => {
       session.events().find((e) => e.type === "tool/result" && e.callId === "call-1"),
     ).toMatchObject({ text: "done" });
   });
+
+  it("does not pause web_search on host when guard would ask", async () => {
+    const ctx = new Context();
+    const models = new ModelRegistry();
+    const guard: GuardProvider = {
+      async gate() {
+        return "ask";
+      },
+      async steward() {
+        return { verdict: "ok", summary: "" };
+      },
+    };
+    models.registerGuard("g", guard);
+    models.setDefault("guard", "g");
+    ctx.provide("models", models);
+    await ctx.plugin(toolsPlugin);
+    const tools = ctx.require<ToolRegistry>("tools");
+    tools.register({
+      name: "web_search",
+      description: "search",
+      parameters: { type: "object", properties: {} },
+      async execute(_args, exec) {
+        if (exec.webSearch !== true) return "failed: web_search disabled";
+        return "searched";
+      },
+    });
+
+    let streamCalls = 0;
+    const chat = {
+      stream: vi.fn(async function* () {
+        streamCalls += 1;
+        if (streamCalls === 1) {
+          yield {
+            type: "tool_call" as const,
+            id: "ws-1",
+            name: "web_search",
+            args: { query: "news" },
+          };
+        } else {
+          yield { type: "text" as const, text: "here" };
+        }
+      }),
+    };
+    models.registerChat("fake", chat);
+    models.setDefault("chat", "fake");
+
+    const session = new Session("s-ws-guard");
+    const result = await runTurn({
+      ctx,
+      session,
+      text: "search",
+      webSearch: true,
+      workspaceRoot: "/tmp",
+      channel: "host",
+      signal: new AbortController().signal,
+    });
+    expect(result.status).toBe("ok");
+    expect(session.events().some((e) => e.type === "guard/ask")).toBe(false);
+    expect(
+      session.events().find((e) => e.type === "tool/result" && e.callId === "ws-1"),
+    ).toMatchObject({ text: "searched" });
+  });
 });

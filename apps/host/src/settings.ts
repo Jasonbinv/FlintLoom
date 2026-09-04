@@ -10,8 +10,23 @@ import {
   writeCredentialsStore,
   isLocalLlmBaseUrl,
 } from "./credentials.ts";
+import {
+  normalizeWorkspaceRoot,
+  validateWorkspaceRoot,
+  writePersistedWorkspace,
+} from "./workspace.ts";
+import { isPickFolderSupported, pickFolderNative } from "./pick-folder.ts";
 
-const SLOT_IDS: CredentialSlotId[] = ["chat", "media", "guard", "telegram"];
+const SLOT_IDS: CredentialSlotId[] = [
+  "chat",
+  "media",
+  "guard",
+  "telegram",
+  "discord",
+  "slack",
+  "feishu",
+  "wecom",
+];
 
 export type CredentialSlotSnapshot = {
   id: CredentialSlotId;
@@ -20,8 +35,13 @@ export type CredentialSlotSnapshot = {
   source: CredentialSource;
   baseUrl?: string;
   model?: string;
+  appId?: string;
   allowedChatIds?: string;
+  agentId?: string;
+  callbackToken?: string;
+  encodingAesKey?: string;
   maskedKey?: string;
+  callbackUrl?: string;
 };
 
 function readWorkspaceDotEnv(workspaceRoot: string): Record<string, string> {
@@ -78,6 +98,51 @@ function parseTelegramChatIds(raw: string | undefined): number[] | undefined {
     ids.push(n);
   }
   return ids.length > 0 ? ids : undefined;
+}
+
+function parseAllowedStringIds(
+  raw: string | undefined,
+  pattern: RegExp,
+): string[] | undefined {
+  if (raw === undefined || raw.length === 0) {
+    return undefined;
+  }
+  const ids: string[] = [];
+  for (const part of raw.split(",")) {
+    const trimmed = part.trim();
+    if (trimmed.length === 0) {
+      continue;
+    }
+    if (!pattern.test(trimmed)) {
+      return undefined;
+    }
+    ids.push(trimmed);
+  }
+  return ids.length > 0 ? ids : undefined;
+}
+
+function tokenChannelSlotSnapshot(
+  id: CredentialSlotId,
+  label: string,
+  tokenEnvKey: string,
+  idsEnvKey: string,
+  idsPattern: RegExp,
+  credChannel: Record<string, string> | undefined,
+  fileEnv: Record<string, string>,
+  idsField: "allowedChatIds" | "allowedChannelIds",
+): CredentialSlotSnapshot {
+  const tokenLayer = resolveLayeredString(tokenEnvKey, fileEnv, credChannel?.token);
+  const idsLayer = resolveLayeredString(idsEnvKey, fileEnv, credChannel?.[idsField]);
+  const ids = parseAllowedStringIds(idsLayer.value, idsPattern);
+  const configured = tokenLayer.value !== undefined && ids !== undefined;
+  return {
+    id,
+    label,
+    configured,
+    source: tokenLayer.source !== "none" ? tokenLayer.source : idsLayer.source,
+    allowedChatIds: idsLayer.value,
+    maskedKey: tokenLayer.value !== undefined ? maskSecret(tokenLayer.value) : undefined,
+  };
 }
 
 function chatSlotSnapshot(
@@ -230,6 +295,116 @@ function telegramSlotSnapshot(
   };
 }
 
+function feishuSlotSnapshot(
+  fileEnv: Record<string, string>,
+  credStore: ReturnType<typeof readCredentialsStore>,
+): CredentialSlotSnapshot {
+  const credFeishu = credStore.channels?.feishu;
+  const appIdLayer = resolveLayeredString(
+    "FLINTLOOM_FEISHU_APP_ID",
+    fileEnv,
+    credFeishu?.appId,
+  );
+  const secretLayer = resolveLayeredString(
+    "FLINTLOOM_FEISHU_APP_SECRET",
+    fileEnv,
+    credFeishu?.appSecret,
+  );
+  const chatIdsLayer = resolveLayeredString(
+    "FLINTLOOM_FEISHU_CHAT_IDS",
+    fileEnv,
+    credFeishu?.allowedChatIds,
+  );
+  const ids = parseAllowedStringIds(chatIdsLayer.value, /^oc_[\w-]+$/);
+  const configured =
+    appIdLayer.value !== undefined &&
+    secretLayer.value !== undefined &&
+    ids !== undefined;
+  return {
+    id: "feishu",
+    label: "飞书",
+    configured,
+    source:
+      secretLayer.source !== "none"
+        ? secretLayer.source
+        : appIdLayer.source !== "none"
+          ? appIdLayer.source
+          : chatIdsLayer.source,
+    appId: appIdLayer.value,
+    allowedChatIds: chatIdsLayer.value,
+    maskedKey:
+      secretLayer.value !== undefined ? maskSecret(secretLayer.value) : undefined,
+  };
+}
+
+function wecomSlotSnapshot(
+  fileEnv: Record<string, string>,
+  credStore: ReturnType<typeof readCredentialsStore>,
+  port: number,
+): CredentialSlotSnapshot {
+  const credWecom = credStore.channels?.wecom;
+  const corpIdLayer = resolveLayeredString(
+    "FLINTLOOM_WECOM_CORP_ID",
+    fileEnv,
+    credWecom?.corpId,
+  );
+  const secretLayer = resolveLayeredString(
+    "FLINTLOOM_WECOM_CORP_SECRET",
+    fileEnv,
+    credWecom?.corpSecret,
+  );
+  const agentIdLayer = resolveLayeredString(
+    "FLINTLOOM_WECOM_AGENT_ID",
+    fileEnv,
+    credWecom?.agentId,
+  );
+  const callbackTokenLayer = resolveLayeredString(
+    "FLINTLOOM_WECOM_CALLBACK_TOKEN",
+    fileEnv,
+    credWecom?.callbackToken,
+  );
+  const encodingLayer = resolveLayeredString(
+    "FLINTLOOM_WECOM_ENCODING_AES_KEY",
+    fileEnv,
+    credWecom?.encodingAesKey,
+  );
+  const userIdsLayer = resolveLayeredString(
+    "FLINTLOOM_WECOM_USER_IDS",
+    fileEnv,
+    credWecom?.allowedUserIds,
+  );
+  const ids = parseAllowedStringIds(userIdsLayer.value, /^[\w@.-]+$/);
+  const configured =
+    corpIdLayer.value !== undefined &&
+    secretLayer.value !== undefined &&
+    agentIdLayer.value !== undefined &&
+    callbackTokenLayer.value !== undefined &&
+    ids !== undefined;
+  return {
+    id: "wecom",
+    label: "企业微信",
+    configured,
+    source:
+      secretLayer.source !== "none"
+        ? secretLayer.source
+        : corpIdLayer.source !== "none"
+          ? corpIdLayer.source
+          : userIdsLayer.source,
+    appId: corpIdLayer.value,
+    agentId: agentIdLayer.value,
+    allowedChatIds: userIdsLayer.value,
+    maskedKey:
+      secretLayer.value !== undefined ? maskSecret(secretLayer.value) : undefined,
+    callbackToken:
+      callbackTokenLayer.value !== undefined
+        ? maskSecret(callbackTokenLayer.value)
+        : undefined,
+    encodingAesKey:
+      encodingLayer.value !== undefined ? maskSecret(encodingLayer.value) : undefined,
+    callbackUrl: `http://127.0.0.1:${port}/v1/channels/wecom/callback`,
+  };
+}
+
 export function buildCredentialsSnapshot(
   homeDir: string,
   workspaceRoot: string,
@@ -244,6 +419,28 @@ export function buildCredentialsSnapshot(
       mediaSlotSnapshot(fileEnv, credStore, chatSnap),
       guardSlotSnapshot(fileEnv, credStore, chatSnap),
       telegramSlotSnapshot(fileEnv, credStore),
+      tokenChannelSlotSnapshot(
+        "discord",
+        "Discord",
+        "FLINTLOOM_DISCORD_TOKEN",
+        "FLINTLOOM_DISCORD_CHANNEL_IDS",
+        /^\d+$/,
+        credStore.channels?.discord,
+        fileEnv,
+        "allowedChannelIds",
+      ),
+      tokenChannelSlotSnapshot(
+        "slack",
+        "Slack",
+        "FLINTLOOM_SLACK_TOKEN",
+        "FLINTLOOM_SLACK_CHANNEL_IDS",
+        /^[CG][A-Z0-9]+$/,
+        credStore.channels?.slack,
+        fileEnv,
+        "allowedChannelIds",
+      ),
+      feishuSlotSnapshot(fileEnv, credStore),
+      wecomSlotSnapshot(fileEnv, credStore, port),
     ],
     webhook: {
       url: `http://127.0.0.1:${port}/v1/hooks`,
@@ -298,6 +495,141 @@ export function applyCredentialPatch(
       telegram.allowedChatIds = body.allowedChatIds;
     }
     channels.telegram = telegram;
+    writeCredentialsStore(homeDir, { ...store, hostToken, channels });
+    return;
+  }
+
+  if (slotId === "discord" || slotId === "slack") {
+    const channels = { ...store.channels };
+    const channel = { ...(channels[slotId] ?? {}) };
+    const pattern = slotId === "discord" ? /^\d+$/ : /^[CG][A-Z0-9]+$/;
+    if ("apiKey" in body) {
+      if (typeof body.apiKey !== "string") {
+        throw new Error("apiKey");
+      }
+      if (body.apiKey.length === 0) {
+        delete channel.token;
+      } else {
+        channel.token = body.apiKey;
+      }
+    }
+    if ("allowedChatIds" in body) {
+      if (typeof body.allowedChatIds !== "string") {
+        throw new Error("allowedChatIds");
+      }
+      const ids = parseAllowedStringIds(body.allowedChatIds, pattern);
+      if (ids === undefined) {
+        throw new Error("allowedChatIds");
+      }
+      channel.allowedChannelIds = body.allowedChatIds;
+    }
+    channels[slotId] = channel;
+    writeCredentialsStore(homeDir, { ...store, hostToken, channels });
+    return;
+  }
+
+  if (slotId === "feishu") {
+    const channels = { ...store.channels };
+    const feishu = { ...(channels.feishu ?? {}) };
+    if ("appId" in body) {
+      if (typeof body.appId !== "string") {
+        throw new Error("appId");
+      }
+      if (body.appId.length === 0) {
+        delete feishu.appId;
+      } else {
+        feishu.appId = body.appId;
+      }
+    }
+    if ("apiKey" in body) {
+      if (typeof body.apiKey !== "string") {
+        throw new Error("apiKey");
+      }
+      if (body.apiKey.length === 0) {
+        delete feishu.appSecret;
+      } else {
+        feishu.appSecret = body.apiKey;
+      }
+    }
+    if ("allowedChatIds" in body) {
+      if (typeof body.allowedChatIds !== "string") {
+        throw new Error("allowedChatIds");
+      }
+      const ids = parseAllowedStringIds(body.allowedChatIds, /^oc_[\w-]+$/);
+      if (ids === undefined) {
+        throw new Error("allowedChatIds");
+      }
+      feishu.allowedChatIds = body.allowedChatIds;
+    }
+    channels.feishu = feishu;
+    writeCredentialsStore(homeDir, { ...store, hostToken, channels });
+    return;
+  }
+
+  if (slotId === "wecom") {
+    const channels = { ...store.channels };
+    const wecom = { ...(channels.wecom ?? {}) };
+    if ("appId" in body) {
+      if (typeof body.appId !== "string") {
+        throw new Error("appId");
+      }
+      if (body.appId.length === 0) {
+        delete wecom.corpId;
+      } else {
+        wecom.corpId = body.appId;
+      }
+    }
+    if ("apiKey" in body) {
+      if (typeof body.apiKey !== "string") {
+        throw new Error("apiKey");
+      }
+      if (body.apiKey.length === 0) {
+        delete wecom.corpSecret;
+      } else {
+        wecom.corpSecret = body.apiKey;
+      }
+    }
+    if ("agentId" in body) {
+      if (typeof body.agentId !== "string") {
+        throw new Error("agentId");
+      }
+      if (body.agentId.length === 0) {
+        delete wecom.agentId;
+      } else {
+        wecom.agentId = body.agentId;
+      }
+    }
+    if ("callbackToken" in body) {
+      if (typeof body.callbackToken !== "string") {
+        throw new Error("callbackToken");
+      }
+      if (body.callbackToken.length === 0) {
+        delete wecom.callbackToken;
+      } else {
+        wecom.callbackToken = body.callbackToken;
+      }
+    }
+    if ("encodingAesKey" in body) {
+      if (typeof body.encodingAesKey !== "string") {
+        throw new Error("encodingAesKey");
+      }
+      if (body.encodingAesKey.length === 0) {
+        delete wecom.encodingAesKey;
+      } else {
+        wecom.encodingAesKey = body.encodingAesKey;
+      }
+    }
+    if ("allowedChatIds" in body) {
+      if (typeof body.allowedChatIds !== "string") {
+        throw new Error("allowedChatIds");
+      }
+      const ids = parseAllowedStringIds(body.allowedChatIds, /^[\w@.-]+$/);
+      if (ids === undefined) {
+        throw new Error("allowedChatIds");
+      }
+      wecom.allowedUserIds = body.allowedChatIds;
+    }
+    channels.wecom = wecom;
     writeCredentialsStore(homeDir, { ...store, hostToken, channels });
     return;
   }
@@ -368,16 +700,93 @@ export async function handleSettingsRequest(
     pathname: string;
     method: string;
     homeDir: string;
-    workspaceRoot: string;
+    workspaceRootRef: { current: string };
     port: number;
     busy: Set<string>;
     reloadRuntime: () => Promise<void>;
   },
 ): Promise<boolean> {
   const { pathname, method } = opts;
+  const workspaceRoot = opts.workspaceRootRef.current;
+
+  if (method === "GET" && pathname === "/v1/settings/workspace") {
+    sendJson(res, 200, { workspaceRoot });
+    return true;
+  }
+
+  if (method === "POST" && pathname === "/v1/settings/workspace/pick") {
+    if (!isPickFolderSupported()) {
+      send(res, 501, "unsupported");
+      return true;
+    }
+    let parsed: unknown = {};
+    try {
+      const text = await readBody(req);
+      if (text.trim().length > 0) {
+        parsed = JSON.parse(text);
+      }
+    } catch {
+      send(res, 400);
+      return true;
+    }
+    const initialPath =
+      parsed !== null &&
+      typeof parsed === "object" &&
+      !Array.isArray(parsed) &&
+      typeof (parsed as { initialPath?: unknown }).initialPath === "string"
+        ? (parsed as { initialPath: string }).initialPath.trim()
+        : workspaceRoot;
+    const result = pickFolderNative(
+      initialPath.length > 0 ? initialPath : undefined,
+    );
+    if (result.status === "canceled") {
+      sendJson(res, 200, { canceled: true });
+      return true;
+    }
+    sendJson(res, 200, { canceled: false, path: result.path });
+    return true;
+  }
+
+  if (method === "POST" && pathname === "/v1/settings/workspace") {
+    if (opts.busy.size > 0) {
+      send(res, 409, "busy");
+      return true;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(await readBody(req));
+    } catch {
+      send(res, 400);
+      return true;
+    }
+    if (
+      parsed === null ||
+      typeof parsed !== "object" ||
+      Array.isArray(parsed) ||
+      typeof (parsed as { workspaceRoot?: unknown }).workspaceRoot !== "string"
+    ) {
+      send(res, 400);
+      return true;
+    }
+    const nextRoot = (parsed as { workspaceRoot: string }).workspaceRoot.trim();
+    if (!validateWorkspaceRoot(nextRoot)) {
+      send(res, 400, "invalid workspace");
+      return true;
+    }
+    const normalized = normalizeWorkspaceRoot(nextRoot);
+    if (normalized === opts.workspaceRootRef.current) {
+      sendJson(res, 200, { workspaceRoot: normalized, ok: true });
+      return true;
+    }
+    writePersistedWorkspace(opts.homeDir, normalized);
+    opts.workspaceRootRef.current = normalized;
+    await opts.reloadRuntime();
+    sendJson(res, 200, { workspaceRoot: normalized, ok: true });
+    return true;
+  }
 
   if (method === "GET" && pathname === "/v1/settings/credentials") {
-    sendJson(res, 200, buildCredentialsSnapshot(opts.homeDir, opts.workspaceRoot, opts.port));
+    sendJson(res, 200, buildCredentialsSnapshot(opts.homeDir, workspaceRoot, opts.port));
     return true;
   }
 
@@ -422,7 +831,7 @@ export async function handleSettingsRequest(
       return true;
     }
     sendJson(res, 200, {
-      slot: snapshotForSlot(opts.homeDir, opts.workspaceRoot, opts.port, slotId),
+      slot: snapshotForSlot(opts.homeDir, workspaceRoot, opts.port, slotId),
     });
     return true;
   }

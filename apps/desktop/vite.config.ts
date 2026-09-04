@@ -26,6 +26,7 @@ function v1Proxy(): Plugin {
           }
           const body = chunks.length > 0 ? Buffer.concat(chunks) : undefined;
           const contentType = req.headers["content-type"];
+          const rangeHeader = req.headers.range;
 
           const forwarded = await forwardV1({
             upstreamOrigin: UPSTREAM,
@@ -34,11 +35,21 @@ function v1Proxy(): Plugin {
             path: url,
             body,
             contentType: typeof contentType === "string" ? contentType : undefined,
+            range: typeof rangeHeader === "string" ? rangeHeader : undefined,
           });
 
           res.statusCode = forwarded.status;
           if (forwarded.contentType) {
             res.setHeader("Content-Type", forwarded.contentType);
+          }
+          if (forwarded.contentLength) {
+            res.setHeader("Content-Length", forwarded.contentLength);
+          }
+          if (forwarded.acceptRanges) {
+            res.setHeader("Accept-Ranges", forwarded.acceptRanges);
+          }
+          if (forwarded.contentRange) {
+            res.setHeader("Content-Range", forwarded.contentRange);
           }
 
           if (!forwarded.stream) {
@@ -60,6 +71,9 @@ function v1Proxy(): Plugin {
 
 export default defineConfig({
   plugins: [react(), v1Proxy()],
+  optimizeDeps: {
+    include: ["chart.js/auto", "pptxviewjs"],
+  },
   server: {
     host: "127.0.0.1",
     port: 5173,

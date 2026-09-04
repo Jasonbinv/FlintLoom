@@ -1,0 +1,43 @@
+---
+description: Git 提交须有中文标题和正文；禁止出现 dataagent-v3 相关文字
+alwaysApply: true
+---
+
+# Git 提交说明
+
+用户要求提交时：
+
+1. 只提交用户指定的改动；未要求则不要 commit / push。
+2. 已在 `dev` 则直接提交；要求「提交到 dev」时再 `git push origin dev`。
+3. 指定文件 `git add`，不要 `git add -A`。不要提交 `check_libs.py`、方案稿、`.env` 等无关或密钥文件。
+4. PowerShell 不要用 `&&`；用 `git commit -m @"` / `"@`。
+5. **不要**在 commit message 里写 `Co-authored-by`、`Signed-off-by`，尤其不要加 `Cursor <cursoragent@cursor.com>`。也不要给 `git commit` 加 `--trailer`。
+6. 对外只用 FlintLoom 自己的说法，不要把对照产品写进 Git：
+   - **不要写**：提交标题和正文、PR 说明，以及本次**新加**的注释 / 文案 / 文档里的 `dataagent-v3`、其仓库路径，或「对齐 / 参考 / 搬自该项目」。用本产品的界面和功能描述改动。
+   - **可以**：和用户对话时提到；已有 spec/plan 里为禁止依赖而出现的字样（不要为擦名字去改历史文档）；本规则文件。
+
+## 消息格式
+
+第一行是 Conventional Commit 中文标题，空一行后写 1–3 句正文。GitHub 上标题下方的描述来自这段 body，不要只写标题。标题和正文遵守第 6 条。
+
+正文必须写清这三件事（可合并进同一段，缺一不可）：
+
+1. **功能描述**：新增、优化、完善，或修复了什么 bug
+2. **为什么改**：要解决的问题或动机
+3. **影响什么**：哪个界面、模块或行为会变
+
+```
+feat(desktop): 隐藏格式约束并修复工具输出布局
+
+聊天气泡不再展示内部格式约束，避免用户看到实现细节；工具 OUT 改为两列布局，JSON 不会被挤到右侧。
+```
+
+```powershell
+git commit -m @"
+feat(desktop): 隐藏格式约束并修复工具输出布局
+
+聊天气泡不再展示内部格式约束，避免用户看到实现细节；工具 OUT 改为两列布局，JSON 不会被挤到右侧。
+"@
+```
+
+类型用 `feat` / `fix` / `docs` / `test` / `refactor`；scope 用 `desktop`、`host`、`tools`、`docforge`、`infographic` 等包名。

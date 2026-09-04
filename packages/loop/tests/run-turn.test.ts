@@ -108,6 +108,64 @@ describe("runTurn", () => {
     });
   });
 
+  it("records LLM timing, TTFT, usage and tool duration on turn/stats", async () => {
+    const fakeChat: ChatProvider = {
+      async *stream() {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        yield { type: "text", text: "ok" };
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        yield {
+          type: "usage",
+          inputTokens: 12,
+          outputTokens: 4,
+          cacheReadTokens: 3,
+        };
+      },
+    };
+
+    const ctx = boot();
+    ctx.require<ModelRegistry>("models").registerChat("fake", fakeChat);
+    ctx.require<ModelRegistry>("models").setDefault("chat", "fake");
+
+    const session = new Session("s-metrics");
+    const result = await runTurn({
+      ctx,
+      session,
+      text: "hello",
+      workspaceRoot: process.cwd(),
+      channel: "test",
+      signal: new AbortController().signal,
+    });
+
+    expect(result.status).toBe("ok");
+    const stepStats = session.events().find((e) => e.type === "step/stats");
+    expect(stepStats).toMatchObject({
+      type: "step/stats",
+      step: 1,
+      inputTokens: 12,
+      outputTokens: 4,
+      cacheReadTokens: 3,
+    });
+    if (stepStats?.type === "step/stats") {
+      expect(stepStats.llmMs).toBeGreaterThanOrEqual(30);
+      expect(stepStats.ttftMs).toBeGreaterThanOrEqual(15);
+      expect(stepStats.decodeMs).toBeGreaterThanOrEqual(15);
+    }
+    const turnStats = session.events().find((e) => e.type === "turn/stats");
+    expect(turnStats).toMatchObject({
+      type: "turn/stats",
+      steps: 1,
+      toolCalls: 0,
+      inputTokens: 12,
+      outputTokens: 4,
+      cacheReadTokens: 3,
+    });
+    if (turnStats?.type === "turn/stats") {
+      expect(turnStats.llmMs).toBeGreaterThanOrEqual(30);
+      expect(turnStats.ttftSteps).toBe(1);
+    }
+  });
+
   it("fails and ends turn when chat stream throws", async () => {
     const fakeChat: ChatProvider = {
       async *stream() {
@@ -312,6 +370,178 @@ describe("runTurn", () => {
     expect(session.events().some((e) => e.type === "turn/end")).toBe(true);
   });
 
+  it("projects infographic_render as a2ui/surface without waiting", async () => {
+    const syntax =
+      "infographic compare-swot\ndata\n  compares\n    - label 优势\n      children\n        - label 核心竞争力\n";
+    let streamCall = 0;
+    const fakeChat: ChatProvider = {
+      async *stream() {
+        streamCall += 1;
+        if (streamCall === 1) {
+          yield {
+            type: "tool_call",
+            id: "c1",
+            name: "infographic_render",
+            args: { template: "swot", items: [{ label: "优势", desc: "核心竞争力" }] },
+          };
+        } else {
+          yield { type: "text", text: "shown" };
+        }
+      },
+    };
+    const ctx = boot();
+    ctx.provide("infographic", {
+      chatSurface(s: string) {
+        return [
+          { version: "v0.9", createSurface: { surfaceId: "main", catalogId: "flintloom:a2ui:core" } },
+          {
+            version: "v0.9",
+            updateComponents: {
+              surfaceId: "main",
+              components: [{ id: "root", component: "Infographic", syntax: s }],
+            },
+          },
+        ];
+      },
+    });
+    ctx.require<ToolRegistry>("tools").register({
+      name: "infographic_render",
+      description: "draw",
+      parameters: { type: "object", properties: {} },
+      async execute() {
+        return JSON.stringify({ status: "ok", syntax });
+      },
+    });
+    ctx.require<ModelRegistry>("models").registerChat("fake", fakeChat);
+    ctx.require<ModelRegistry>("models").setDefault("chat", "fake");
+    const session = new Session("s-ig-render");
+    const result = await runTurn({
+      ctx,
+      session,
+      text: "画 SWOT",
+      workspaceRoot: process.cwd(),
+      channel: "host",
+      signal: new AbortController().signal,
+    });
+    expect(result.status).toBe("ok");
+    expect(session.events().some((e) => e.type === "turn/end")).toBe(true);
+    const surface = session.events().find((e) => e.type === "a2ui/surface");
+    expect(surface).toMatchObject({ wait: false, surfaceId: "main" });
+    expect(JSON.stringify(surface)).toContain("compare-swot");
+    expect(JSON.stringify(surface)).toContain("核心竞争力");
+  });
+
+  it("uses omni provider when omni kind is configured", async () => {
+    let chatCalled = false;
+    let omniCalled = false;
+    const fakeChat: ChatProvider = {
+      async *stream() {
+        chatCalled = true;
+        yield { type: "text", text: "from-chat" };
+      },
+    };
+    const fakeOmni: ChatProvider = {
+      async *stream() {
+        omniCalled = true;
+        yield { type: "text", text: "from-omni" };
+      },
+    };
+    const ctx = boot();
+    const models = ctx.require<ModelRegistry>("models");
+    models.registerChat("fake", fakeChat);
+    models.setDefault("chat", "fake");
+    models.registerOmni("omni", fakeOmni);
+    models.setDefault("omni", "omni");
+    const session = new Session("s-omni");
+    const result = await runTurn({
+      ctx,
+      session,
+      text: "hello",
+      workspaceRoot: process.cwd(),
+      channel: "host",
+      signal: new AbortController().signal,
+    });
+    expect(result.status).toBe("ok");
+    expect(omniCalled).toBe(true);
+    expect(chatCalled).toBe(false);
+    expect(session.events().find((e) => e.type === "assistant/message")).toEqual({
+      type: "assistant/message",
+      text: "from-omni",
+    });
+  });
+
+  it("logs user/message with images for multimodal turns", async () => {
+    const fakeChat: ChatProvider = {
+      async *stream() {
+        yield { type: "text", text: "seen-image" };
+      },
+    };
+    const ctx = boot();
+    ctx.require<ModelRegistry>("models").registerChat("fake", fakeChat);
+    ctx.require<ModelRegistry>("models").setDefault("chat", "fake");
+    const session = new Session("s-images");
+    const result = await runTurn({
+      ctx,
+      session,
+      text: "what is this",
+      images: [{ mime: "image/png", data: "abc" }],
+      workspaceRoot: process.cwd(),
+      channel: "host",
+      signal: new AbortController().signal,
+    });
+    expect(result.status).toBe("ok");
+    expect(session.events().find((e) => e.type === "user/message")).toEqual({
+      type: "user/message",
+      text: "what is this",
+      images: [{ mime: "image/png", data: "abc" }],
+    });
+    expect(session.deriveMessages()).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "what is this" },
+          { type: "image", mime: "image/png", data: "abc" },
+        ],
+      },
+      { role: "assistant", content: "seen-image" },
+    ]);
+  });
+
+  it("uses chat provider when omni is not configured", async () => {
+    let chatCalled = false;
+    const fakeChat: ChatProvider = {
+      async *stream() {
+        chatCalled = true;
+        yield { type: "text", text: "from-chat" };
+      },
+    };
+    const fakeOmni: ChatProvider = {
+      async *stream() {
+        yield { type: "text", text: "from-omni" };
+      },
+    };
+    const ctx = boot();
+    const models = ctx.require<ModelRegistry>("models");
+    models.registerChat("fake", fakeChat);
+    models.setDefault("chat", "fake");
+    models.registerOmni("omni", fakeOmni);
+    const session = new Session("s-chat");
+    const result = await runTurn({
+      ctx,
+      session,
+      text: "hello",
+      workspaceRoot: process.cwd(),
+      channel: "host",
+      signal: new AbortController().signal,
+    });
+    expect(result.status).toBe("ok");
+    expect(chatCalled).toBe(true);
+    expect(session.events().find((e) => e.type === "assistant/message")).toEqual({
+      type: "assistant/message",
+      text: "from-chat",
+    });
+  });
+
   it("delivers when channel registry has deliver handler", async () => {
     const delivered: string[] = [];
     const fakeChat: ChatProvider = {
@@ -363,5 +593,139 @@ describe("runTurn", () => {
         signal: new AbortController().signal,
       }),
     ).rejects.toThrow(/not waiting/);
+  });
+
+  it("omits web_search from tools and system when webSearch is unset", async () => {
+    let lastToolNames: string[] = [];
+    let systemContent = "";
+    const fakeChat: ChatProvider = {
+      async *stream(req) {
+        lastToolNames = req.tools.map((t) => t.name);
+        const first = req.messages[0];
+        systemContent = typeof first?.content === "string" ? first.content : "";
+        yield { type: "text", text: "ok" };
+      },
+    };
+
+    const ctx = boot();
+    ctx.require<ModelRegistry>("models").registerChat("fake", fakeChat);
+    ctx.require<ModelRegistry>("models").setDefault("chat", "fake");
+    ctx.require<ToolRegistry>("tools").register({
+      name: "web_search",
+      description: "search",
+      parameters: { type: "object", properties: {} },
+      async execute(_args, exec) {
+        if (exec.webSearch !== true) return "failed: web_search disabled";
+        return "searched";
+      },
+    });
+
+    const session = new Session("s-ws-off");
+    const result = await runTurn({
+      ctx,
+      session,
+      text: "hello",
+      workspaceRoot: process.cwd(),
+      channel: "test",
+      signal: new AbortController().signal,
+    });
+
+    expect(result.status).toBe("ok");
+    expect(lastToolNames).not.toContain("web_search");
+    expect(systemContent).not.toContain("web_search");
+  });
+
+  it("includes web_search in tools, system, and turn/start when webSearch is true", async () => {
+    let lastToolNames: string[] = [];
+    let systemContent = "";
+    const fakeChat: ChatProvider = {
+      async *stream(req) {
+        lastToolNames = req.tools.map((t) => t.name);
+        const first = req.messages[0];
+        systemContent = typeof first?.content === "string" ? first.content : "";
+        yield { type: "text", text: "ok" };
+      },
+    };
+
+    const ctx = boot();
+    ctx.require<ModelRegistry>("models").registerChat("fake", fakeChat);
+    ctx.require<ModelRegistry>("models").setDefault("chat", "fake");
+    ctx.require<ToolRegistry>("tools").register({
+      name: "web_search",
+      description: "search",
+      parameters: { type: "object", properties: {} },
+      async execute(_args, exec) {
+        if (exec.webSearch !== true) return "failed: web_search disabled";
+        return "searched";
+      },
+    });
+
+    const session = new Session("s-ws-on");
+    const result = await runTurn({
+      ctx,
+      session,
+      text: "hello",
+      webSearch: true,
+      workspaceRoot: process.cwd(),
+      channel: "test",
+      signal: new AbortController().signal,
+    });
+
+    expect(result.status).toBe("ok");
+    expect(lastToolNames).toContain("web_search");
+    expect(systemContent).toContain("You may call web_search");
+    const turnStart = session.events().find((e) => e.type === "turn/start");
+    expect(turnStart).toMatchObject({ type: "turn/start", webSearch: true });
+  });
+
+  it("rejects web_search tool_call when webSearch is false", async () => {
+    let streamCall = 0;
+    const fakeChat: ChatProvider = {
+      async *stream() {
+        streamCall += 1;
+        if (streamCall === 1) {
+          yield {
+            type: "tool_call",
+            id: "ws-1",
+            name: "web_search",
+            args: { query: "x" },
+          };
+        } else {
+          yield { type: "text", text: "done" };
+        }
+      },
+    };
+
+    const ctx = boot();
+    ctx.require<ModelRegistry>("models").registerChat("fake", fakeChat);
+    ctx.require<ModelRegistry>("models").setDefault("chat", "fake");
+    ctx.require<ToolRegistry>("tools").register({
+      name: "web_search",
+      description: "search",
+      parameters: { type: "object", properties: {} },
+      async execute(_args, exec) {
+        if (exec.webSearch !== true) return "failed: web_search disabled";
+        return "searched";
+      },
+    });
+
+    const session = new Session("s-ws-deny");
+    const result = await runTurn({
+      ctx,
+      session,
+      text: "search",
+      webSearch: false,
+      workspaceRoot: process.cwd(),
+      channel: "test",
+      signal: new AbortController().signal,
+    });
+
+    expect(result.status).toBe("ok");
+    const toolResult = session.events().find((e) => e.type === "tool/result");
+    expect(toolResult).toMatchObject({
+      type: "tool/result",
+      name: "web_search",
+      text: "failed: web_search disabled",
+    });
   });
 });

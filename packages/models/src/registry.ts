@@ -7,6 +7,10 @@ export interface ChatChunkText {
   type: "text";
   text: string;
 }
+export interface ChatChunkReasoning {
+  type: "reasoning";
+  text: string;
+}
 export interface ChatChunkToolCall {
   type: "tool_call";
   id: string;
@@ -17,7 +21,18 @@ export interface ChatChunkError {
   type: "error";
   message: string;
 }
-export type ChatChunk = ChatChunkText | ChatChunkToolCall | ChatChunkError;
+export interface ChatChunkUsage {
+  type: "usage";
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+}
+export type ChatChunk =
+  | ChatChunkText
+  | ChatChunkReasoning
+  | ChatChunkToolCall
+  | ChatChunkError
+  | ChatChunkUsage;
 
 export interface ChatRequest {
   messages: ChatMessage[];

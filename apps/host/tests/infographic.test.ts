@@ -58,6 +58,37 @@ describe("infographic preview HTTP", () => {
     expect(badBody.text).toMatch(/^failed:/);
   });
 
+  it("returns antv syntax for .infographic.ig and rejects remote urls", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-ig-antv-"));
+    const homeDir = mkdtempSync(join(tmpdir(), "flintloom-ig-antv-home-"));
+    writeAssembly(workspaceRoot);
+    writeFileSync(
+      join(workspaceRoot, "steps.infographic.ig"),
+      "infographic list-row-simple-horizontal-arrow\ndata\n  lists\n    - label A\n      desc Start\n",
+    );
+    writeFileSync(
+      join(workspaceRoot, "remote.infographic.ig"),
+      "infographic x\nicon https://cdn.example/a.svg\n",
+    );
+    const host = await startHost({ workspaceRoot, homeDir, port: 0 });
+    close = host.close;
+    const token = loadOrCreateToken(homeDir);
+    const headers = { Authorization: `Bearer ${token}` };
+
+    const ok = await fetch(`${host.url}/v1/files/preview?path=steps.infographic.ig`, { headers });
+    expect(ok.status).toBe(200);
+    const okBody = (await ok.json()) as { kind: string; text: string };
+    expect(okBody.kind).toBe("antv");
+    expect(okBody.text).toContain("list-row-simple-horizontal-arrow");
+
+    const remote = await fetch(`${host.url}/v1/files/preview?path=remote.infographic.ig`, {
+      headers,
+    });
+    const remoteBody = (await remote.json()) as { kind: string; text: string };
+    expect(remoteBody.kind).toBe("failed");
+    expect(remoteBody.text).toMatch(/remote url/);
+  });
+
   it("omitting the plugin drops tools but still previews svg", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "flintloom-ig-omit-"));
     const homeDir = mkdtempSync(join(tmpdir(), "flintloom-ig-omit-home-"));
@@ -84,6 +115,7 @@ describe("infographic preview HTTP", () => {
     const names = ctx.require<ToolRegistry>("tools").schemas().map((s) => s.name);
     expect(names).not.toContain("infographic_get");
     expect(names).not.toContain("infographic_patch");
+    expect(names).not.toContain("infographic_render");
 
     const host = await startHost({ workspaceRoot, homeDir, port: 0 });
     close = host.close;

@@ -6,7 +6,13 @@ import {
   type A2uiMessage,
   type A2uiService,
 } from "./types.ts";
-import { isInfographicRelPath, parseDocument } from "@flintloom/infographic";
+import { parseChartKind } from "./chartKinds.ts";
+import {
+  isAnyInfographicRelPath,
+  parseAntvSyntax,
+  parseDocument,
+} from "@flintloom/infographic";
+import { normalizeEmitMessages } from "./normalize.ts";
 
 const ENVELOPE_KEYS = ["createSurface", "updateComponents", "updateDataModel", "deleteSurface"] as const;
 const KNOWN_COMPONENTS = new Set([
@@ -98,6 +104,36 @@ function validateStringCell(value: unknown, maxLen: number): boolean {
   return typeof value === "string" && value.length <= maxLen;
 }
 
+function validateLabelList(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.length >= 1 &&
+    value.length <= 24 &&
+    value.every((item) => validateStringCell(item, 80))
+  );
+}
+
+function validateHeatmapInline(comp: A2uiComponent): void {
+  const xLabels = comp.xLabels;
+  const yLabels = comp.yLabels;
+  const values = comp.values;
+  if (!validateLabelList(xLabels) || !validateLabelList(yLabels) || !Array.isArray(values)) {
+    fail("bad chart: heatmap needs xLabels, yLabels, and values as number[][]");
+  }
+  if (values.length !== yLabels.length) {
+    fail("bad chart");
+  }
+  for (const row of values) {
+    if (
+      !Array.isArray(row) ||
+      row.length !== xLabels.length ||
+      !row.every((cell) => typeof cell === "number" && Number.isFinite(cell))
+    ) {
+      fail("bad chart");
+    }
+  }
+}
+
 function validateComponentShape(comp: A2uiComponent): void {
   if (comp.component === "Column" || comp.component === "Row") {
     if (!Array.isArray(comp.children) || comp.children.some((c) => typeof c !== "string")) {
@@ -163,12 +199,16 @@ function validateComponentShape(comp: A2uiComponent): void {
     return;
   }
   if (comp.component === "Chart") {
-    const kind = comp.kind;
-    if (kind !== undefined && kind !== "bar" && kind !== "line") {
+    const kind = parseChartKind(comp.kind);
+    if (kind === undefined) {
       fail("bad chart");
     }
     const dataPath = bindingPath(comp.data);
     if (dataPath !== undefined) {
+      return;
+    }
+    if (kind === "heatmap") {
+      validateHeatmapInline(comp);
       return;
     }
     const labels = comp.labels;
@@ -194,7 +234,10 @@ function validateComponentShape(comp: A2uiComponent): void {
     const dataPath = bindingPath(comp.data);
     const hasDoc = isRecord(comp.document);
     const hasFile = typeof comp.file === "string";
-    const modes = [dataPath !== undefined, hasDoc, hasFile].filter(Boolean).length;
+    const hasSyntax = typeof comp.syntax === "string";
+    const modes = [dataPath !== undefined, hasDoc, hasFile, hasSyntax].filter(
+      Boolean,
+    ).length;
     if (modes !== 1) {
       fail("bad infographic");
     }
@@ -203,9 +246,13 @@ function validateComponentShape(comp: A2uiComponent): void {
     }
     if (hasFile) {
       const file = comp.file as string;
-      if (file.includes("..") || !isInfographicRelPath(file)) {
+      if (file.includes("..") || !isAnyInfographicRelPath(file)) {
         fail("bad path");
       }
+      return;
+    }
+    if (hasSyntax) {
+      parseAntvSyntax(comp.syntax as string);
       return;
     }
     parseDocument(JSON.stringify(comp.document));
@@ -313,7 +360,7 @@ function validateMessages(raw: unknown): { messages: A2uiMessage[]; surfaceId: s
     fail("bad messages");
   }
 
-  const messages = raw.map(parseEnvelope);
+  const messages = (normalizeEmitMessages(raw) as unknown[]).map(parseEnvelope);
   const surfaceIds = messages.map(surfaceIdOf);
   const surfaceId = surfaceIds[0]!;
   if (surfaceIds.some((id) => id !== surfaceId)) {
@@ -340,7 +387,7 @@ function validateMessages(raw: unknown): { messages: A2uiMessage[]; surfaceId: s
 
   const components = mergeComponents(messages);
   if (!pureDelete && !components.has("root")) {
-    fail("missing root");
+    fail('missing root: include updateComponents with a component id "root" in the same call');
   }
   validateRefs(components);
 

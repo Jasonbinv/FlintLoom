@@ -74,6 +74,53 @@ describe("createOpenAiCompatChat", () => {
     expect(chunks).toEqual([{ type: "text", text: "hi" }]);
   });
 
+  it("yields usage from a trailing SSE event without delta", async () => {
+    const usageServer = http.createServer((_req, res) => {
+      res.writeHead(200, { "Content-Type": "text/event-stream" });
+      res.write(
+        `data: ${JSON.stringify({ choices: [{ delta: { content: "hi" } }] })}\n\n`,
+      );
+      res.write(
+        `data: ${JSON.stringify({
+          choices: [],
+          usage: {
+            prompt_tokens: 12,
+            completion_tokens: 4,
+            prompt_cache_hit_tokens: 8,
+          },
+        })}\n\n`,
+      );
+      res.write("data: [DONE]\n\n");
+      res.end();
+    });
+
+    const { baseUrl, close } = await listen(usageServer);
+    try {
+      const provider = createOpenAiCompatChat({
+        baseUrl,
+        apiKey: "test-key",
+        model: "test-model",
+      });
+      const chunks = await collectChunks(
+        provider.stream(
+          { messages: [{ role: "user", content: "hello" }], tools: [] },
+          new AbortController().signal,
+        ),
+      );
+      expect(chunks).toEqual([
+        { type: "text", text: "hi" },
+        {
+          type: "usage",
+          inputTokens: 12,
+          outputTokens: 4,
+          cacheReadTokens: 8,
+        },
+      ]);
+    } finally {
+      await close();
+    }
+  });
+
   it("yields error chunk on 401 without leaking apiKey", async () => {
     const apiKey = "secret-api-key-xyz";
 
@@ -159,6 +206,10 @@ describe("createOpenAiCompatChat", () => {
           { type: "image_url", image_url: { url: "data:image/png;base64,abc" } },
         ],
       });
+      const body = JSON.parse(capturedBody) as {
+        stream_options?: { include_usage?: boolean };
+      };
+      expect(body.stream_options).toEqual({ include_usage: true });
     } finally {
       await close();
     }

@@ -65,6 +65,28 @@ export async function fetchPlugins(
   return (await res.json()) as { id: string; name: string; status: "loaded" }[];
 }
 
+export async function installPlugin(
+  sourcePath: string,
+  id?: string,
+): Promise<{ id: string; dest: string }> {
+  const body: { sourcePath: string; id?: string } = { sourcePath };
+  if (id !== undefined && id.trim().length > 0) {
+    body.id = id.trim();
+  }
+  const res = await fetch("/v1/plugins/install", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (res.status === 409) throw new Error("busy");
+  if (res.status === 400) {
+    const text = (await res.text()).trim();
+    throw new Error(text.length > 0 ? text : "invalid");
+  }
+  if (!res.ok) throw new Error("install failed");
+  return (await res.json()) as { id: string; dest: string };
+}
+
 export type CredentialSlotSnapshot = {
   id: string;
   label: string;
@@ -72,6 +94,11 @@ export type CredentialSlotSnapshot = {
   source: string;
   baseUrl?: string;
   model?: string;
+  appId?: string;
+  agentId?: string;
+  callbackToken?: string;
+  encodingAesKey?: string;
+  callbackUrl?: string;
   allowedChatIds?: string;
   maskedKey?: string;
 };
@@ -108,6 +135,63 @@ export async function reloadHostSettings(): Promise<void> {
   if (!res.ok) throw new Error("reload failed");
 }
 
+export async function fetchWorkspace(
+  signal?: AbortSignal,
+): Promise<{ workspaceRoot: string }> {
+  const res = await fetch("/v1/settings/workspace", { signal });
+  if (!res.ok) throw new Error("host unreachable");
+  return (await res.json()) as { workspaceRoot: string };
+}
+
+export async function setWorkspace(workspaceRoot: string): Promise<string> {
+  const res = await fetch("/v1/settings/workspace", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ workspaceRoot }),
+  });
+  if (res.status === 409) throw new Error("busy");
+  if (res.status === 400) throw new Error("invalid workspace");
+  if (!res.ok) throw new Error("workspace switch failed");
+  const body = (await res.json()) as { workspaceRoot: string };
+  return body.workspaceRoot;
+}
+
+export type PickWorkspaceResult =
+  | { status: "picked"; path: string }
+  | { status: "canceled" }
+  | { status: "unsupported" };
+
+/** Open a native folder picker via the local Host (Windows / macOS / Linux). */
+export async function pickWorkspaceFromHost(
+  initialPath?: string,
+  signal?: AbortSignal,
+): Promise<PickWorkspaceResult> {
+  const res = await fetch("/v1/settings/workspace/pick", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(
+      initialPath !== undefined && initialPath.trim().length > 0
+        ? { initialPath }
+        : {},
+    ),
+    signal,
+  });
+  if (res.status === 501) {
+    return { status: "unsupported" };
+  }
+  if (!res.ok) {
+    return { status: "unsupported" };
+  }
+  const body = (await res.json()) as { canceled?: boolean; path?: string };
+  if (body.canceled) {
+    return { status: "canceled" };
+  }
+  if (typeof body.path === "string" && body.path.trim().length > 0) {
+    return { status: "picked", path: body.path.trim() };
+  }
+  return { status: "canceled" };
+}
+
 export async function fetchSession(
   sessionId: string,
 ): Promise<{ events: WorkbenchEvent[] } | undefined> {
@@ -133,10 +217,14 @@ export async function postTurn(
   onEvent: (event: WorkbenchEvent) => void,
   signal?: AbortSignal,
   images?: UserImage[],
+  webSearch?: boolean,
 ): Promise<void> {
   const body: Record<string, unknown> = { sessionId, text };
   if (images !== undefined && images.length > 0) {
     body.images = images;
+  }
+  if (webSearch === true) {
+    body.webSearch = true;
   }
   await postSse("/v1/turns", body, onEvent, signal);
 }

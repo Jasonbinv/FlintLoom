@@ -1,0 +1,10 @@
+{
+  "name": "@flintloom/web-search",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@flintloom/kernel": "workspace:*",
+    "@flintloom/tools": "workspace:*"
+  }
+}

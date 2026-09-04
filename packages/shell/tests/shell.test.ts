@@ -38,6 +38,19 @@ describe("createShellTool", () => {
     expect(result).toContain("flintloom-ok");
   });
 
+  it("refuses mkdir of ai_generation folders so the model uses fs instead", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "flintloom-shell-mkdir-"));
+    const exec = createExec(workspace);
+    const shell = createShellTool();
+    const result = await shell.execute(
+      { command: "mkdir -p ai_generation/20240522_KET_Syllabus" },
+      exec,
+    );
+    expect(result).toMatch(/do not/i);
+    expect(result).toContain("fs");
+    expect(result).toContain("doc_generate");
+  });
+
   it("decodes gbk bytes from a child process without mojibake", async () => {
     const workspace = mkdtempSync(join(tmpdir(), "flintloom-shell-gbk-"));
     writeFileSync(

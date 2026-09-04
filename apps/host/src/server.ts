@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { join } from "node:path";
 import type { ChannelRegistry } from "@flintloom/channel";
@@ -11,17 +11,44 @@ import { WorkspaceEscapeError } from "@flintloom/tools";
 import { cancelWaitingTurn, handleTurnActions, sessionHasWaitingTurn } from "./a2ui.ts";
 import { handleTurnGuard } from "./guard.ts";
 import { handleSettingsRequest } from "./settings.ts";
+import { handlePluginInstallRequest } from "./plugin-install.ts";
+import { handleWecomCallback } from "@flintloom/channel-wecom";
+import type { WecomConfig } from "@flintloom/channel-wecom";
 import {
+  contentTypeForFileName,
+  parseByteRangeHeader,
+  createWorkspaceDirectory,
+  createWorkspaceFile,
+  deleteWorkspaceEntry,
   listWorkspaceFiles,
   normalizeRelPath,
   previewWorkspaceFile,
+  rawFileMaxBytes,
+  readWorkspaceFileBytes,
+  readWorkspaceFileMarkdown,
+  renameWorkspaceEntry,
+  resolveWorkspaceReadableFile,
+  writeWorkspaceFileBytes,
+  writeWorkspaceFileFromMarkdown,
+  convertWorkspaceFile,
+  FILE_RAW_MAX_BYTES,
+  type FileMutationResult,
 } from "./files.ts";
+import {
+  buildSafeHtmlWrapperHtml,
+  createSafeHtmlPreviewToken,
+  readSafeHtmlBytes,
+  resolveSafeHtmlToken,
+} from "./safeHtmlPreview.ts";
 import { handleKnowledgeRequest } from "./knowledge.ts";
 import { ASR_MAX_BYTES, readBodyBytes, transcribeAudio } from "./asr.ts";
 import { synthesizeSpeech } from "./tts.ts";
 import { parseTurnBody } from "./turn-body.ts";
 import { loadOrCreateToken, readCredentials } from "./token.ts";
 import { readCredentialsStore, type CredentialsStore, resolveLayeredString, isLocalLlmBaseUrl } from "./credentials.ts";
+import { resolveWorkspaceRoot } from "./workspace.ts";
+import { workspaceSessionsDir } from "./sessionsDir.ts";
+import { createFileWatch, type FileWatch } from "./fileWatch.ts";
 
 export type PluginSnapshot = {
   id: string;
@@ -114,6 +141,179 @@ function resolveTelegramOverlay(
     return undefined;
   }
   return { token, allowedChatIds };
+}
+
+function parseAllowedStringIds(
+  raw: string | undefined,
+  pattern: RegExp,
+): string[] | undefined {
+  if (raw === undefined || raw.length === 0) {
+    return undefined;
+  }
+  const ids: string[] = [];
+  for (const part of raw.split(",")) {
+    const trimmed = part.trim();
+    if (trimmed.length === 0) {
+      continue;
+    }
+    if (!pattern.test(trimmed)) {
+      return undefined;
+    }
+    ids.push(trimmed);
+  }
+  return ids.length > 0 ? ids : undefined;
+}
+
+function resolveDiscordOverlay(
+  fileEnv: Record<string, string>,
+  credStore: CredentialsStore,
+): { token: string; allowedChannelIds: string[] } | undefined {
+  const credDiscord = credStore.channels?.discord;
+  const token = resolveLayeredString(
+    "FLINTLOOM_DISCORD_TOKEN",
+    fileEnv,
+    credDiscord?.token,
+  ).value;
+  if (token === undefined) {
+    return undefined;
+  }
+  const allowedChannelIds = parseAllowedStringIds(
+    resolveLayeredString(
+      "FLINTLOOM_DISCORD_CHANNEL_IDS",
+      fileEnv,
+      credDiscord?.allowedChannelIds,
+    ).value,
+    /^\d+$/,
+  );
+  if (allowedChannelIds === undefined) {
+    return undefined;
+  }
+  return { token, allowedChannelIds };
+}
+
+function resolveSlackOverlay(
+  fileEnv: Record<string, string>,
+  credStore: CredentialsStore,
+): { token: string; allowedChannelIds: string[] } | undefined {
+  const credSlack = credStore.channels?.slack;
+  const token = resolveLayeredString(
+    "FLINTLOOM_SLACK_TOKEN",
+    fileEnv,
+    credSlack?.token,
+  ).value;
+  if (token === undefined) {
+    return undefined;
+  }
+  const allowedChannelIds = parseAllowedStringIds(
+    resolveLayeredString(
+      "FLINTLOOM_SLACK_CHANNEL_IDS",
+      fileEnv,
+      credSlack?.allowedChannelIds,
+    ).value,
+    /^[CG][A-Z0-9]+$/,
+  );
+  if (allowedChannelIds === undefined) {
+    return undefined;
+  }
+  return { token, allowedChannelIds };
+}
+
+function resolveFeishuOverlay(
+  fileEnv: Record<string, string>,
+  credStore: CredentialsStore,
+): { appId: string; appSecret: string; allowedChatIds: string[] } | undefined {
+  const credFeishu = credStore.channels?.feishu;
+  const appId = resolveLayeredString(
+    "FLINTLOOM_FEISHU_APP_ID",
+    fileEnv,
+    credFeishu?.appId,
+  ).value;
+  const appSecret = resolveLayeredString(
+    "FLINTLOOM_FEISHU_APP_SECRET",
+    fileEnv,
+    credFeishu?.appSecret,
+  ).value;
+  if (appId === undefined || appSecret === undefined) {
+    return undefined;
+  }
+  const allowedChatIds = parseAllowedStringIds(
+    resolveLayeredString(
+      "FLINTLOOM_FEISHU_CHAT_IDS",
+      fileEnv,
+      credFeishu?.allowedChatIds,
+    ).value,
+    /^oc_[\w-]+$/,
+  );
+  if (allowedChatIds === undefined) {
+    return undefined;
+  }
+  return { appId, appSecret, allowedChatIds };
+}
+
+function resolveWecomOverlay(
+  fileEnv: Record<string, string>,
+  credStore: CredentialsStore,
+): {
+  corpId: string;
+  corpSecret: string;
+  agentId: string;
+  callbackToken: string;
+  encodingAesKey?: string;
+  allowedUserIds: string[];
+} | undefined {
+  const credWecom = credStore.channels?.wecom;
+  const corpId = resolveLayeredString(
+    "FLINTLOOM_WECOM_CORP_ID",
+    fileEnv,
+    credWecom?.corpId,
+  ).value;
+  const corpSecret = resolveLayeredString(
+    "FLINTLOOM_WECOM_CORP_SECRET",
+    fileEnv,
+    credWecom?.corpSecret,
+  ).value;
+  const agentId = resolveLayeredString(
+    "FLINTLOOM_WECOM_AGENT_ID",
+    fileEnv,
+    credWecom?.agentId,
+  ).value;
+  const callbackToken = resolveLayeredString(
+    "FLINTLOOM_WECOM_CALLBACK_TOKEN",
+    fileEnv,
+    credWecom?.callbackToken,
+  ).value;
+  const encodingAesKey = resolveLayeredString(
+    "FLINTLOOM_WECOM_ENCODING_AES_KEY",
+    fileEnv,
+    credWecom?.encodingAesKey,
+  ).value;
+  if (
+    corpId === undefined ||
+    corpSecret === undefined ||
+    agentId === undefined ||
+    callbackToken === undefined
+  ) {
+    return undefined;
+  }
+  const allowedUserIds = parseAllowedStringIds(
+    resolveLayeredString(
+      "FLINTLOOM_WECOM_USER_IDS",
+      fileEnv,
+      credWecom?.allowedUserIds,
+    ).value,
+    /^[\w@.-]+$/,
+  );
+  if (allowedUserIds === undefined) {
+    return undefined;
+  }
+  return {
+    corpId,
+    corpSecret,
+    agentId,
+    callbackToken,
+    ...(encodingAesKey !== undefined ? { encodingAesKey } : {}),
+    allowedUserIds,
+  };
 }
 
 export async function createRuntime(
@@ -225,8 +425,43 @@ export async function createRuntime(
   runtimeConfigById.knowledge = {
     dbPath: join(homeDir, ".flintloom", "knowledge.sqlite"),
   };
+  runtimeConfigById.session = {
+    sessionsDir: workspaceSessionsDir(homeDir, workspaceRoot),
+  };
   runtimeConfigById.skill = {
     homeDir,
+  };
+  const searchProvider = resolveLayeredString(
+    "FLINTLOOM_SEARCH_PROVIDER",
+    fileEnv,
+    undefined,
+  ).value;
+  const searxngUrl = resolveLayeredString(
+    "FLINTLOOM_SEARXNG_URL",
+    fileEnv,
+    undefined,
+  ).value;
+  const tavilyApiKey = resolveLayeredString(
+    "FLINTLOOM_TAVILY_API_KEY",
+    fileEnv,
+    undefined,
+  ).value;
+  const braveApiKey = resolveLayeredString(
+    "FLINTLOOM_BRAVE_API_KEY",
+    fileEnv,
+    undefined,
+  ).value;
+  const bochaApiKey = resolveLayeredString(
+    "FLINTLOOM_BOCHA_API_KEY",
+    fileEnv,
+    undefined,
+  ).value;
+  runtimeConfigById["web-search"] = {
+    ...(searchProvider ? { provider: searchProvider } : {}),
+    ...(searxngUrl ? { searxngUrl } : {}),
+    ...(tavilyApiKey ? { tavilyApiKey } : {}),
+    ...(braveApiKey ? { braveApiKey } : {}),
+    ...(bochaApiKey ? { bochaApiKey } : {}),
   };
 
   if (opts?.pollChannels === true) {
@@ -235,6 +470,39 @@ export async function createRuntime(
       workspaceRoot,
       poll: true,
       ...(telegram ?? {}),
+    };
+    const discord = resolveDiscordOverlay(fileEnv, credStore);
+    runtimeConfigById["channel-discord"] = {
+      workspaceRoot,
+      poll: true,
+      ...(discord ?? {}),
+    };
+    const slack = resolveSlackOverlay(fileEnv, credStore);
+    runtimeConfigById["channel-slack"] = {
+      workspaceRoot,
+      poll: true,
+      ...(slack ?? {}),
+    };
+    const feishu = resolveFeishuOverlay(fileEnv, credStore);
+    runtimeConfigById["channel-feishu"] = {
+      workspaceRoot,
+      poll: true,
+      ...(feishu ?? {}),
+    };
+  }
+
+  const wecom = resolveWecomOverlay(fileEnv, credStore);
+  if (wecom !== undefined) {
+    runtimeConfigById["channel-wecom"] = {
+      workspaceRoot,
+      corpId: wecom.corpId,
+      corpSecret: wecom.corpSecret,
+      agentId: wecom.agentId,
+      callbackToken: wecom.callbackToken,
+      ...(wecom.encodingAesKey !== undefined
+        ? { encodingAesKey: wecom.encodingAesKey }
+        : {}),
+      allowedUserIds: wecom.allowedUserIds,
     };
   }
 
@@ -297,6 +565,42 @@ function send(res: ServerResponse, status: number, body?: string): void {
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "Content-Type": "application/json" });
   res.end(JSON.stringify(body));
+}
+
+function sendFileMutation(res: ServerResponse, result: FileMutationResult): void {
+  if (result === "ok") {
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+  if (result === "exists") {
+    send(res, 409, "exists");
+    return;
+  }
+  if (result === "invalid") {
+    send(res, 400, "invalid path");
+    return;
+  }
+  send(res, 404);
+}
+
+async function readJsonObject(
+  req: IncomingMessage,
+): Promise<Record<string, unknown> | "invalid"> {
+  const raw = await readBody(req);
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return "invalid";
+    }
+    return parsed as Record<string, unknown>;
+  } catch {
+    return "invalid";
+  }
+}
+
+function stringField(body: Record<string, unknown>, key: string): string | undefined {
+  const value = body[key];
+  return typeof value === "string" ? value : undefined;
 }
 
 function writeSse(res: ServerResponse, data: unknown): void {
@@ -444,7 +748,7 @@ async function handleRequest(
   res: ServerResponse,
   opts: {
     token: string;
-    workspaceRoot: string;
+    workspaceRootRef: { current: string };
     homeDir: string;
     port: number;
     runtimeRef: { current: Runtime };
@@ -452,15 +756,118 @@ async function handleRequest(
     turns: Map<string, Session>;
     busy: Set<string>;
     reloadRuntime: () => Promise<void>;
+    fileWatch: FileWatch;
   },
 ): Promise<void> {
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
   const pathname = url.pathname;
   const runtime = opts.runtimeRef.current;
   const busy = opts.busy;
+  const workspaceRoot = opts.workspaceRootRef.current;
+
+  if (
+    await handleWecomCallback(req, res, {
+      pathname,
+      method: req.method ?? "GET",
+      config: runtime.ctx.get<WecomConfig>("wecomConfig"),
+      channels: runtime.ctx.get<ChannelRegistry>("channels"),
+      busy: opts.busy,
+      workspaceRoot,
+    })
+  ) {
+    return;
+  }
+
+  if (req.method === "GET" && pathname === "/v1/files/safe-html") {
+    const token = url.searchParams.get("t");
+    const entry = resolveSafeHtmlToken(token);
+    if (!entry || entry.workspaceRoot !== workspaceRoot) {
+      send(res, 404, "not found");
+      return;
+    }
+    const html = buildSafeHtmlWrapperHtml(opts.port, token!, entry.relPath);
+    res.writeHead(200, {
+      "Content-Type": "text/html; charset=utf-8",
+      "Content-Security-Policy":
+        "default-src 'none'; frame-src http://127.0.0.1:*; style-src 'unsafe-inline'; base-uri 'none'",
+      "X-Content-Type-Options": "nosniff",
+    });
+    res.end(html);
+    return;
+  }
+
+  if (req.method === "GET" && pathname === "/v1/files/safe-html/content") {
+    const token = url.searchParams.get("t");
+    const entry = resolveSafeHtmlToken(token);
+    if (!entry || entry.workspaceRoot !== workspaceRoot) {
+      send(res, 404, "not found");
+      return;
+    }
+    try {
+      const bytes = await readSafeHtmlBytes(workspaceRoot, entry.relPath);
+      if (bytes === "not_found") {
+        send(res, 404, "not found");
+        return;
+      }
+      if (bytes === "too_large") {
+        send(res, 413, "too large");
+        return;
+      }
+      res.writeHead(200, {
+        "Content-Type": "text/html; charset=utf-8",
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "no-referrer",
+      });
+      res.end(bytes);
+    } catch (err) {
+      if (err instanceof WorkspaceEscapeError) {
+        send(res, 400, err.message);
+        return;
+      }
+      throw err;
+    }
+    return;
+  }
 
   if (pathname.startsWith("/v1/") && !isAuthorized(req, opts.token)) {
     send(res, 401);
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/v1/files/safe-html/open") {
+    const raw = await readBody(req);
+    let parsed: { path?: unknown };
+    try {
+      parsed = JSON.parse(raw) as { path?: unknown };
+    } catch {
+      send(res, 400, "invalid json");
+      return;
+    }
+    if (typeof parsed.path !== "string") {
+      send(res, 400, "path required");
+      return;
+    }
+    try {
+      const result = await createSafeHtmlPreviewToken(workspaceRoot, parsed.path);
+      if (!result.ok) {
+        const status =
+          result.reason === "not_found"
+            ? 404
+            : result.reason === "too_large"
+              ? 413
+              : 400;
+        send(res, status, result.reason);
+        return;
+      }
+      const openUrl = `http://127.0.0.1:${opts.port}/v1/files/safe-html?t=${encodeURIComponent(result.token)}`;
+      sendJson(res, 200, { openUrl });
+    } catch (err) {
+      if (err instanceof WorkspaceEscapeError) {
+        send(res, 400, err.message);
+        return;
+      }
+      throw err;
+    }
     return;
   }
 
@@ -469,8 +876,21 @@ async function handleRequest(
       pathname,
       method: req.method ?? "GET",
       homeDir: opts.homeDir,
-      workspaceRoot: opts.workspaceRoot,
+      workspaceRootRef: opts.workspaceRootRef,
       port: opts.port,
+      busy: opts.busy,
+      reloadRuntime: opts.reloadRuntime,
+    })
+  ) {
+    return;
+  }
+
+  if (
+    await handlePluginInstallRequest(req, res, {
+      pathname,
+      method: req.method ?? "GET",
+      homeDir: opts.homeDir,
+      workspaceRoot: workspaceRoot,
       busy: opts.busy,
       reloadRuntime: opts.reloadRuntime,
     })
@@ -482,7 +902,7 @@ async function handleRequest(
     await handleKnowledgeRequest(req, res, {
       pathname,
       url,
-      workspaceRoot: opts.workspaceRoot,
+      workspaceRoot,
       ctx: runtime.ctx,
     })
   ) {
@@ -493,7 +913,7 @@ async function handleRequest(
     await handleTurnGuard(req, res, {
       pathname,
       ctx: runtime.ctx,
-      workspaceRoot: opts.workspaceRoot,
+      workspaceRoot,
       turns: opts.turns,
       busy: opts.busy,
       streamLoopResult: (sseReq, sseRes, session, work, turnId) =>
@@ -516,7 +936,7 @@ async function handleRequest(
     await handleTurnActions(req, res, {
       pathname,
       ctx: runtime.ctx,
-      workspaceRoot: opts.workspaceRoot,
+      workspaceRoot,
       turns: opts.turns,
       busy: opts.busy,
       streamLoopResult: (sseReq, sseRes, session, work, turnId) =>
@@ -621,7 +1041,7 @@ async function handleRequest(
       return;
     }
     try {
-      const result = await previewWorkspaceFile(opts.workspaceRoot, rel);
+      const result = await previewWorkspaceFile(workspaceRoot, rel);
       if (result === "not_found") {
         send(res, 404);
         return;
@@ -637,10 +1057,354 @@ async function handleRequest(
     return;
   }
 
+  if (req.method === "GET" && pathname === "/v1/files/raw") {
+    const rel = normalizeRelPath(url.searchParams.get("path"));
+    if (rel === undefined) {
+      send(res, 400);
+      return;
+    }
+    try {
+      const resolved = await resolveWorkspaceReadableFile(workspaceRoot, rel);
+      if (resolved === "not_found") {
+        send(res, 404);
+        return;
+      }
+      if (resolved.size > rawFileMaxBytes(resolved.fileName)) {
+        send(res, 413);
+        return;
+      }
+      const contentType = contentTypeForFileName(resolved.fileName);
+      const rangeHeader =
+        typeof req.headers.range === "string" ? req.headers.range : undefined;
+      const parsed = parseByteRangeHeader(rangeHeader, resolved.size);
+      if (parsed.kind === "unsatisfiable") {
+        res.writeHead(416, {
+          "Content-Type": contentType,
+          "Content-Range": `bytes */${resolved.size}`,
+          "Accept-Ranges": "bytes",
+        });
+        res.end();
+        return;
+      }
+      if (parsed.kind === "range") {
+        const length = parsed.end - parsed.start + 1;
+        res.writeHead(206, {
+          "Content-Type": contentType,
+          "Content-Length": length,
+          "Accept-Ranges": "bytes",
+          "Content-Range": `bytes ${parsed.start}-${parsed.end}/${resolved.size}`,
+          "Cache-Control": "no-store",
+        });
+        createReadStream(resolved.absPath, {
+          start: parsed.start,
+          end: parsed.end,
+        }).pipe(res);
+        return;
+      }
+      res.writeHead(200, {
+        "Content-Type": contentType,
+        "Content-Length": resolved.size,
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "no-store",
+      });
+      createReadStream(resolved.absPath).pipe(res);
+    } catch (err) {
+      if (err instanceof WorkspaceEscapeError) {
+        send(res, 400, err.message);
+        return;
+      }
+      throw err;
+    }
+    return;
+  }
+
+  if (req.method === "PUT" && pathname === "/v1/files/raw") {
+    const rel = normalizeRelPath(url.searchParams.get("path"));
+    if (rel === undefined) {
+      send(res, 400);
+      return;
+    }
+    const bytes = await readBodyBytes(req, FILE_RAW_MAX_BYTES);
+    if (bytes === "too_large") {
+      send(res, 413);
+      return;
+    }
+    try {
+      const result = await writeWorkspaceFileBytes(workspaceRoot, rel, bytes);
+      if (result === "not_found") {
+        send(res, 404);
+        return;
+      }
+      if (result === "too_large") {
+        send(res, 413);
+        return;
+      }
+      sendJson(res, 200, { ok: true });
+    } catch (err) {
+      if (err instanceof WorkspaceEscapeError) {
+        send(res, 400, err.message);
+        return;
+      }
+      throw err;
+    }
+    return;
+  }
+
+  if (req.method === "GET" && pathname === "/v1/files/markdown") {
+    const rel = normalizeRelPath(url.searchParams.get("path"));
+    if (rel === undefined) {
+      send(res, 400);
+      return;
+    }
+    try {
+      const result = await readWorkspaceFileMarkdown(workspaceRoot, rel);
+      if (result === "not_found") {
+        send(res, 404);
+        return;
+      }
+      if (result === "too_large") {
+        send(res, 413);
+        return;
+      }
+      if (result === "unsupported") {
+        send(res, 400, "unsupported");
+        return;
+      }
+      sendJson(res, 200, { path: rel, markdown: result });
+    } catch (err) {
+      if (err instanceof WorkspaceEscapeError) {
+        send(res, 400, err.message);
+        return;
+      }
+      throw err;
+    }
+    return;
+  }
+
+  if (req.method === "PUT" && pathname === "/v1/files/from-markdown") {
+    const rel = normalizeRelPath(url.searchParams.get("path"));
+    if (rel === undefined) {
+      send(res, 400);
+      return;
+    }
+    const raw = await readBody(req);
+    let parsed: { markdown?: unknown };
+    try {
+      parsed = JSON.parse(raw) as { markdown?: unknown };
+    } catch {
+      send(res, 400, "invalid json");
+      return;
+    }
+    if (typeof parsed.markdown !== "string") {
+      send(res, 400, "markdown required");
+      return;
+    }
+    try {
+      const result = await writeWorkspaceFileFromMarkdown(
+        workspaceRoot,
+        rel,
+        parsed.markdown,
+      );
+      if (result === "not_found") {
+        send(res, 404);
+        return;
+      }
+      if (result === "too_large") {
+        send(res, 413);
+        return;
+      }
+      if (result === "unsupported") {
+        send(res, 400, "unsupported");
+        return;
+      }
+      sendJson(res, 200, { ok: true });
+    } catch (err) {
+      if (err instanceof WorkspaceEscapeError) {
+        send(res, 400, err.message);
+        return;
+      }
+      if (err instanceof Error && err.message === "unreadable") {
+        send(res, 400, "unreadable");
+        return;
+      }
+      throw err;
+    }
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/v1/files/convert") {
+    const body = await readJsonObject(req);
+    if (body === "invalid") {
+      send(res, 400, "invalid json");
+      return;
+    }
+    const sourceRel = normalizeRelPath(stringField(body, "source") ?? null);
+    const outRel = normalizeRelPath(stringField(body, "out") ?? null);
+    if (sourceRel === undefined || outRel === undefined) {
+      send(res, 400);
+      return;
+    }
+    try {
+      const result = await convertWorkspaceFile(workspaceRoot, sourceRel, outRel);
+      if (result === "not_found") {
+        send(res, 404);
+        return;
+      }
+      if (result === "too_large") {
+        send(res, 413);
+        return;
+      }
+      if (result === "bad_out") {
+        send(res, 400, "bad out");
+        return;
+      }
+      if (result === "unsupported") {
+        send(res, 400, "unsupported");
+        return;
+      }
+      if (result === "unreadable") {
+        send(res, 400, "unreadable");
+        return;
+      }
+      sendJson(res, 200, {
+        ok: true,
+        source: result.source,
+        out: result.out,
+        format: result.format,
+        loss: result.loss,
+      });
+    } catch (err) {
+      if (err instanceof WorkspaceEscapeError) {
+        send(res, 400, err.message);
+        return;
+      }
+      throw err;
+    }
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/v1/files/mkdir") {
+    const body = await readJsonObject(req);
+    if (body === "invalid") {
+      send(res, 400, "invalid json");
+      return;
+    }
+    const rel = normalizeRelPath(stringField(body, "path") ?? null);
+    if (rel === undefined) {
+      send(res, 400);
+      return;
+    }
+    try {
+      sendFileMutation(res, await createWorkspaceDirectory(workspaceRoot, rel));
+    } catch (err) {
+      if (err instanceof WorkspaceEscapeError) {
+        send(res, 400, err.message);
+        return;
+      }
+      throw err;
+    }
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/v1/files/create") {
+    const body = await readJsonObject(req);
+    if (body === "invalid") {
+      send(res, 400, "invalid json");
+      return;
+    }
+    const rel = normalizeRelPath(stringField(body, "path") ?? null);
+    if (rel === undefined) {
+      send(res, 400);
+      return;
+    }
+    try {
+      sendFileMutation(res, await createWorkspaceFile(workspaceRoot, rel));
+    } catch (err) {
+      if (err instanceof WorkspaceEscapeError) {
+        send(res, 400, err.message);
+        return;
+      }
+      throw err;
+    }
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/v1/files/rename") {
+    const body = await readJsonObject(req);
+    if (body === "invalid") {
+      send(res, 400, "invalid json");
+      return;
+    }
+    const fromRel = normalizeRelPath(stringField(body, "path") ?? null);
+    const toRel = normalizeRelPath(stringField(body, "to") ?? null);
+    if (fromRel === undefined || toRel === undefined) {
+      send(res, 400);
+      return;
+    }
+    try {
+      sendFileMutation(
+        res,
+        await renameWorkspaceEntry(workspaceRoot, fromRel, toRel),
+      );
+    } catch (err) {
+      if (err instanceof WorkspaceEscapeError) {
+        send(res, 400, err.message);
+        return;
+      }
+      throw err;
+    }
+    return;
+  }
+
+  if (req.method === "DELETE" && pathname === "/v1/files") {
+    const rel = normalizeRelPath(url.searchParams.get("path"));
+    if (rel === undefined) {
+      send(res, 400);
+      return;
+    }
+    try {
+      sendFileMutation(res, await deleteWorkspaceEntry(workspaceRoot, rel));
+    } catch (err) {
+      if (err instanceof WorkspaceEscapeError) {
+        send(res, 400, err.message);
+        return;
+      }
+      throw err;
+    }
+    return;
+  }
+
+  if (req.method === "GET" && pathname === "/v1/files/sync") {
+    const raw = url.searchParams.get("generation");
+    if (raw === null || raw === "" || !/^[0-9]+$/.test(raw)) {
+      send(res, 400);
+      return;
+    }
+    const n = Number(raw);
+    const ac = new AbortController();
+    const onClose = () => {
+      ac.abort();
+    };
+    req.on("close", onClose);
+    res.on("close", onClose);
+    try {
+      const payload = await opts.fileWatch.wait(n, ac.signal);
+      if (!res.destroyed && !res.writableEnded && !res.headersSent) {
+        sendJson(res, 200, payload);
+      }
+    } catch {
+      // client gone or workspace switched
+    } finally {
+      req.off("close", onClose);
+      res.off("close", onClose);
+    }
+    return;
+  }
+
   if (req.method === "GET" && pathname === "/v1/files") {
     const rel = normalizeRelPath(url.searchParams.get("path")) ?? ".";
     try {
-      const result = await listWorkspaceFiles(opts.workspaceRoot, rel);
+      const result = await listWorkspaceFiles(workspaceRoot, rel);
       if (result === "hidden" || result === "not_found") {
         send(res, 404);
         return;
@@ -716,7 +1480,8 @@ async function handleRequest(
           session,
           text: body.text,
           images: body.images,
-          workspaceRoot: opts.workspaceRoot,
+          webSearch: body.webSearch,
+          workspaceRoot,
           channel: "host",
           signal,
           onEvent,
@@ -760,7 +1525,7 @@ async function handleRequest(
       const result = await channels.inbound("webhook", {
         text: body.text,
         sessionId: body.sessionId,
-        workspaceRoot: opts.workspaceRoot,
+        workspaceRoot,
         signal: controller.signal,
       });
       req.off("close", onClose);
@@ -789,8 +1554,11 @@ export async function startHost(opts: {
   port?: number;
 }): Promise<{ url: string; close: () => Promise<void>; runtime: Runtime }> {
   const token = loadOrCreateToken(opts.homeDir);
+  const workspaceRootRef = {
+    current: resolveWorkspaceRoot(opts.homeDir, opts.workspaceRoot),
+  };
   const runtimeRef = {
-    current: await createRuntime(opts.workspaceRoot, opts.homeDir, {
+    current: await createRuntime(workspaceRootRef.current, opts.homeDir, {
       pollChannels: true,
     }),
   };
@@ -800,19 +1568,21 @@ export async function startHost(opts: {
   const controllers = new Map<string, AbortController>();
   const turns = new Map<string, Session>();
   let listenPort = opts.port ?? 7331;
+  const fileWatch = createFileWatch({ root: workspaceRootRef.current });
 
   const reloadRuntime = async (): Promise<void> => {
     runtimeRef.current.stop();
-    runtimeRef.current = await createRuntime(opts.workspaceRoot, opts.homeDir, {
+    runtimeRef.current = await createRuntime(workspaceRootRef.current, opts.homeDir, {
       pollChannels: true,
     });
     busyRef.current = runtimeRef.current.ctx.require<Set<string>>("turnBusy");
+    fileWatch.setRoot(workspaceRootRef.current);
   };
 
   const server = createServer((req, res) => {
     void handleRequest(req, res, {
       token,
-      workspaceRoot: opts.workspaceRoot,
+      workspaceRootRef,
       homeDir: opts.homeDir,
       port: listenPort,
       runtimeRef,
@@ -820,10 +1590,11 @@ export async function startHost(opts: {
       turns,
       busy: busyRef.current,
       reloadRuntime,
+      fileWatch,
     }).catch((err: unknown) => {
       if (!res.destroyed && !res.writableEnded && !res.headersSent) {
         res.writeHead(500, { "Content-Type": "text/plain" });
-        res.end(formatHostError(err, opts.homeDir, opts.workspaceRoot));
+        res.end(formatHostError(err, opts.homeDir, workspaceRootRef.current));
         return;
       }
       if (!res.destroyed && !res.writableEnded) {
@@ -854,6 +1625,7 @@ export async function startHost(opts: {
     url: `http://127.0.0.1:${address.port}`,
     close: () =>
       new Promise<void>((resolve, reject) => {
+        fileWatch.close();
         server.closeAllConnections();
         runtimeRef.current.stop();
         server.close((err) => {

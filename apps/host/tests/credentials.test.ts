@@ -8,6 +8,7 @@ import {
   readCredentialsStore,
   writeCredentialsStore,
 } from "../src/credentials.ts";
+import { applyCredentialPatch } from "../src/settings.ts";
 
 describe("maskSecret", () => {
   it("masks short secrets as stars", () => {
@@ -35,5 +36,24 @@ describe("credentials store", () => {
   it("normalizes legacy chatApiKey into providers.chat", () => {
     const normalized = normalizeCredentialsStore({ chatApiKey: "sk-legacy" });
     expect(normalized.providers?.chat?.apiKey).toBe("sk-legacy");
+  });
+
+  it("applyCredentialPatch stores wecom fields", () => {
+    const home = mkdtempSync(join(tmpdir(), "flintloom-cred-wecom-"));
+    applyCredentialPatch(home, "wecom", {
+      appId: "ww_test",
+      apiKey: "corp-secret",
+      agentId: "1000002",
+      callbackToken: "cbtok",
+      allowedChatIds: "zhangsan,lisi",
+    });
+    const store = readCredentialsStore(home);
+    expect(store.channels?.wecom).toEqual({
+      corpId: "ww_test",
+      corpSecret: "corp-secret",
+      agentId: "1000002",
+      callbackToken: "cbtok",
+      allowedUserIds: "zhangsan,lisi",
+    });
   });
 });

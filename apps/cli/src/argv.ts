@@ -1,3 +1,5 @@
+import { parseConfigArgv } from "./config.ts";
+
 export type CliTurnCommand = {
   kind: "turn";
   workspace: string;
@@ -16,7 +18,13 @@ export type CliAcpCommand = {
   workspace: string;
 };
 
-export type CliCommand = CliTurnCommand | CliPluginAddCommand | CliAcpCommand;
+export type CliConfigCommand = import("./config.ts").CliConfigCommand;
+
+export type CliCommand =
+  | CliTurnCommand
+  | CliPluginAddCommand
+  | CliAcpCommand
+  | CliConfigCommand;
 
 export function parseCliArgv(argv: string[], cwd: string): CliCommand {
   let workspace = cwd;
@@ -36,6 +44,10 @@ export function parseCliArgv(argv: string[], cwd: string): CliCommand {
 
   if (rest[0] === "acp") {
     return { kind: "acp", workspace };
+  }
+
+  if (rest[0] === "config") {
+    return parseConfigArgv(rest, workspace);
   }
 
   if (rest[0] === "plugin") {

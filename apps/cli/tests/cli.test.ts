@@ -101,6 +101,70 @@ describe("parseCliArgv", () => {
       parseCliArgv(["plugin", "add", "--id", "x", "--id", "y", "./p"], "/cwd"),
     ).toThrow(/id/);
   });
+
+  it("parses config get and set", () => {
+    expect(parseCliArgv(["config", "get"], "/cwd")).toEqual({
+      kind: "config-get",
+      workspace: "/cwd",
+    });
+    expect(parseCliArgv(["config", "get", "chat"], "/cwd")).toEqual({
+      kind: "config-get",
+      workspace: "/cwd",
+      slotId: "chat",
+    });
+    expect(
+      parseCliArgv(["config", "set", "telegram", "apiKey", "bot-token"], "/cwd"),
+    ).toEqual({
+      kind: "config-set",
+      workspace: "/cwd",
+      slotId: "telegram",
+      field: "apiKey",
+      value: "bot-token",
+    });
+    expect(
+      parseCliArgv(
+        ["config", "set", "chat", "baseUrl", "http://127.0.0.1:8080/v1"],
+        "/cwd",
+      ),
+    ).toEqual({
+      kind: "config-set",
+      workspace: "/cwd",
+      slotId: "chat",
+      field: "baseUrl",
+      value: "http://127.0.0.1:8080/v1",
+    });
+    expect(
+      parseCliArgv(
+        ["config", "set", "wecom", "agentId", "1000002"],
+        "/cwd",
+      ),
+    ).toEqual({
+      kind: "config-set",
+      workspace: "/cwd",
+      slotId: "wecom",
+      field: "agentId",
+      value: "1000002",
+    });
+  });
+
+  it("throws for bad config argv", () => {
+    expect(() => parseCliArgv(["config"], "/cwd")).toThrow(/config/);
+    expect(() => parseCliArgv(["config", "get", "bad"], "/cwd")).toThrow(/slot/);
+    expect(() => parseCliArgv(["config", "set", "chat"], "/cwd")).toThrow(/field/);
+    expect(() =>
+      parseCliArgv(["config", "set", "chat", "badField", "x"], "/cwd"),
+    ).toThrow(/field/);
+  });
+
+  it("allows empty value to clear a credential field", () => {
+    expect(parseCliArgv(["config", "set", "chat", "apiKey"], "/cwd")).toEqual({
+      kind: "config-set",
+      workspace: "/cwd",
+      slotId: "chat",
+      field: "apiKey",
+      value: "",
+    });
+  });
 });
 
 describe("runCli", () => {
@@ -143,5 +207,25 @@ describe("runCli", () => {
     });
     expect(code).toBe(1);
     expect(stderr.join("")).toBe("path\n");
+  });
+
+  it("config set writes credentials without createRuntime", async () => {
+    const home = mkdtempSync(join(tmpdir(), "flintloom-cli-config-"));
+    const createRuntime = vi.fn();
+    const stdout: string[] = [];
+    const code = await runCli(
+      ["config", "set", "chat", "apiKey", "sk-test-key"],
+      {
+        cwd: () => "/cwd",
+        homedir: () => home,
+        createRuntime,
+        installPluginFromPath: vi.fn(),
+        stdout: { write: (c) => stdout.push(c) },
+        stderr: { write: () => {} },
+      },
+    );
+    expect(code).toBe(0);
+    expect(stdout.join("")).toBe("ok chat.apiKey\n");
+    expect(createRuntime).not.toHaveBeenCalled();
   });
 });

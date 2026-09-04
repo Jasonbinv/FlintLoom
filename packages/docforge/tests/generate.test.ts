@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import JSZip from "jszip";
 import { parse } from "../src/parse.ts";
 import {
   buildDocument,
@@ -81,6 +82,33 @@ it("xlsx and pptx round-trip Hello through parse", async () => {
   await generateDocument(source, pptxPath);
   expect(await parse(xlsxPath)).toContain("Hello");
   expect(await parse(pptxPath)).toContain("Hello");
+});
+
+it("pptx is an Office package PowerPoint can open", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "flintloom-gen-pptx-pkg-"));
+  const source = join(dir, "hello.md");
+  writeFileSync(source, helloMd);
+  const pptxPath = join(dir, "hello.pptx");
+  await generateDocument(source, pptxPath);
+  const zip = await JSZip.loadAsync(readFileSync(pptxPath));
+  const names = Object.keys(zip.files);
+  expect(names).toContain("_rels/.rels");
+  expect(names).toContain("ppt/presentation.xml");
+  expect(names).toContain("ppt/_rels/presentation.xml.rels");
+  expect(names).toContain("ppt/slideMasters/slideMaster1.xml");
+  expect(names).toContain("ppt/slideLayouts/slideLayout1.xml");
+  expect(names).toContain("ppt/theme/theme1.xml");
+  expect(names).toContain("ppt/slides/_rels/slide1.xml.rels");
+  const rels = await zip.file("_rels/.rels")!.async("string");
+  expect(rels).toContain("ppt/presentation.xml");
+  const presentation = await zip.file("ppt/presentation.xml")!.async("string");
+  expect(presentation).toContain("sldId");
+  const slide = await zip.file("ppt/slides/slide1.xml")!.async("string");
+  expect(slide).toContain("nvGrpSpPr");
+  expect(slide).toContain("Hello");
+  expect(slide).toContain('srgbClr val="FFFFFF"');
+  expect(slide).toContain('srgbClr val="1A1A2E"');
+  expect(slide).not.toContain("<p:ph");
 });
 
 it("json blocks source writes xlsx with Hello", async () => {
