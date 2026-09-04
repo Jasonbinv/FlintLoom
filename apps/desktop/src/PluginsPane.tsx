@@ -28,14 +28,24 @@ function emptyNewDraft(): NewDraft {
 function draftFrom(server: McpServerSnapshot): Draft {
   return {
     command: server.command,
-    args: server.args.join(" "),
+    args: JSON.stringify(server.args),
     env: server.env.join(", "),
   };
 }
 
 function parseArgs(text: string): string[] {
   const trimmed = text.trim();
-  return trimmed.length === 0 ? [] : trimmed.split(/\s+/);
+  if (trimmed.length === 0) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    throw new Error("args");
+  }
+  if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== "string")) {
+    throw new Error("args");
+  }
+  return parsed;
 }
 
 function parseEnv(text: string): string[] {
@@ -164,10 +174,17 @@ export function PluginsPane() {
   async function onSave(id: string) {
     const draft = drafts[id];
     if (draft === undefined) return;
+    let args: string[];
+    try {
+      args = parseArgs(draft.args);
+    } catch (err) {
+      setMessage(mcpWriteError(err));
+      return;
+    }
     await runWrite(() =>
       updateMcpServer(id, {
         command: draft.command,
-        args: parseArgs(draft.args),
+        args,
         env: parseEnv(draft.env),
       }),
     );
@@ -177,11 +194,18 @@ export function PluginsPane() {
     const id = newDraft.id.trim();
     const command = newDraft.command.trim();
     if (id.length === 0 || command.length === 0) return;
+    let args: string[];
+    try {
+      args = parseArgs(newDraft.args);
+    } catch (err) {
+      setMessage(mcpWriteError(err));
+      return;
+    }
     await runWrite(async () => {
       await createMcpServer({
         id,
         command,
-        args: parseArgs(newDraft.args),
+        args,
         env: parseEnv(newDraft.env),
       });
       setAdding(false);
@@ -201,7 +225,17 @@ export function PluginsPane() {
   }
 
   if (error) {
-    return <p className="settings-empty">host unreachable</p>;
+    return (
+      <div className="settings-pane-inner">
+        <div className="settings-card-actions">
+          <button type="button" className="btn-ghost" disabled={saving} onClick={() => void onReload()}>
+            重载 host
+          </button>
+        </div>
+        {message ? <p className="settings-message">{message}</p> : null}
+        <p className="settings-empty">host unreachable</p>
+      </div>
+    );
   }
   if (servers === undefined || plugins === undefined) {
     return <p className="settings-empty">加载中…</p>;
@@ -349,7 +383,7 @@ export function PluginsPane() {
                 <>
                   <p className="settings-card-hint">
                     <code>{server.command}</code>
-                    {server.args.length > 0 ? ` ${server.args.join(" ")}` : ""}
+                    {server.args.length > 0 ? ` ${JSON.stringify(server.args)}` : ""}
                   </p>
                   <div className="settings-card-actions">
                     <button

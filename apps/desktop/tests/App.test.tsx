@@ -2574,6 +2574,79 @@ describe("App", () => {
     expect(document.body.textContent).not.toContain("联网");
   });
 
+  it("round-trips MCP args with spaces when saving from Plugins page", async () => {
+    const spacedArg = "C:\\Program Files\\server.js";
+    installFetch({
+      mcpServers: new Response(
+        JSON.stringify({
+          servers: [
+            {
+              id: "spaced",
+              command: "node",
+              args: [spacedArg],
+              env: [],
+              enabled: true,
+              source: "workspace",
+              writable: true,
+              status: "loaded",
+              tools: [],
+              error: null,
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    await mountApp();
+    const pluginsTab = findNavTab("插件");
+    if (!pluginsTab) throw new Error("no 插件 tab");
+    await act(async () => {
+      pluginsTab.click();
+    });
+    await waitForText("spaced");
+    const argsLabel = Array.from(document.querySelectorAll("label")).find((el) =>
+      el.textContent?.trim().startsWith("args"),
+    );
+    const argsInput = argsLabel?.querySelector("input") as HTMLInputElement | undefined;
+    if (!argsInput) throw new Error("no args input");
+    expect(JSON.parse(argsInput.value)).toEqual([spacedArg]);
+    const save = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "保存",
+    ) as HTMLButtonElement | undefined;
+    if (!save) throw new Error("no 保存 button");
+    await act(async () => {
+      save.click();
+    });
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const putCall = fetchMock.mock.calls.find(([input, init]) => {
+      const url = requestUrl(input as RequestInfo | URL);
+      return (
+        url.includes("/v1/mcp-servers/") &&
+        (init as RequestInit | undefined)?.method === "PUT"
+      );
+    });
+    expect(putCall).toBeTruthy();
+    const body = JSON.parse(String((putCall![1] as RequestInit).body)) as {
+      args: string[];
+    };
+    expect(body.args).toEqual([spacedArg]);
+  });
+
+  it("keeps reload host when MCP fetch fails on Plugins page", async () => {
+    installFetch({
+      mcpServers: new Error("boom"),
+    });
+    await mountApp();
+    const pluginsTab = findNavTab("插件");
+    if (!pluginsTab) throw new Error("no 插件 tab");
+    await act(async () => {
+      pluginsTab.click();
+    });
+    await waitForText("host unreachable");
+    expect(document.body.textContent).toContain("host unreachable");
+    expect(document.body.textContent).toContain("重载 host");
+  });
+
   it("shows model kinds on Models page", async () => {
     installFetch({
       models: new Response(
