@@ -41,3 +41,11 @@ export {
   installPluginFromPath,
   type InstallPluginFromPathInput,
 } from "./install-plugin.ts";
+export { replaceYmlAtomic } from "./yaml-atomic.ts";
+export {
+  listMcpServerDeclarations,
+  upsertWorkspaceMcpServer,
+  deleteWorkspaceMcpServer,
+  setWorkspaceMcpEnabled,
+  type McpServerDeclaration,
+} from "./mcp-servers-write.ts";

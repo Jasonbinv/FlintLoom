@@ -8,13 +8,13 @@ import {
   renameSync,
   rmSync,
   statSync,
-  writeFileSync,
 } from "node:fs";
 import { basename, join } from "node:path";
 import { isSeq, parseDocument } from "yaml";
 import { unwrapPlugin } from "./apply-config.ts";
 import { loadConfig } from "./config.ts";
 import { defaultImport, isPluginId } from "./plugin-entry.ts";
+import { replaceYmlAtomic } from "./yaml-atomic.ts";
 
 export type InstallPluginFromPathInput = {
   workspaceRoot: string;
@@ -37,34 +37,6 @@ function realpathOrThrowPath(p: string): string {
 
 function rmIfExists(p: string): void {
   rmSync(p, { recursive: true, force: true });
-}
-
-function replaceYmlAtomic(ymlPath: string, dumped: string): void {
-  const hex = hex8();
-  const tmp = `${ymlPath}.${hex}.tmp`;
-  const bak = `${ymlPath}.bak-${hex}`;
-  writeFileSync(tmp, dumped);
-  try {
-    renameSync(ymlPath, bak);
-    try {
-      renameSync(tmp, ymlPath);
-    } catch (err) {
-      try {
-        renameSync(bak, ymlPath);
-      } catch {
-        // keep bak for recovery; still throw original
-      }
-      throw err;
-    }
-  } catch (err) {
-    rmIfExists(tmp);
-    throw err;
-  }
-  try {
-    rmIfExists(bak);
-  } catch {
-    // best-effort after yml replace succeeded
-  }
 }
 
 export async function installPluginFromPath(
