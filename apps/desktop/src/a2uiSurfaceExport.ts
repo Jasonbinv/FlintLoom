@@ -9,7 +9,8 @@ export type A2uiExportSection =
       values: number[];
       yLabels?: string[];
       matrix?: number[][];
-    };
+    }
+  | { kind: "infographic"; componentId: string; title: string; outline: string };
 
 const LAYOUT_COMPONENTS = new Set(["Column", "Row", "Card", "List", "Tabs", "Modal"]);
 
@@ -373,6 +374,23 @@ function walkExportSections(
     return sections;
   }
 
+  if (kind === "Infographic") {
+    const syntax = typeof comp.syntax === "string" ? comp.syntax : "";
+    const titleMatch = syntax.match(/^\s*title\s+(.+)$/m);
+    const labels = [...syntax.matchAll(/^\s*- label\s+(.+)$/gm)].map((m) => m[1]!.trim());
+    const title =
+      (titleMatch?.[1] ?? "").trim() ||
+      labels[0] ||
+      String(comp.title ?? "").trim() ||
+      "信息图";
+    const outline = labels
+      .filter((label) => label && label !== title)
+      .map((label) => `- ${label}`)
+      .join("\n");
+    sections.push({ kind: "infographic", componentId, title, outline });
+    return sections;
+  }
+
   for (const childId of childIdsOf(comp)) {
     sections.push(...walkExportSections(childId, map, visited, model));
   }
@@ -429,6 +447,18 @@ export function buildA2uiSurfaceMarkdown(
     if (section.kind === "datatable") {
       const table = markdownTable(section.headers, section.rows);
       if (table) parts.push(section.title ? `### ${section.title}\n\n${table}` : table);
+      continue;
+    }
+    if (section.kind === "infographic") {
+      const png = chartPngByComponentId[section.componentId];
+      const heading = `### ${section.title}`;
+      const bits = [heading];
+      if (includeChartImages && png) bits.push(`![${section.title}](${png})`);
+      else if (section.outline) bits.push(section.outline);
+      if (!includeChartImages && chartVisualFootnote) {
+        bits.push(chartVisualFootnoteMarkdown(section.title));
+      }
+      parts.push(bits.filter(Boolean).join("\n\n"));
       continue;
     }
     const dataTable = chartSectionToMarkdown(section);
@@ -694,6 +724,19 @@ function buildA2uiSurfaceHtmlParts(
       if (table) parts.push([heading, markdownToHtmlForA2uiExport(table, wordPaste)].filter(Boolean).join("\n"));
       continue;
     }
+    if (section.kind === "infographic") {
+      const heading = section.title ? `<h3>${escapeHtml(section.title)}</h3>` : "";
+      const figure = chartFigureHtml(
+        chartPngByComponentId[section.componentId],
+        section.title,
+        wordPaste,
+      );
+      const outline = section.outline
+        ? markdownToHtmlForA2uiExport(section.outline, wordPaste)
+        : "";
+      parts.push([heading, figure, outline].filter(Boolean).join("\n"));
+      continue;
+    }
     const heading = section.title ? `<h3>${escapeHtml(section.title)}</h3>` : "";
     const table = markdownToHtmlForA2uiExport(
       chartSectionToMarkdown({ ...section, title: "" }),
@@ -782,9 +825,16 @@ export function suggestA2uiExportFilename(
 ): string {
   const sections = collectA2uiExportSections(messages, model);
   for (const section of sections) {
-    if (section.kind !== "markdown") continue;
-    const heading = section.content.match(/^\s{0,3}#{1,6}\s+(.+?)\s*$/m);
-    const line = (heading?.[1] ?? section.content.split("\n").find((item) => item.trim()) ?? "").trim();
+    const line =
+      section.kind === "markdown"
+        ? (
+            section.content.match(/^\s{0,3}#{1,6}\s+(.+?)\s*$/m)?.[1] ??
+            section.content.split("\n").find((item) => item.trim()) ??
+            ""
+          ).trim()
+        : section.kind === "infographic"
+          ? section.title.trim()
+          : "";
     if (!line) continue;
     const slug = line
       .replace(/^#+\s+/, "")

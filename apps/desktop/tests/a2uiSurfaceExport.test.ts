@@ -185,6 +185,48 @@ describe("a2uiSurfaceExport", () => {
     expect(html).toContain("<li>增长</li>");
   });
 
+  it("exports infographic title and outline instead of an empty file", () => {
+    const messages = [
+      {
+        version: "v0.9" as const,
+        createSurface: { surfaceId: "ig", catalogId: "flintloom:a2ui:core" },
+      },
+      {
+        version: "v0.9" as const,
+        updateComponents: {
+          surfaceId: "ig",
+          components: [
+            {
+              id: "root",
+              component: "Infographic",
+              syntax: [
+                "infographic list-column-simple-vertical-arrow",
+                "data",
+                "  title AI 学习成长路径图",
+                "  lists",
+                "    - label 数学基础",
+                "    - label 编程与数据科学",
+              ].join("\n"),
+            },
+          ],
+        },
+      },
+    ];
+    expect(collectA2uiExportSections(messages).map((s) => s.kind)).toEqual(["infographic"]);
+    const markdown = buildA2uiSurfaceMarkdown(messages);
+    expect(markdown).toContain("### AI 学习成长路径图");
+    expect(markdown).toContain("- 数学基础");
+    expect(markdown.trim()).not.toBe("");
+    const html = buildA2uiSurfaceHtmlDocument(
+      messages,
+      { root: "data:image/png;base64,abc123" },
+      "A2UI 报告",
+    );
+    expect(html).toContain("AI 学习成长路径图");
+    expect(html).toContain("data:image/png;base64,abc123");
+    expect(suggestA2uiExportFilename(messages, "html")).toBe("AI-学习成长路径图.html");
+  });
+
   it("captures a chart visual from live svg when canvas png is unavailable", async () => {
     const host = document.createElement("div");
     host.innerHTML =
