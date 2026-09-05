@@ -70,8 +70,8 @@ function cartesianSvg(
   const height = 180;
   const padLeft = 36;
   const padRight = 12;
-  const padTop = 12;
-  const padBottom = 28;
+  const padTop = 20;
+  const padBottom = 36;
   const plotW = width - padLeft - padRight;
   const plotH = height - padTop - padBottom;
   const max = Math.max(...values, 1);
@@ -97,7 +97,7 @@ function cartesianSvg(
         `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" fill="${PALETTE[i % PALETTE.length]}" />`,
       );
       parts.push(
-        `<text x="${(x + barW / 2).toFixed(1)}" y="${height - 6}" fill="var(--text-muted)" text-anchor="middle" font-size="10">${escapeXml(labels[i] ?? "")}</text>`,
+        `<text x="${(x + barW / 2).toFixed(1)}" y="${height - 10}" fill="var(--text-muted)" text-anchor="middle" font-size="10">${escapeXml(labels[i] ?? "")}</text>`,
       );
     }
   } else {
@@ -126,7 +126,7 @@ function cartesianSvg(
         `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${kind === "scatter" ? 4 : 3}" fill="${kind === "scatter" ? PALETTE[i % PALETTE.length] : "var(--accent-strong)"}" />`,
       );
       parts.push(
-        `<text x="${p.x.toFixed(1)}" y="${height - 6}" fill="var(--text-muted)" text-anchor="middle" font-size="10">${escapeXml(labels[i] ?? "")}</text>`,
+        `<text x="${p.x.toFixed(1)}" y="${height - 10}" fill="var(--text-muted)" text-anchor="middle" font-size="10">${escapeXml(labels[i] ?? "")}</text>`,
       );
     }
   }
@@ -221,7 +221,7 @@ export function heatmapSvg(
   const padLeft = 56;
   const padTop = 10;
   const padRight = 12;
-  const padBottom = 28;
+  const padBottom = 36;
   const cols = Math.max(xLabels.length, 1);
   const rows = Math.max(yLabels.length, 1);
   const width = padLeft + cols * cellW + padRight;
@@ -247,7 +247,7 @@ export function heatmapSvg(
   for (let c = 0; c < xLabels.length; c++) {
     const x = padLeft + c * cellW + (cellW - 2) / 2;
     parts.push(
-      `<text x="${x}" y="${height - 8}" fill="var(--text-muted)" text-anchor="middle" font-size="10">${escapeXml(xLabels[c] ?? "")}</text>`,
+      `<text x="${x}" y="${height - 10}" fill="var(--text-muted)" text-anchor="middle" font-size="10">${escapeXml(xLabels[c] ?? "")}</text>`,
     );
   }
   for (let r = 0; r < yLabels.length; r++) {

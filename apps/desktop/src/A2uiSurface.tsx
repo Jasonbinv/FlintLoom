@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode 
 import { chartSvg, heatmapSvg, parseChartKind, type ChartKind } from "./a2ui-chart.tsx";
 import { A2uiSurfaceExportToolbar } from "./A2uiSurfaceExportToolbar.tsx";
 import { InfographicView } from "./InfographicView.tsx";
+import { renderMarkdownHtml } from "./markdownPreview.ts";
 import type { InfographicDocument } from "@flintloom/infographic";
 
 type A2uiSurfaceProps = {
@@ -16,6 +17,7 @@ type Comp = {
   children?: unknown;
   child?: unknown;
   text?: unknown;
+  markdown?: unknown;
   value?: unknown;
   action?: unknown;
   options?: unknown;
@@ -26,6 +28,8 @@ type Comp = {
   values?: unknown;
   kind?: unknown;
   type?: unknown;
+  title?: unknown;
+  variant?: unknown;
   xLabels?: unknown;
   yLabels?: unknown;
   document?: unknown;
@@ -127,6 +131,28 @@ function boundText(text: unknown, model: unknown): string {
   if (typeof value === "string") return value;
   if (value == null) return "";
   return String(value);
+}
+
+function richTextSource(comp: Comp, model: unknown): string {
+  const raw = boundText(comp.markdown ?? comp.text, model);
+  if (!raw.trim()) return "";
+  const variant = String(comp.variant || "").toLowerCase();
+  if (/^h[1-6]$/.test(variant) && !/^\s{0,3}#{1,6}\s/.test(raw)) {
+    const level = Math.min(6, Math.max(1, Number.parseInt(variant.slice(1), 10) || 4));
+    return `${"#".repeat(level)} ${raw.trim()}`;
+  }
+  return raw;
+}
+
+function renderRichText(comp: Comp, model: unknown): ReactNode {
+  const source = richTextSource(comp, model);
+  if (!source) return null;
+  return (
+    <div
+      className="a2ui-md"
+      dangerouslySetInnerHTML={{ __html: renderMarkdownHtml(source) }}
+    />
+  );
 }
 
 function pickerSelected(comp: Comp, model: unknown): string {
@@ -410,9 +436,8 @@ function renderComp(
       );
     }
     case "Text":
-      return <span>{boundText(comp.text, model)}</span>;
     case "Markdown":
-      return <pre>{boundText(comp.text, model)}</pre>;
+      return renderRichText(comp, model);
     case "DataTable": {
       const table = resolveTable(comp, model);
       if (!table) return null;
@@ -442,18 +467,22 @@ function renderComp(
       if (!chart) {
         return <p className="a2ui-fallback">图表数据无法显示</p>;
       }
+      const title = boundText(comp.title, model).trim();
       const html =
         chart.kind === "heatmap"
           ? heatmapSvg(chart.xLabels, chart.yLabels, chart.values)
           : chartSvg(chart.labels, chart.values, chart.kind);
       return (
-        <div
-          className="a2ui-chart"
-          data-a2ui-id={comp.id}
-          dangerouslySetInnerHTML={{
-            __html: html,
-          }}
-        />
+        <figure className="a2ui-chart-block">
+          {title ? <figcaption className="a2ui-chart-title">{title}</figcaption> : null}
+          <div
+            className="a2ui-chart"
+            data-a2ui-id={comp.id}
+            dangerouslySetInnerHTML={{
+              __html: html,
+            }}
+          />
+        </figure>
       );
     }
     case "Infographic": {
