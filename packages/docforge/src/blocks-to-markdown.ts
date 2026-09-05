@@ -29,6 +29,10 @@ export function blocksToMarkdown(blocks: Block[]): string {
         lines.push("```");
         lines.push("");
         break;
+      case "image":
+        lines.push(`![${block.alt}](${block.src})`);
+        lines.push("");
+        break;
       case "table":
         lines.push(`| ${block.headers.join(" | ")} |`);
         lines.push(`| ${block.headers.map(() => "---").join(" | ")} |`);

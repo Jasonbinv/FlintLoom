@@ -40,6 +40,8 @@ export async function renderPdf(blocks: Block[], fontPath: string): Promise<Buff
             doc.fontSize(11).text(block.text);
             doc.moveDown(0.4);
             break;
+          case "image":
+            break;
           case "table": {
             doc.fontSize(12).text(block.headers.join(" | "));
             for (const row of block.rows) {

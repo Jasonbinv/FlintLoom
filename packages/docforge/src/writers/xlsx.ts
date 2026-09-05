@@ -25,6 +25,8 @@ export async function renderXlsx(blocks: Block[]): Promise<Buffer> {
         sheet.getRow(row).getCell(1).value = block.text;
         row += 1;
         break;
+      case "image":
+        break;
       case "table":
         const headerRow = sheet.getRow(row);
         block.headers.forEach((header, index) => {

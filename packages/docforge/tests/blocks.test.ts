@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseBlocks } from "../src/blocks.ts";
 
 describe("parseBlocks", () => {
-  it("keeps headings lists tables and skips images", () => {
+  it("keeps headings lists tables and image blocks", () => {
     const blocks = parseBlocks(
       [
         "# Hello",
@@ -44,6 +44,16 @@ describe("parseBlocks", () => {
     expect(blocks.some((b) => b.type === "paragraph" && b.text.includes("skip"))).toBe(
       false,
     );
+    expect(blocks).toContainEqual({ type: "image", src: "x.png", alt: "skip" });
+  });
+
+  it("parses data-uri images as image blocks", () => {
+    const blocks = parseBlocks("![月度趋势](data:image/png;base64,abc123)");
+    expect(blocks).toContainEqual({
+      type: "image",
+      src: "data:image/png;base64,abc123",
+      alt: "月度趋势",
+    });
   });
 
   it("falls back to href for empty-label links", () => {

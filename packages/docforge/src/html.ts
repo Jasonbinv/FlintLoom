@@ -27,6 +27,8 @@ export function renderHtml(blocks: Block[]): string {
         }
         case "code":
           return `<pre>${escapeHtml(block.text)}</pre>`;
+        case "image":
+          return "";
         case "table": {
           const head = `<tr>${block.headers
             .map((h) => `<th>${escapeHtml(h)}</th>`)

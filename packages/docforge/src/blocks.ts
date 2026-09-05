@@ -41,6 +41,22 @@ function flattenInline(tokens: Token[] | undefined): string {
   return out;
 }
 
+function extractImages(tokens: Token[] | undefined): { src: string; alt: string }[] {
+  const out: { src: string; alt: string }[] = [];
+  if (!tokens) return out;
+  for (const token of tokens) {
+    if (token.type === "image") {
+      const src = String(token.href || "").trim();
+      if (src) out.push({ src, alt: String(token.text || "").trim() });
+      continue;
+    }
+    if ("tokens" in token && Array.isArray(token.tokens)) {
+      out.push(...extractImages(token.tokens));
+    }
+  }
+  return out;
+}
+
 function listItems(items: Tokens.ListItem[]): string[] {
   const out: string[] = [];
   for (const item of items) {
@@ -82,6 +98,9 @@ function walk(tokens: Token[]): Block[] {
         const text = flattenInline(token.tokens).trim();
         if (text.length > 0) {
           blocks.push({ type: "paragraph", text });
+        }
+        for (const image of extractImages(token.tokens)) {
+          blocks.push({ type: "image", src: image.src, alt: image.alt });
         }
         break;
       }

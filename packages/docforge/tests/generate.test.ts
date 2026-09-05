@@ -49,6 +49,70 @@ describe("buildDocument md/html", () => {
     expect(html).not.toMatch(/<img/i);
     expect(html).not.toMatch(/<script/i);
   });
+
+  it("embeds png data-uri images in docx", async () => {
+    const png =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const buf = await buildDocument(
+      "docx",
+      `# Hello\n\n![chart](data:image/png;base64,${png})\n`,
+    );
+    const zip = await JSZip.loadAsync(buf);
+    const media = Object.keys(zip.files).filter((name) => name.startsWith("word/media/"));
+    expect(media.length).toBeGreaterThan(0);
+  });
+
+  it("centers tables and stretches them to page width", async () => {
+    const buf = await buildDocument(
+      "docx",
+      "| 类别 | 数值 |\n| --- | --- |\n| 1月 | 120 |\n",
+    );
+    const zip = await JSZip.loadAsync(buf);
+    const xml = await zip.file("word/document.xml")!.async("string");
+    expect(xml).toMatch(/w:jc[^>]*w:val="center"/);
+    expect(xml).toMatch(/w:tblW[^>]*w:type="pct"/);
+    expect(xml).toMatch(/w:tblW[^>]*w:w="100%"/);
+  });
+
+  it("keeps title emoji on a color-emoji font without the body text color", async () => {
+    const buf = await buildDocument("docx", "# 📊 2024年上半年业务分析报告\n");
+    const zip = await JSZip.loadAsync(buf);
+    const xml = await zip.file("word/document.xml")!.async("string");
+    expect(xml).toContain("📊");
+    expect(xml).toMatch(/w:rFonts[^>]*w:ascii="Segoe UI Emoji"/);
+    const emojiRun = (xml.match(/<w:r\b[\s\S]*?<\/w:r>/g) ?? []).find((run) => run.includes("📊"));
+    expect(emojiRun).toBeTruthy();
+    expect(emojiRun).not.toMatch(/w:color[^>]*w:val="111827"/);
+  });
+
+  it("uses dark readable table text and header shading", async () => {
+    const buf = await buildDocument(
+      "docx",
+      "| 类别 | 数值 |\n| --- | --- |\n| 1月 | 120 |\n",
+    );
+    const zip = await JSZip.loadAsync(buf);
+    const xml = await zip.file("word/document.xml")!.async("string");
+    expect(xml).toMatch(/w:color[^>]*w:val="111827"/);
+    expect(xml).toMatch(/w:shd[^>]*w:fill="F3F4F6"/);
+    expect(xml).toMatch(/w:sz[^>]*w:val="22"/);
+  });
+
+  it("keeps space between tables and images in Word output", async () => {
+    const png =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const buf = await buildDocument(
+      "docx",
+      ["| 类别 | 数值 |", "| --- | --- |", "| 1月 | 120 |", "", `![chart](data:image/png;base64,${png})`].join(
+        "\n",
+      ),
+    );
+    const zip = await JSZip.loadAsync(buf);
+    const xml = await zip.file("word/document.xml")!.async("string");
+    expect(xml).toMatch(/<\/w:tbl><w:p>/);
+    expect(xml).toMatch(/w:spacing[^>]*w:before="240"/);
+    expect(xml).toMatch(/w:spacing[^>]*w:after="240"/);
+    expect(xml).toMatch(/w:jc[^>]*w:val="center"/);
+  });
 });
 
 describe("copyMarkdown", () => {

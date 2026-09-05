@@ -29,6 +29,8 @@ function blockLines(block: Block): string[] {
         block.headers.join(" | "),
         ...block.rows.map((row) => row.join(" | ")),
       ];
+    case "image":
+      return [];
   }
 }
 
