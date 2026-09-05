@@ -7,6 +7,7 @@ import {
   buildA2uiSurfaceMarkdown,
   captureA2uiVisualPngs,
   collectA2uiExportSections,
+  markdownForWordConvert,
   markdownToHtmlForA2uiExport,
   normalizeEmojiKeycapListsForWord,
   suggestA2uiExportFilename,
@@ -168,6 +169,21 @@ describe("a2uiSurfaceExport", () => {
     expect(html).toContain("<!--StartFragment-->");
   });
 
+  it("declares utf-8 so Word does not open chinese html as gbk", () => {
+    const html = wrapHtmlForWordClipboard("<p>数学基础</p>");
+    expect(html).toContain('http-equiv="Content-Type"');
+    expect(html).toContain("text/html; charset=utf-8");
+    expect(html).toContain("数学基础");
+  });
+
+  it("drops oversized data-uri images so word convert keeps chinese text", () => {
+    const huge = "A".repeat(200_000);
+    const markdown = `# AI 学习路径\n\n![图](data:image/png;base64,${huge})\n\n- 数学基础\n`;
+    const out = markdownForWordConvert(markdown);
+    expect(out).toContain("数学基础");
+    expect(out).not.toContain("data:image");
+  });
+
   it("turns keycap numbers into ordered lists for Word", () => {
     expect(normalizeEmojiKeycapListsForWord("1⃣ 销售额增长")).toBe("1. 销售额增长");
   });
@@ -217,6 +233,13 @@ describe("a2uiSurfaceExport", () => {
     expect(markdown).toContain("### AI 学习成长路径图");
     expect(markdown).toContain("- 数学基础");
     expect(markdown.trim()).not.toBe("");
+    const withImage = buildA2uiSurfaceMarkdown(
+      messages,
+      { root: "path-map.png" },
+      { includeChartImages: true, chartVisualFootnote: false },
+    );
+    expect(withImage).toContain("![AI 学习成长路径图](path-map.png)");
+    expect(withImage).toContain("- 数学基础");
     const html = buildA2uiSurfaceHtmlDocument(
       messages,
       { root: "data:image/png;base64,abc123" },

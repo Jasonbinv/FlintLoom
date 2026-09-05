@@ -454,7 +454,7 @@ export function buildA2uiSurfaceMarkdown(
       const heading = `### ${section.title}`;
       const bits = [heading];
       if (includeChartImages && png) bits.push(`![${section.title}](${png})`);
-      else if (section.outline) bits.push(section.outline);
+      if (section.outline) bits.push(section.outline);
       if (!includeChartImages && chartVisualFootnote) {
         bits.push(chartVisualFootnoteMarkdown(section.title));
       }
@@ -789,12 +789,20 @@ ${body}
 </html>`;
 }
 
+const WORD_CONVERT_SAFE_CHARS = 180_000;
+
+export function markdownForWordConvert(markdown: string): string {
+  if (markdown.length <= WORD_CONVERT_SAFE_CHARS) return markdown;
+  return markdown.replace(/!\[[^\]]*]\(data:image\/[^)]+\)/g, "").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 export function wrapHtmlForWordClipboard(bodyHtml: string): string {
   return `<!DOCTYPE html>
 <html xmlns:o="urn:schemas-microsoft-com:office:office"
       xmlns:w="urn:schemas-microsoft-com:office:word"
       xmlns="http://www.w3.org/1999/xhtml">
 <head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
 <meta charset="utf-8"/>
 <meta name="ProgId" content="Word.Document"/>
 <meta name="Generator" content="FlintLoom A2UI"/>
@@ -938,7 +946,8 @@ export async function saveTextFileWithPicker(
   content: string,
   mimeType: string,
 ): Promise<SaveTextFileOutcome> {
-  return saveBlobFileWithPicker(filename, new Blob([content], { type: `${mimeType};charset=utf-8` }), mimeType);
+  const withBom = filename.toLowerCase().endsWith(".doc") ? `\uFEFF${content}` : content;
+  return saveBlobFileWithPicker(filename, new Blob([withBom], { type: `${mimeType};charset=utf-8` }), mimeType);
 }
 
 export async function saveBinaryFileWithPicker(
@@ -1006,7 +1015,7 @@ function svgToPngDataUrl(svg: SVGSVGElement): Promise<string | undefined> {
       const xml = serializeSvgForExport(svg);
       const href = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(xml)}`;
       const image = new Image();
-      const timer = window.setTimeout(() => finish(undefined), 2000);
+      const timer = window.setTimeout(() => finish(undefined), 8000);
       image.onload = () => {
         window.clearTimeout(timer);
         try {
@@ -1046,6 +1055,15 @@ function shouldRasterizeSvgToPng(): boolean {
   return typeof navigator !== "undefined" && !/jsdom/i.test(navigator.userAgent);
 }
 
+function canvasToPngDataUrl(canvas: HTMLCanvasElement): string | undefined {
+  try {
+    const png = canvas.toDataURL("image/png");
+    return /^data:image\/png;/i.test(png) ? png : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function captureA2uiVisualPngs(
   host: HTMLElement | null,
 ): Promise<Record<string, string>> {
@@ -1055,6 +1073,14 @@ export async function captureA2uiVisualPngs(
   for (const node of nodes) {
     const id = node.getAttribute("data-a2ui-id");
     if (!id) continue;
+    const canvas = node.querySelector("canvas");
+    if (canvas instanceof HTMLCanvasElement) {
+      const png = canvasToPngDataUrl(canvas);
+      if (png) {
+        out[id] = png;
+        continue;
+      }
+    }
     const svg = node.querySelector("svg");
     if (!svg || svg.tagName.toLowerCase() !== "svg") continue;
     const el = svg as unknown as SVGSVGElement;

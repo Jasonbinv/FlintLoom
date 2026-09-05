@@ -2,6 +2,7 @@ import { useCallback, useState, type RefObject } from "react";
 import {
   convertWorkspaceFile,
   fetchFileBytes,
+  fileNameOf,
   writeNewWorkspaceFile,
 } from "./files.ts";
 import {
@@ -10,6 +11,7 @@ import {
   buildA2uiSurfaceMarkdown,
   captureA2uiVisualPngs,
   copyDualFormatToClipboard,
+  markdownForWordConvert,
   normalizeEmojiKeycapListsForWord,
   saveBinaryFileWithPicker,
   saveTextFileWithPicker,
@@ -24,6 +26,33 @@ type Props = {
 };
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+function blobFromRasterDataUri(src: string): { blob: Blob; ext: "png" | "jpg" } | undefined {
+  const match = src.match(/^data:image\/(png|jpeg|jpg);base64,([A-Za-z0-9+/=\s]+)$/i);
+  if (!match) return undefined;
+  const raw = match[1]!.toLowerCase();
+  const ext = raw === "jpeg" || raw === "jpg" ? "jpg" : "png";
+  const binary = atob(match[2]!.replace(/\s+/g, ""));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return { blob: new Blob([bytes], { type: ext === "jpg" ? "image/jpeg" : "image/png" }), ext };
+}
+
+async function writeExportVisuals(
+  stem: string,
+  visuals: Record<string, string>,
+): Promise<Record<string, string>> {
+  const refs: Record<string, string> = {};
+  let n = 0;
+  for (const [id, src] of Object.entries(visuals)) {
+    const parsed = blobFromRasterDataUri(src);
+    if (!parsed) continue;
+    n += 1;
+    const written = await writeNewWorkspaceFile(`exports/${stem}-v${n}.${parsed.ext}`, parsed.blob);
+    refs[id] = fileNameOf(written);
+  }
+  return refs;
+}
 
 export function A2uiSurfaceExportToolbar({ messages, model, hostRef }: Props) {
   const [copied, setCopied] = useState(false);
@@ -116,14 +145,12 @@ export function A2uiSurfaceExportToolbar({ messages, model, hostRef }: Props) {
     setStatus(undefined);
     try {
       const chartPngs = await captureA2uiVisualPngs(hostRef.current);
-      const rasterPngs: Record<string, string> = {};
-      for (const [id, src] of Object.entries(chartPngs)) {
-        if (/^data:image\/(png|jpe?g);/i.test(src)) rasterPngs[id] = src;
-      }
+      const stem = suggestA2uiExportFilename(messages, "docx", model).replace(/\.docx$/i, "");
+      const sidecarRefs = await writeExportVisuals(stem, chartPngs);
       const markdown = normalizeEmojiKeycapListsForWord(
         buildA2uiSurfaceMarkdown(
           messages,
-          rasterPngs,
+          sidecarRefs,
           { includeChartImages: true, chartVisualFootnote: false },
           model,
         ),
@@ -132,31 +159,27 @@ export function A2uiSurfaceExportToolbar({ messages, model, hostRef }: Props) {
         setStatus("暂无可导出内容");
         return;
       }
-      const stem = suggestA2uiExportFilename(messages, "docx", model).replace(/\.docx$/i, "");
-      const hasRaster = Object.keys(rasterPngs).length > 0;
-      if (hasRaster) {
-        try {
-          const mdPath = await writeNewWorkspaceFile(
-            `exports/${stem}.md`,
-            new Blob([markdown], { type: "text/markdown;charset=utf-8" }),
-          );
-          const docxPath = await convertWorkspaceFile(mdPath, `exports/${stem}.docx`);
-          const bytes = await fetchFileBytes(docxPath);
-          const outcome = await saveBinaryFileWithPicker(
-            `${stem}.docx`,
-            new Uint8Array(bytes),
-            DOCX_MIME,
-          );
-          if (outcome === "cancelled") return;
-          setStatus(
-            outcome === "saved"
-              ? `已保存到所选位置，同时写入 ${docxPath}`
-              : `Word 文件已开始下载，同时写入 ${docxPath}`,
-          );
-          return;
-        } catch {
-          // fall through to Word HTML
-        }
+      try {
+        const mdPath = await writeNewWorkspaceFile(
+          `exports/${stem}.md`,
+          new Blob([markdownForWordConvert(markdown)], { type: "text/markdown;charset=utf-8" }),
+        );
+        const docxPath = await convertWorkspaceFile(mdPath, `exports/${stem}.docx`);
+        const bytes = await fetchFileBytes(docxPath);
+        const outcome = await saveBinaryFileWithPicker(
+          `${stem}.docx`,
+          new Uint8Array(bytes),
+          DOCX_MIME,
+        );
+        if (outcome === "cancelled") return;
+        setStatus(
+          outcome === "saved"
+            ? `已保存到所选位置，同时写入 ${docxPath}`
+            : `Word 文件已开始下载，同时写入 ${docxPath}`,
+        );
+        return;
+      } catch {
+        // fall through to Word HTML
       }
       const html = wrapHtmlForWordClipboard(
         buildA2uiSurfaceHtmlBody(messages, chartPngs, { wordPaste: true }, model),
