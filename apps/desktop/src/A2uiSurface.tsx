@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { chartSvg, heatmapSvg, parseChartKind, type ChartKind } from "./a2ui-chart.tsx";
+import { A2uiSurfaceExportToolbar } from "./A2uiSurfaceExportToolbar.tsx";
 import { InfographicView } from "./InfographicView.tsx";
 import type { InfographicDocument } from "@flintloom/infographic";
 
@@ -448,6 +449,7 @@ function renderComp(
       return (
         <div
           className="a2ui-chart"
+          data-a2ui-id={comp.id}
           dangerouslySetInnerHTML={{
             __html: html,
           }}
@@ -455,13 +457,20 @@ function renderComp(
       );
     }
     case "Infographic": {
+      let view: ReactNode = null;
       if (typeof comp.syntax === "string") {
-        return <InfographicView syntax={comp.syntax} />;
+        view = <InfographicView syntax={comp.syntax} />;
+      } else {
+        const doc = resolveInfographic(comp, model);
+        if (doc) view = <InfographicView document={doc} />;
+        else if (typeof comp.file === "string") view = <InfographicView file={comp.file} />;
       }
-      const doc = resolveInfographic(comp, model);
-      if (doc) return <InfographicView document={doc} />;
-      if (typeof comp.file === "string") return <InfographicView file={comp.file} />;
-      return <p className="a2ui-fallback">信息图无法显示</p>;
+      if (!view) return <p className="a2ui-fallback">信息图无法显示</p>;
+      return (
+        <div className="a2ui-infographic-export" data-a2ui-id={comp.id}>
+          {view}
+        </div>
+      );
     }
     case "Button": {
       const name = actionName(comp);
@@ -515,6 +524,7 @@ export function A2uiSurface({ messages, interactive, onAction }: A2uiSurfaceProp
   const modelRef = useRef(model);
   const onActionRef = useRef(onAction);
   const postedMessages = useRef<unknown>(null);
+  const hostRef = useRef<HTMLDivElement>(null);
 
   modelRef.current = model;
   onActionRef.current = onAction;
@@ -530,5 +540,10 @@ export function A2uiSurface({ messages, interactive, onAction }: A2uiSurfaceProp
     onActionRef.current("choice", modelRef.current);
   }, [interactive, hasButton, hasChoicePicker, messages]);
 
-  return <>{renderComp("root", map, interactive, model, setModel, onAction, hasButton)}</>;
+  return (
+    <div className="a2ui-surface-host" ref={hostRef}>
+      <A2uiSurfaceExportToolbar messages={messages} model={model} hostRef={hostRef} />
+      {renderComp("root", map, interactive, model, setModel, onAction, hasButton)}
+    </div>
+  );
 }

@@ -3543,6 +3543,56 @@ body,
 
 /* ── A2UI ── */
 
+.a2ui-surface-host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.a2ui-surface-export-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.a2ui-surface-export-toolbar__btn,
+.bubble.a2ui .a2ui-surface-export-toolbar__btn {
+  background: color-mix(in srgb, var(--accent-primary) 10%, var(--bg-secondary));
+  color: var(--accent-primary);
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 35%, transparent);
+  border-radius: 999px;
+  padding: 4px 10px;
+  height: auto;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.a2ui-surface-export-toolbar__btn:hover:not(:disabled),
+.bubble.a2ui .a2ui-surface-export-toolbar__btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-primary) 16%, var(--bg-secondary));
+}
+
+.bubble.a2ui .a2ui-surface-export-toolbar__btn--copied {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 40%, transparent);
+  background: color-mix(in srgb, var(--success) 10%, var(--bg-secondary));
+}
+
+.a2ui-surface-export-toolbar__status {
+  width: 100%;
+  text-align: right;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
 .a2ui-table {
   width: 100%;
   border-collapse: collapse;

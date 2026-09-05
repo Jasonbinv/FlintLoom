@@ -1,9 +1,18 @@
 /** @vitest-environment jsdom */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { A2uiSurface } from "../src/A2uiSurface.tsx";
+import { saveTextFileWithPicker } from "../src/a2uiSurfaceExport.ts";
+
+vi.mock("../src/a2uiSurfaceExport.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/a2uiSurfaceExport.ts")>();
+  return {
+    ...actual,
+    saveTextFileWithPicker: vi.fn(async () => "downloaded" as const),
+  };
+});
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -69,6 +78,10 @@ describe("A2uiSurface chart binding", () => {
     expect(svg?.getAttribute("aria-label")).toBe("bar chart");
     expect(container!.textContent).toContain("Q1");
     expect(container!.textContent).toContain("Q4");
+    const toolbar = container!.querySelector(".a2ui-surface-export-toolbar");
+    expect(toolbar).toBeTruthy();
+    const labels = Array.from(toolbar!.querySelectorAll("button")).map((btn) => btn.textContent);
+    expect(labels).toEqual(["复制", "导出 MD", "导出 Word", "导出 HTML"]);
     unmount();
   });
 
@@ -112,6 +125,28 @@ describe("A2uiSurface chart binding", () => {
     expect(container!.querySelector(".a2ui-chart-svg")).toBeNull();
     expect(container!.querySelector(".a2ui-fallback")).toBeTruthy();
     expect(container!.textContent).toContain("图表数据无法显示");
+    unmount();
+  });
+
+  it("exports markdown from the toolbar", async () => {
+    mount(
+      <A2uiSurface
+        messages={chartSurface({ Q1: 120, Q2: 200 })}
+        interactive={false}
+        onAction={() => {}}
+      />,
+    );
+    const mdBtn = Array.from(container!.querySelectorAll("button")).find(
+      (btn) => btn.textContent === "导出 MD",
+    );
+    expect(mdBtn).toBeTruthy();
+    await act(async () => {
+      mdBtn!.click();
+    });
+    expect(saveTextFileWithPicker).toHaveBeenCalled();
+    const [filename, content] = vi.mocked(saveTextFileWithPicker).mock.calls[0]!;
+    expect(filename).toMatch(/\.md$/);
+    expect(String(content)).toContain("| Q1 | 120 |");
     unmount();
   });
 });
