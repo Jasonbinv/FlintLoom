@@ -16,14 +16,24 @@ function flattenInline(tokens: Token[] | undefined): string {
         break;
       }
       case "strong":
+        out += `**${flattenInline(token.tokens)}**`;
+        break;
       case "em":
+        out += `*${flattenInline(token.tokens)}*`;
+        break;
       case "del":
         out += flattenInline(token.tokens);
         break;
       case "codespan":
-      case "text":
       case "escape":
         out += token.text;
+        break;
+      case "text":
+        if ("tokens" in token && Array.isArray(token.tokens) && token.tokens.length > 0) {
+          out += flattenInline(token.tokens);
+        } else {
+          out += token.text;
+        }
         break;
       case "br":
         out += " ";

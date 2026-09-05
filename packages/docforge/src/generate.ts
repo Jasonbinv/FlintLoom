@@ -1,3 +1,4 @@
+import { dirname } from "node:path";
 import { stat, readFile, writeFile } from "node:fs/promises";
 import { parseBlocks } from "./blocks.ts";
 import { blocksToMarkdown } from "./blocks-to-markdown.ts";
@@ -58,7 +59,7 @@ export function copyMarkdown(raw: string): string {
 export async function buildDocumentFromBlocks(
   format: GenerateFormat,
   blocks: Block[],
-  opts?: { fontPath?: string },
+  opts?: { fontPath?: string; imageBaseDir?: string },
 ): Promise<Buffer> {
   try {
     switch (format) {
@@ -67,7 +68,7 @@ export async function buildDocumentFromBlocks(
       case "html":
         return Buffer.from(renderHtml(blocks), "utf8");
       case "docx":
-        return await renderDocx(blocks);
+        return await renderDocx(blocks, { imageBaseDir: opts?.imageBaseDir });
       case "pdf":
         return await renderPdf(blocks, opts?.fontPath ?? defaultFontPath());
       case "xlsx":
@@ -86,7 +87,7 @@ export async function buildDocumentFromBlocks(
 export async function buildDocument(
   format: GenerateFormat,
   markdown: string,
-  opts?: { fontPath?: string },
+  opts?: { fontPath?: string; imageBaseDir?: string },
 ): Promise<Buffer> {
   if (format === "md") {
     return Buffer.from(copyMarkdown(markdown), "utf8");
@@ -138,7 +139,7 @@ export async function generateDocument(
     if (detectType(absSource, bytes) !== "md") {
       throw new Error("bad source");
     }
-    payload = await buildDocument(format, raw);
+    payload = await buildDocument(format, raw, { imageBaseDir: dirname(absSource) });
   } else {
     const blocks = parseDocumentJson(raw);
     payload = await buildDocumentFromBlocks(format, blocks);

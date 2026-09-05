@@ -74,6 +74,34 @@ describe("buildDocument md/html", () => {
     expect(xml).toMatch(/w:tblW[^>]*w:w="100%"/);
   });
 
+  it("turns markdown bold into Word bold and strips the asterisks", async () => {
+    const buf = await buildDocument(
+      "docx",
+      "- **雷达图**显示当前人才模型优势\n- **热力图**反映业务活跃度\n",
+    );
+    const zip = await JSZip.loadAsync(buf);
+    const xml = await zip.file("word/document.xml")!.async("string");
+    expect(xml).toContain("雷达图");
+    expect(xml).toContain("热力图");
+    expect(xml).not.toContain("**");
+    const runs = xml.match(/<w:r\b[\s\S]*?<\/w:r>/g) ?? [];
+    const radar = runs.find((run) => run.includes("雷达图"));
+    const heat = runs.find((run) => run.includes("热力图"));
+    expect(radar).toMatch(/<w:b\b/);
+    expect(heat).toMatch(/<w:b\b/);
+  });
+
+  it("keeps chinese text and marks it as east-asia so Word does not remap bytes", async () => {
+    const buf = await buildDocument("docx", "# 数学基础\n\n线性代数 & 微积分\n");
+    const zip = await JSZip.loadAsync(buf);
+    const xml = await zip.file("word/document.xml")!.async("string");
+    expect(xml).toContain("数学基础");
+    expect(xml).toContain("线性代数");
+    expect(xml).not.toContain("鏁板");
+    expect(xml).toMatch(/w:eastAsia="zh-CN"/);
+    expect(xml).toMatch(/w:hint="eastAsia"/);
+  });
+
   it("keeps title emoji on a color-emoji font without the body text color", async () => {
     const buf = await buildDocument("docx", "# 📊 2024年上半年业务分析报告\n");
     const zip = await JSZip.loadAsync(buf);

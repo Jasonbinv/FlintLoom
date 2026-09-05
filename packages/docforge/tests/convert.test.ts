@@ -1,13 +1,19 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import JSZip from "jszip";
 import { parse } from "../src/parse.ts";
 import { GENERATE_MAX_BYTES } from "../src/generate.ts";
 import { convertDocument, lossForConvert } from "../src/convert.ts";
 import { EMPTY_PDF, HELLO_PDF } from "./helpers/pdf.ts";
 import { writeHelloDocx, writeHelloXlsx } from "./helpers/office.ts";
+
+const PNG_1x1 = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64",
+);
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
 const helloMd = readFileSync(join(fixtures, "hello.md"), "utf8");
@@ -115,6 +121,28 @@ describe("convertDocument", () => {
     writeFileSync(source, EMPTY_PDF);
     await expect(convertDocument(source, out)).rejects.toThrow(/empty text/);
     expect(existsSync(out)).toBe(false);
+  });
+
+  it("embeds a sibling png when converting markdown to docx", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "flintloom-cv-img-"));
+    writeFileSync(join(dir, "map.png"), PNG_1x1);
+    writeFileSync(join(dir, "note.md"), "# 路径图\n\n![map](map.png)\n");
+    const out = join(dir, "out.docx");
+    await convertDocument(join(dir, "note.md"), out);
+    const zip = await JSZip.loadAsync(readFileSync(out));
+    expect(Object.keys(zip.files).some((name) => name.startsWith("word/media/"))).toBe(true);
+  });
+
+  it("does not follow image paths outside the markdown folder", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "flintloom-cv-esc-"));
+    const nest = join(dir, "nested");
+    mkdirSync(nest);
+    writeFileSync(join(dir, "secret.png"), PNG_1x1);
+    writeFileSync(join(nest, "note.md"), "![x](../secret.png)\n# Hi\n");
+    const out = join(nest, "out.docx");
+    await convertDocument(join(nest, "note.md"), out);
+    const zip = await JSZip.loadAsync(readFileSync(out));
+    expect(Object.keys(zip.files).some((name) => name.startsWith("word/media/"))).toBe(false);
   });
 
   it("overwrites an existing out file", async () => {

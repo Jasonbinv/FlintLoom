@@ -1,3 +1,4 @@
+import { dirname } from "node:path";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { detectType } from "./detect.ts";
 import {
@@ -85,7 +86,7 @@ export async function convertDocument(
   if (markdown.length > GENERATE_MAX_CHARS) {
     throw new Error("too large");
   }
-  const payload = await buildDocument(format, markdown);
+  const payload = await buildDocument(format, markdown, { imageBaseDir: dirname(absSource) });
   await writeFile(absOut, payload);
   return {
     from: detected,
