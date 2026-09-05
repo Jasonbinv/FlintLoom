@@ -560,8 +560,13 @@ function isObj(value: unknown): value is Record<string, unknown> {
 function looksJsonish(body: string): boolean {
   const text = body.trim();
   if (/^data\s*\{/i.test(text)) return true;
-  if (/^\{/.test(text) && /(desc|label|children|compares|lists)\s*:/.test(text)) return true;
-  if (/\[\s*\{\s*(desc|label)\s*:/.test(text)) return true;
+  if (/^\{/.test(text) && /"(?:desc|label|children|compares|lists|items|title)"\s*:/.test(text)) {
+    return true;
+  }
+  if (/^\{/.test(text) && /(desc|label|children|compares|lists|items|title)\s*:/.test(text)) {
+    return true;
+  }
+  if (/\[\s*\{\s*"?(desc|label)"?\s*:/.test(text)) return true;
   return false;
 }
 
@@ -697,6 +702,9 @@ export function repairAntvSyntax(raw: string): string {
   }
   const items = parseInventedItems(bodyLines);
   if (items.length === 0) {
+    if (rest.trim().startsWith("{") || rest.trim().startsWith("[")) {
+      return finalizeRepaired(template, "data\n  lists\n    - label 信息图");
+    }
     return finalizeRepaired(template, rest);
   }
   const body = isHierarchyTemplate(template)

@@ -136,6 +136,48 @@ describe("infographic tools", () => {
     expect(nested.syntax).toContain("sequence-steps-simple");
     expect(nested.syntax).toContain("第一步");
 
+    const pathMap = JSON.parse(
+      await render.execute(
+        {
+          items: [
+            {
+              label: "AI 学习成长路径图",
+              children: [
+                {
+                  label: "1. 数学基础 (数学底座)",
+                  children: [
+                    { label: "线性代数 & 微积分 (张量/梯度)" },
+                    { label: "概率论 & 统计学 (分布/贝叶斯)" },
+                    { label: "最优化理论 (极值/收敛)" },
+                  ],
+                },
+                {
+                  label: "5. 工程落地 (实战应用)",
+                  children: [
+                    { label: "RAG (检索增强生成)" },
+                    { label: "Agent (智能体/LangChain)" },
+                    { label: "模型部署 (vLLM/Ollama/量化)" },
+                  ],
+                },
+              ],
+            },
+            {
+              label: "💡 学习建议'}],template:",
+              children: [{ label: "理论 + 代码同步进行 (避免过度沉溺数学)" }],
+            },
+          ],
+          "mindmap<|>,title": "AI 全栈工程师学习路径思维导图",
+        },
+        e,
+      ),
+    ) as { status: string; syntax: string };
+    expect(pathMap.syntax).toContain("hierarchy-mindmap");
+    expect(pathMap.syntax).toContain("AI 全栈工程师学习路径思维导图");
+    expect(pathMap.syntax).toContain("线性代数 & 微积分 (张量/梯度)");
+    expect(pathMap.syntax).toContain("RAG (检索增强生成)");
+    expect(pathMap.syntax).toContain("💡 学习建议");
+    expect(pathMap.syntax).not.toContain("template:");
+
     expect(await render.execute({}, e)).toMatch(/^failed:/);
     const ac = new AbortController();
     ac.abort();

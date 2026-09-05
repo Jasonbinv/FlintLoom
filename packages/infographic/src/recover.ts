@@ -66,7 +66,17 @@ function itemFromUnknown(item: unknown, fallback: string): LooseItem {
 }
 
 function itemsFromUnknown(values: unknown[]): LooseItem[] {
-  return values.slice(0, 12).map((item, index) => itemFromUnknown(item, `项目${index + 1}`));
+  const items = values.slice(0, 12).map((item, index) => itemFromUnknown(item, `项目${index + 1}`));
+  if (
+    items.length === 1 &&
+    /^项目\d+$/.test(items[0]!.label) &&
+    isRecord(values[0]) &&
+    Array.isArray(values[0].children) &&
+    values[0].children.length >= 2
+  ) {
+    return itemsFromUnknown(values[0].children);
+  }
+  return items;
 }
 
 function splitDescKids(desc: string | undefined): string[] {
@@ -126,6 +136,9 @@ function collectBuckets(
   }
   if (!acc.lists && Array.isArray(value.lists) && value.lists.length >= 1) {
     acc.lists = value.lists;
+  }
+  if (!acc.lists && Array.isArray(value.items) && value.items.length >= 1) {
+    acc.lists = value.items;
   }
   if (!acc.sequences && Array.isArray(value.sequences) && value.sequences.length >= 1) {
     acc.sequences = value.sequences;

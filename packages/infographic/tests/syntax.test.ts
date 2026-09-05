@@ -314,4 +314,19 @@ data {
     expect(repaired).toContain("- label 执行交付");
     expect(repaired).not.toContain("data {");
   });
+
+  it("repairs truncated json body so the title stays clean and all steps remain", () => {
+    const repaired = repairAntvSyntax(
+      [
+        "infographic list-column-simple-vertical-arrow",
+        `{"title":"AI 学习成长路径图","items":[{"label":"数学基础","children":[{"label":"线性代数 & 微积分"}]},{"label":"编程与数据科学","children":[{"label":"Python"}]}],"template":"list-column-simple-vertical-arrow"}`,
+      ].join("\n"),
+    );
+    expect(repaired).toContain("title AI 学习成长路径图");
+    expect(repaired).not.toContain("template:");
+    expect(repaired).not.toContain("}]");
+    expect(repaired).toContain("- label 数学基础");
+    expect(repaired).toContain("- label 编程与数据科学");
+    expect(repaired).toContain("- label 线性代数 & 微积分");
+  });
 });
