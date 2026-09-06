@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
 import { A2uiSurface } from "./A2uiSurface.tsx";
 import { cancelTurn, fetchModels, fetchSession, fetchWorkspace, postTurn, postTurnAction, postTurnGuard, setWorkspace } from "./api.ts";
 import { FilePane } from "./FilePane.tsx";
@@ -17,6 +17,7 @@ import { TtsPlay } from "./TtsPlay.tsx";
 import { fileNameOf, writeNewWorkspaceFile } from "./files.ts";
 import {
   appendAttachmentPaths,
+  filesToAttachFromClipboard,
   MAX_ATTACHMENTS,
   nextAttachmentPath,
   previewUrlForFile,
@@ -315,9 +316,6 @@ export function App() {
     }
     setAttachError(undefined);
     setPendingAttachments((current) => [...current, ...added]);
-    setFilePaneCollapsed(false);
-    const last = added[added.length - 1];
-    if (last) openFileFromChat(last.path);
   }
 
   const taskTitle =
@@ -813,6 +811,16 @@ export function App() {
     }
   }
 
+  function onPaste(event: ClipboardEvent<HTMLTextAreaElement>) {
+    if (sending || waitingAction) return;
+    const data = event.clipboardData;
+    if (!data) return;
+    const files = filesToAttachFromClipboard(data);
+    if (files.length === 0) return;
+    event.preventDefault();
+    addPendingFiles(files);
+  }
+
   const composerBusy = sending || waitingAction;
   const navItems: { id: Page; label: string; icon: string }[] = [
     { id: "chat", label: "对话", icon: "💬" },
@@ -1278,6 +1286,7 @@ export function App() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={onKeyDown}
+                onPaste={onPaste}
                 rows={2}
                 placeholder="今天我能帮你做什么？"
               />

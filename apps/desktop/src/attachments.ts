@@ -54,6 +54,47 @@ export function appendAttachmentPaths(text: string, paths: string[]): string {
   return text.length > 0 ? `${text}\n${block}` : block;
 }
 
+export type ClipboardLike = {
+  getData: (format: string) => string;
+  files?: ArrayLike<File> | null;
+  items?: ArrayLike<{ kind: string; type: string; getAsFile: () => File | null }>;
+};
+
+function clipboardFiles(data: ClipboardLike): File[] {
+  const seen = new Set<string>();
+  const out: File[] = [];
+  const add = (file: File | null | undefined) => {
+    if (!file) return;
+    const key = `${file.name}\0${file.size}\0${file.type}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(file);
+  };
+  if (data.files) {
+    for (const file of Array.from(data.files)) add(file);
+  }
+  if (data.items) {
+    for (const item of Array.from(data.items)) {
+      if (item.kind === "file") add(item.getAsFile());
+    }
+  }
+  return out;
+}
+
+function fileNameOnlyText(text: string, files: File[]): boolean {
+  const names = new Set(files.flatMap((file) => [file.name, fileNameOf(file.name)]));
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  return lines.length > 0 && lines.every((line) => names.has(line) || names.has(fileNameOf(line)));
+}
+
+export function filesToAttachFromClipboard(data: ClipboardLike): File[] {
+  const files = clipboardFiles(data);
+  if (files.length === 0) return [];
+  const text = (data.getData("text/plain") ?? "").trim();
+  if (text && !fileNameOnlyText(text, files)) return [];
+  return files.filter((file) => file.size <= MAX_ATTACHMENT_BYTES);
+}
+
 export function nextAttachmentPath(
   dir: string,
   name: string,

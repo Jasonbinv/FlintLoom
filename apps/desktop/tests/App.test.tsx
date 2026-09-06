@@ -2898,6 +2898,9 @@ describe("App", () => {
       fileInput.dispatchEvent(new Event("change", { bubbles: true }));
     });
     await waitForText("uploads/notes.txt");
+    expect(document.querySelector(".file-preview-header__name")?.textContent ?? "").not.toContain(
+      "notes.txt",
+    );
     const sendButton = document.querySelector(".btn-send") as HTMLButtonElement | null;
     expect(sendButton?.disabled).toBe(false);
     await act(async () => {
@@ -2937,6 +2940,51 @@ describe("App", () => {
     };
     expect(body.text).toContain("uploads/notes.txt");
     expect(body.images).toBeUndefined();
+  });
+
+  it("pastes a screenshot into uploads when the clipboard has no text", async () => {
+    installFetch();
+    await mountApp();
+    await waitForText("附件");
+    const textarea = document.querySelector("textarea");
+    if (!textarea) throw new Error("no textarea");
+    const file = new File([new Uint8Array([1, 2, 3, 4])], "shot.png", { type: "image/png" });
+    await act(async () => {
+      const event = new Event("paste", { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "clipboardData", {
+        value: {
+          getData: (format: string) => (format === "text/plain" ? "" : ""),
+          files: fileListOf([file]),
+          items: [{ kind: "file", type: "image/png", getAsFile: () => file }],
+        },
+      });
+      textarea.dispatchEvent(event);
+    });
+    await waitForText("uploads/shot.png");
+    expect(document.querySelector(".file-preview-header__name")?.textContent ?? "").not.toContain(
+      "shot.png",
+    );
+  });
+
+  it("keeps a mixed text-and-image paste as text only", async () => {
+    installFetch();
+    await mountApp();
+    await waitForText("附件");
+    const textarea = document.querySelector("textarea");
+    if (!textarea) throw new Error("no textarea");
+    const file = new File([new Uint8Array([1, 2, 3, 4])], "chart.png", { type: "image/png" });
+    await act(async () => {
+      const event = new Event("paste", { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "clipboardData", {
+        value: {
+          getData: (format: string) => (format === "text/plain" ? "本月销售额如下" : ""),
+          files: fileListOf([file]),
+          items: [{ kind: "file", type: "image/png", getAsFile: () => file }],
+        },
+      });
+      textarea.dispatchEvent(event);
+    });
+    expect(document.body.textContent).not.toContain("uploads/chart.png");
   });
 
   it("sends attached images as vision parts when omni is configured", async () => {
