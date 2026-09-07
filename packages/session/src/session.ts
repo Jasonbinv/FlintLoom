@@ -155,6 +155,8 @@ export class Session {
             name: event.name,
           });
           break;
+        case "prompt/system":
+          break;
         case "a2ui/surface":
           break;
         case "a2ui/action":

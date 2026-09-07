@@ -250,4 +250,23 @@ describe("Session", () => {
     });
     expect(session.isWaiting("t1")).toBe(false);
   });
+
+  it("deriveMessages ignores prompt/system and does not emit a system role", () => {
+    const session = new Session("s-prompt");
+    session.append({ type: "user/message", text: "hello" });
+    session.append({
+      type: "prompt/system",
+      turnId: "t1",
+      step: 1,
+      text: "You are FlintLoom",
+    });
+    session.append({ type: "assistant/message", text: "hi" });
+
+    expect(session.deriveMessages()).toEqual([
+      { role: "user", content: "hello" },
+      { role: "assistant", content: "hi" },
+    ]);
+    expect(session.deriveMessages().some((m) => m.role === "system")).toBe(false);
+    expect(session.events().some((e) => e.type === "prompt/system")).toBe(true);
+  });
 });

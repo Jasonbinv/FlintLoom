@@ -7,9 +7,10 @@ export type ChatContentPart =
   | { type: "text"; text: string }
   | { type: "image"; mime: string; data: string };
 
-export type SessionEvent =
+export type SessionEventBody =
   | { type: "turn/start"; turnId: string; startedAt: number; webSearch?: boolean }
   | { type: "step/start"; turnId: string; step: number }
+  | { type: "prompt/system"; turnId: string; step: number; text: string }
   | {
       type: "step/stats";
       turnId: string;
@@ -68,6 +69,8 @@ export type SessionEvent =
     }
   | { type: "a2ui/surface"; turnId: string; surfaceId: string; messages: unknown[]; wait: boolean }
   | { type: "a2ui/action"; turnId: string; surfaceId: string; name: string; context?: unknown; data?: unknown };
+
+export type SessionEvent = SessionEventBody & { time?: number };
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
