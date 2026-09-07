@@ -136,4 +136,32 @@ describe("TrajectoryView", () => {
     expect(container?.textContent).toContain("尚无轨迹");
     cleanup();
   });
+
+  it("shows SYSTEM tag and summary for system records", () => {
+    mount(
+      <TrajectoryView
+        records={[
+          {
+            id: "system:t1:1",
+            kind: "system",
+            turn: 1,
+            step: 1,
+            preview: "You are FlintLoom",
+            output: "You are FlintLoom full",
+            startedAt: 1_700_000_000_000,
+          },
+        ]}
+      />,
+    );
+    const row = container?.querySelector('[data-trajectory-id="system:t1:1"]');
+    expect(row?.textContent).toContain("SYSTEM");
+    act(() => {
+      (row as HTMLElement).click();
+    });
+    expect(container?.querySelector("[data-inspector-panel]")?.textContent).toContain(
+      "You are FlintLoom full",
+    );
+    expect(container?.querySelector("[data-inspector-tab='timing']")).toBeTruthy();
+    cleanup();
+  });
 });

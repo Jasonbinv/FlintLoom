@@ -3941,6 +3941,11 @@ body,
   color: var(--text-secondary);
 }
 
+.trajectory-kind-tag[data-role-kind="system"] {
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+}
+
 .trajectory-event {
   display: flex;
   align-items: baseline;

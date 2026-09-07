@@ -13,6 +13,7 @@ const KIND_LABEL: Record<TrajectoryRecord["kind"], string> = {
   error: "错误",
   guard: "护栏",
   a2ui: "界面",
+  system: "SYSTEM",
 };
 
 export function TrajectoryTable({ records, selectedId, onSelect }: TrajectoryTableProps) {

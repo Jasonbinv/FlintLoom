@@ -54,6 +54,8 @@ function availableTabs(record: TrajectoryRecord): InspectorTab[] {
       tabs.push("result");
     }
     if (timingHasValue(record.timing)) tabs.push("timing");
+  } else if (record.kind === "system") {
+    if (record.startedAt !== undefined) tabs.push("timing");
   }
   return tabs;
 }
@@ -65,6 +67,7 @@ const KIND_LABEL: Record<TrajectoryRecord["kind"], string> = {
   error: "错误",
   guard: "护栏",
   a2ui: "界面",
+  system: "SYSTEM",
 };
 
 const TAB_LABELS: Record<InspectorTab, string> = {
@@ -86,7 +89,9 @@ function SummaryPanel({ record }: { record: TrajectoryRecord }) {
   return (
     <div className="trajectory-summary">
       <p className="trajectory-summary-body">
-        {record.kind === "user" ? (record.output ?? record.preview) : record.preview}
+        {record.kind === "user" || record.kind === "system"
+          ? (record.output ?? record.preview)
+          : record.preview}
       </p>
       {record.toolName ? (
         <p className="trajectory-summary-kv">
@@ -129,8 +134,29 @@ function SummaryPanel({ record }: { record: TrajectoryRecord }) {
   );
 }
 
-function TimingPanel({ timing }: { timing: TrajectoryTiming }) {
+function TimingPanel({
+  timing,
+  startedAt,
+}: {
+  timing?: TrajectoryTiming;
+  startedAt?: number;
+}) {
   const rows: Array<{ label: string; value: string }> = [];
+  if (startedAt !== undefined) {
+    rows.push({ label: "Started", value: new Date(startedAt).toLocaleTimeString() });
+  }
+  if (!timing) {
+    return (
+      <dl className="trajectory-timing">
+        {rows.map((row) => (
+          <div key={row.label}>
+            <dt>{row.label}</dt>
+            <dd>{row.value}</dd>
+          </div>
+        ))}
+      </dl>
+    );
+  }
   if (timing.llmMs !== undefined) rows.push({ label: "LLM", value: formatDuration(timing.llmMs) });
   if (timing.ttftMs !== undefined) rows.push({ label: "TTFT", value: formatDuration(timing.ttftMs) });
   if (timing.decodeMs !== undefined) {
@@ -224,7 +250,9 @@ export function TrajectoryInspector({ record, onClose, onOpenFile }: TrajectoryI
             <MessageFileCards text={record.result} onOpenFile={onOpenFile ?? (() => {})} />
           </>
         ) : null}
-        {tab === "timing" && record.timing ? <TimingPanel timing={record.timing} /> : null}
+        {tab === "timing" ? (
+          <TimingPanel timing={record.timing} startedAt={record.startedAt} />
+        ) : null}
       </div>
     </aside>
   );
