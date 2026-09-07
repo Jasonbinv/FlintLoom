@@ -7,8 +7,9 @@ export type TurnEnd = {
   type: "end";
   status: "ok" | "failed" | "cancelled" | "awaiting_action";
 };
-export type WorkbenchEvent =
+export type WorkbenchEventBody =
   | { type: "turn/start"; turnId: string; startedAt: number }
+  | { type: "prompt/system"; turnId: string; step: number; text: string }
   | { type: "step/start"; turnId: string; step: number }
   | {
       type: "step/stats";
@@ -82,3 +83,5 @@ export type WorkbenchEvent =
       data?: unknown;
     }
   | TurnEnd;
+
+export type WorkbenchEvent = WorkbenchEventBody & { time?: number };

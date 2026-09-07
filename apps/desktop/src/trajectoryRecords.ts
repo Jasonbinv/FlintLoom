@@ -11,7 +11,8 @@ export type TrajectoryKind =
   | "tool"
   | "error"
   | "guard"
-  | "a2ui";
+  | "a2ui"
+  | "system";
 
 export type TrajectoryTiming = {
   llmMs?: number;
@@ -46,7 +47,26 @@ export type TrajectoryRecord = {
   surfaceId?: string;
   a2uiWait?: boolean;
   timing?: TrajectoryTiming;
+  startedAt?: number;
 };
+
+export function recordMatchesQuery(record: TrajectoryRecord, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (q.length === 0) return true;
+  const parts = [
+    record.preview,
+    record.thinking,
+    record.output,
+    record.result,
+    record.toolName,
+  ];
+  try {
+    parts.push(JSON.stringify(record.args ?? ""));
+  } catch {
+    /* skip args */
+  }
+  return parts.some((part) => part !== undefined && part.toLowerCase().includes(q));
+}
 
 export function previewLine(text: string, max = 160): string {
   const line = text.split("\n", 1)[0] ?? "";
@@ -75,6 +95,7 @@ export function buildTrajectoryFromEvents(events: WorkbenchEvent[]): TrajectoryR
   let reasoningBuf = "";
   let outputBuf = "";
   let pendingTiming: TrajectoryTiming | undefined;
+  let stepStartedAt: number | undefined;
   let seq = 0;
   const toolAt = new Map<string, number>();
   const seenTurnStart = new Set<number>();
@@ -110,6 +131,7 @@ export function buildTrajectoryFromEvents(events: WorkbenchEvent[]): TrajectoryR
       thinking,
       output,
       timing,
+      startedAt: stepStartedAt ?? prev?.startedAt,
       running: running || undefined,
     };
     markTurnStart(row);
@@ -130,13 +152,32 @@ export function buildTrajectoryFromEvents(events: WorkbenchEvent[]): TrajectoryR
         turn += 1;
         turnId = event.turnId;
         step = undefined;
+        stepStartedAt = undefined;
         break;
       case "step/start":
         flushAssistant(false);
         turnId = event.turnId;
         step = event.step;
+        stepStartedAt = event.time;
         if (turn === 0) turn = 1;
         break;
+      case "prompt/system": {
+        flushAssistant(false);
+        if (turn === 0) turn = 1;
+        const row: TrajectoryRecord = {
+          id: `system:${event.turnId}:${event.step}`,
+          kind: "system",
+          turn,
+          turnId: event.turnId,
+          step: event.step,
+          preview: previewLine(event.text),
+          output: event.text,
+          startedAt: event.time,
+        };
+        markTurnStart(row);
+        records.push(row);
+        break;
+      }
       case "assistant/reasoning-chunk":
         reasoningBuf += event.text;
         break;
@@ -179,6 +220,7 @@ export function buildTrajectoryFromEvents(events: WorkbenchEvent[]): TrajectoryR
           args: event.args,
           toolState: "running",
           running: true,
+          startedAt: event.time,
         };
         markTurnStart(row);
         toolAt.set(event.callId, records.length);
@@ -231,6 +273,7 @@ export function buildTrajectoryFromEvents(events: WorkbenchEvent[]): TrajectoryR
           turnId,
           preview: previewLine(event.text),
           output: event.text,
+          startedAt: event.time,
         };
         markTurnStart(row);
         records.push(row);

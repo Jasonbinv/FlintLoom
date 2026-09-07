@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildTrajectoryFromEvents } from "../src/trajectoryRecords.ts";
+import {
+  buildTrajectoryFromEvents,
+  recordMatchesQuery,
+} from "../src/trajectoryRecords.ts";
 import type { WorkbenchEvent } from "../src/types.ts";
 
 describe("buildTrajectoryFromEvents", () => {
@@ -189,5 +192,57 @@ describe("buildTrajectoryFromEvents", () => {
     ]);
     expect(rows.map((r) => r.kind)).toEqual(["user", "guard"]);
     expect(rows[1]?.guardLabel).toContain("suspicious");
+  });
+
+  it("inserts SYSTEM after USER and uses step/start.time as assistant startedAt", () => {
+    const rows = buildTrajectoryFromEvents([
+      { type: "turn/start", turnId: "t1", startedAt: 1000, time: 1000 },
+      { type: "user/message", text: "hi", time: 1001 },
+      { type: "step/start", turnId: "t1", step: 1, time: 1100 },
+      {
+        type: "prompt/system",
+        turnId: "t1",
+        step: 1,
+        text: "You are FlintLoom unique-sys-token",
+        time: 1101,
+      },
+      { type: "assistant/chunk", text: "hello", time: 1200 },
+      {
+        type: "step/stats",
+        turnId: "t1",
+        step: 1,
+        llmMs: 80,
+        inputTokens: 1,
+        outputTokens: 1,
+        cacheReadTokens: 0,
+        time: 1180,
+      },
+      { type: "assistant/message", text: "hello", time: 1181 },
+    ]);
+    expect(rows.map((r) => r.kind)).toEqual(["user", "system", "assistant"]);
+    expect(rows[1]?.id).toBe("system:t1:1");
+    expect(rows[1]?.output).toBe("You are FlintLoom unique-sys-token");
+    expect(rows[1]?.startedAt).toBe(1101);
+    expect(rows[2]?.startedAt).toBe(1100);
+    expect(rows[2]?.timing?.llmMs).toBe(80);
+    expect(rows[0]?.startedAt).toBe(1001);
+  });
+
+  it("uses tool/call.time as tool startedAt", () => {
+    const rows = buildTrajectoryFromEvents([
+      { type: "tool/call", callId: "c1", name: "fs", args: {}, time: 50 },
+      { type: "tool/result", callId: "c1", name: "fs", text: "ok", durationMs: 9, time: 59 },
+    ]);
+    expect(rows[0]?.startedAt).toBe(50);
+    expect(rows[0]?.timing?.durationMs).toBe(9);
+  });
+
+  it("recordMatchesQuery is case-insensitive over system output", () => {
+    const row = buildTrajectoryFromEvents([
+      { type: "prompt/system", turnId: "t1", step: 1, text: "AlphaToken" },
+    ])[0]!;
+    expect(recordMatchesQuery(row, "alphatoken")).toBe(true);
+    expect(recordMatchesQuery(row, "zzz")).toBe(false);
+    expect(recordMatchesQuery(row, "  ")).toBe(true);
   });
 });
