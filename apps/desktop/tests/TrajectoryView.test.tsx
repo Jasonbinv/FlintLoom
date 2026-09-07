@@ -164,4 +164,52 @@ describe("TrajectoryView", () => {
     expect(container?.querySelector("[data-inspector-tab='timing']")).toBeTruthy();
     cleanup();
   });
+
+  it("filters ledger by search and selects a row from the timeline", () => {
+    mount(
+      <TrajectoryView
+        records={[
+          {
+            id: "system:t1:1",
+            kind: "system",
+            turn: 1,
+            preview: "You are FlintLoom",
+            output: "unique-sys-only",
+            startedAt: 1000,
+          },
+          {
+            id: "assistant:t1:1",
+            kind: "assistant",
+            turn: 1,
+            preview: "hello",
+            output: "hello",
+            startedAt: 1100,
+            timing: { llmMs: 80 },
+          },
+        ]}
+      />,
+    );
+    const search = container?.querySelector('[aria-label="搜索轨迹"]') as HTMLInputElement;
+    act(() => {
+      const proto = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+      proto?.set?.call(search, "unique-sys-only");
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(container?.querySelector('[data-trajectory-id="assistant:t1:1"]')).toBeNull();
+    expect(container?.querySelector('[data-trajectory-id="system:t1:1"]')).toBeTruthy();
+
+    act(() => {
+      const proto = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+      proto?.set?.call(search, "");
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const span = container?.querySelector('[data-timeline-id="assistant:t1:1"]') as HTMLElement;
+    act(() => {
+      span.click();
+    });
+    expect(
+      container?.querySelector('[data-trajectory-id="assistant:t1:1"]')?.getAttribute("aria-selected"),
+    ).toBe("true");
+    cleanup();
+  });
 });

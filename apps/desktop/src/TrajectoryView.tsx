@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { TrajectoryInspector } from "./TrajectoryInspector.tsx";
 import { TrajectoryTable } from "./TrajectoryTable.tsx";
-import type { TrajectoryRecord } from "./trajectoryRecords.ts";
+import { TrajectoryToolbar } from "./TrajectoryToolbar.tsx";
+import { TrajectoryTimeline } from "./TrajectoryTimeline.tsx";
+import { recordMatchesQuery, type TrajectoryRecord } from "./trajectoryRecords.ts";
+import { deriveTrajectoryTimeline } from "./trajectoryTimeline.ts";
 
 export type TrajectoryViewProps = {
   records: TrajectoryRecord[];
@@ -17,6 +20,7 @@ export function TrajectoryView({
   onOpenFile,
 }: TrajectoryViewProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     if (!inspectCallId) return;
@@ -47,24 +51,40 @@ export function TrajectoryView({
     );
   }
 
-  const selected = records.find((row) => row.id === selectedId);
+  const visible = records.filter((row) => recordMatchesQuery(row, query));
+  const timeline = deriveTrajectoryTimeline(visible);
+  const selected = visible.find((row) => row.id === selectedId);
 
   return (
     <div className="trajectory-root">
-      <div className="trajectory-ledger">
-        <TrajectoryTable
-          records={records}
-          selectedId={selectedId}
-          onSelect={setSelectedId}
-        />
+      <div className="trajectory-toolbar">
+        {timeline ? (
+          <TrajectoryTimeline model={timeline} records={visible} onSelect={setSelectedId} />
+        ) : null}
+        <TrajectoryToolbar query={query} onQueryChange={setQuery} />
       </div>
-      {selected ? (
-        <TrajectoryInspector
-          record={selected}
-          onClose={() => setSelectedId(null)}
-          onOpenFile={onOpenFile}
-        />
-      ) : null}
+      {visible.length === 0 ? (
+        <div className="trajectory-empty">
+          <p className="trajectory-empty-title">无匹配</p>
+        </div>
+      ) : (
+        <div className="trajectory-main">
+          <div className="trajectory-ledger">
+            <TrajectoryTable
+              records={visible}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+            />
+          </div>
+          {selected ? (
+            <TrajectoryInspector
+              record={selected}
+              onClose={() => setSelectedId(null)}
+              onOpenFile={onOpenFile}
+            />
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }
