@@ -172,3 +172,19 @@ describe("groupChatTurns", () => {
     expect(turns[3]?.type === "tools" && turns[3].bubbles.map((b) => b.id)).toEqual(["t3"]);
   });
 });
+
+describe("prompt/system", () => {
+  it("does not create a chat bubble from prompt/system", () => {
+    let id = 0;
+    const bubbles = buildBubblesFromEvents(
+      [
+        { type: "user/message", text: "hi" },
+        { type: "prompt/system", turnId: "t1", step: 1, text: "You are FlintLoom leaked" },
+        { type: "assistant/message", text: "ok" },
+      ],
+      () => String(++id),
+    );
+    expect(bubbles.map((b) => b.kind)).toEqual(["user", "assistant"]);
+    expect(bubbles.some((b) => "text" in b && b.text.includes("leaked"))).toBe(false);
+  });
+});

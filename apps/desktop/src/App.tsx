@@ -503,6 +503,9 @@ export function App() {
     if (event.type === "step/stats") {
       return;
     }
+    if (event.type === "prompt/system") {
+      return;
+    }
     if (event.type === "turn/stats") {
       pendingTurnStatsRef.current = turnStatsFromEvent(event);
       return;

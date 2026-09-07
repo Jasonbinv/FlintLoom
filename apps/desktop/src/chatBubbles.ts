@@ -142,7 +142,13 @@ export function buildBubblesFromEvents(
       flushTurnFooter(event.status);
       continue;
     }
-    if (event.type === "turn/start" || event.type === "guard/decision" || event.type === "guard/response" || event.type === "step/stats") {
+    if (
+      event.type === "turn/start" ||
+      event.type === "guard/decision" ||
+      event.type === "guard/response" ||
+      event.type === "step/stats" ||
+      event.type === "prompt/system"
+    ) {
       continue;
     }
     if (event.type === "assistant/reasoning-chunk") {

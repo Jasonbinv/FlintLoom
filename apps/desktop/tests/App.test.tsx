@@ -3928,4 +3928,33 @@ describe("App", () => {
     await waitForText("Continue?");
     expect(document.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("对话");
   });
+
+  it("does not leak prompt/system into chat and shows SYSTEM on trajectory", async () => {
+    const systemText = "You are FlintLoom leaked-system-token";
+    const sse =
+      `data: ${JSON.stringify({ type: "turn/start", turnId: "t1", startedAt: 1 })}\n\n` +
+      `data: ${JSON.stringify({ type: "user/message", text: "hello" })}\n\n` +
+      `data: ${JSON.stringify({ type: "step/start", turnId: "t1", step: 1 })}\n\n` +
+      `data: ${JSON.stringify({ type: "prompt/system", turnId: "t1", step: 1, text: systemText })}\n\n` +
+      `data: ${JSON.stringify({ type: "assistant/message", text: "hi-there" })}\n\n` +
+      `data: ${JSON.stringify({ type: "end", status: "ok" })}\n\n`;
+    installFetch({
+      turn: new Response(sse, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    });
+    await mountApp();
+    await typeAndSend("hello");
+    await waitForText("hi-there");
+    expect(document.querySelector(".trajectory-root")).toBeNull();
+    expect(document.body.textContent).not.toContain("leaked-system-token");
+
+    const trajTab = [...document.querySelectorAll('[role="tab"]')].find((el) => el.textContent === "轨迹");
+    await act(async () => {
+      (trajTab as HTMLButtonElement).click();
+    });
+    expect(document.body.textContent).toContain("leaked-system-token");
+    expect(document.querySelector('[data-trajectory-id="system:t1:1"]')).toBeTruthy();
+  });
 });
