@@ -102,7 +102,7 @@ describe("runTurn", () => {
     const assistantEvent = session.events().find(
       (e) => e.type === "assistant/message",
     );
-    expect(assistantEvent).toEqual({
+    expect(assistantEvent).toMatchObject({
       type: "assistant/message",
       text: "summary-ok",
     });
@@ -464,7 +464,7 @@ describe("runTurn", () => {
     expect(result.status).toBe("ok");
     expect(omniCalled).toBe(true);
     expect(chatCalled).toBe(false);
-    expect(session.events().find((e) => e.type === "assistant/message")).toEqual({
+    expect(session.events().find((e) => e.type === "assistant/message")).toMatchObject({
       type: "assistant/message",
       text: "from-omni",
     });
@@ -490,7 +490,7 @@ describe("runTurn", () => {
       signal: new AbortController().signal,
     });
     expect(result.status).toBe("ok");
-    expect(session.events().find((e) => e.type === "user/message")).toEqual({
+    expect(session.events().find((e) => e.type === "user/message")).toMatchObject({
       type: "user/message",
       text: "what is this",
       images: [{ mime: "image/png", data: "abc" }],
@@ -536,7 +536,7 @@ describe("runTurn", () => {
     });
     expect(result.status).toBe("ok");
     expect(chatCalled).toBe(true);
-    expect(session.events().find((e) => e.type === "assistant/message")).toEqual({
+    expect(session.events().find((e) => e.type === "assistant/message")).toMatchObject({
       type: "assistant/message",
       text: "from-chat",
     });
@@ -727,5 +727,73 @@ describe("runTurn", () => {
       name: "web_search",
       text: "failed: web_search disabled",
     });
+  });
+
+  it("logs prompt/system equal to the streamed system message and dedupes until it changes", async () => {
+    const systems: string[] = [];
+    const fakeChat: ChatProvider = {
+      async *stream(req) {
+        const first = req.messages[0];
+        systems.push(typeof first?.content === "string" ? first.content : "");
+        yield { type: "text", text: "ok" };
+      },
+    };
+    const ctx = boot();
+    ctx.require<ModelRegistry>("models").registerChat("fake", fakeChat);
+    ctx.require<ModelRegistry>("models").setDefault("chat", "fake");
+    const session = new Session("s-prompt-sys");
+    await runTurn({
+      ctx,
+      session,
+      text: "hello",
+      workspaceRoot: process.cwd(),
+      channel: "test",
+      signal: new AbortController().signal,
+    });
+    const first = session.events().filter((e) => e.type === "prompt/system");
+    expect(first).toHaveLength(1);
+    expect(first[0]?.text).toBe(systems[0]);
+    expect(first[0]?.text).toContain("You are FlintLoom");
+    expect(first[0]?.step).toBe(1);
+    expect(typeof first[0]?.time).toBe("number");
+
+    await runTurn({
+      ctx,
+      session,
+      text: "again",
+      workspaceRoot: process.cwd(),
+      channel: "test",
+      signal: new AbortController().signal,
+    });
+    expect(session.events().filter((e) => e.type === "prompt/system")).toHaveLength(1);
+
+    await runTurn({
+      ctx,
+      session,
+      text: "search it",
+      webSearch: true,
+      workspaceRoot: process.cwd(),
+      channel: "test",
+      signal: new AbortController().signal,
+    });
+    const all = session.events().filter((e) => e.type === "prompt/system");
+    expect(all).toHaveLength(2);
+    expect(all[1]?.text).toBe(systems[2]);
+    expect(all[1]?.text).toContain("You may call web_search");
+  });
+
+  it("does not log prompt/system when chat provider is missing", async () => {
+    const ctx = boot();
+    const session = new Session("s-no-chat");
+    const result = await runTurn({
+      ctx,
+      session,
+      text: "hello",
+      workspaceRoot: process.cwd(),
+      channel: "test",
+      signal: new AbortController().signal,
+    });
+    expect(result.status).toBe("failed");
+    expect(session.events().some((e) => e.type === "prompt/system")).toBe(false);
   });
 });

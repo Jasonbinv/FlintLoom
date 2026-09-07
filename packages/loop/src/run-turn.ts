@@ -229,8 +229,17 @@ function appendEvent(
   onEvent: RunTurnInput["onEvent"],
   event: SessionEvent,
 ): void {
-  session.append(event);
-  onEvent?.(event);
+  const stamped = event.time === undefined ? { ...event, time: Date.now() } : event;
+  session.append(stamped);
+  onEvent?.(stamped);
+}
+
+function lastPromptSystemText(session: Session): string | undefined {
+  let text: string | undefined;
+  for (const event of session.events()) {
+    if (event.type === "prompt/system") text = event.text;
+  }
+  return text;
 }
 
 function turnStartedAt(session: Session, turnId: string): number {
@@ -618,10 +627,22 @@ async function runStepIterations(input: RunStepsInput): Promise<RunTurnResult> {
       return await failChat(session, onEvent, finish, err);
     }
 
+    const systemText = conversationSystemMessage(
+      input.webSearch === true,
+      generationDirOf(input.session),
+    );
     const messages = [
-      { role: "system" as const, content: conversationSystemMessage(input.webSearch === true, generationDirOf(input.session)) },
+      { role: "system" as const, content: systemText },
       ...session.deriveMessages(),
     ];
+    if (lastPromptSystemText(session) !== systemText) {
+      appendEvent(session, onEvent, {
+        type: "prompt/system",
+        turnId,
+        step: stepNumber,
+        text: systemText,
+      });
+    }
 
     let accumulatedText = "";
     const toolCalls: ChatChunkToolCall[] = [];
