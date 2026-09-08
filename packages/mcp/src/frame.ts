@@ -1,7 +1,5 @@
 export function encodeFrame(payload: unknown): Buffer {
-  const body = JSON.stringify(payload);
-  const header = `Content-Length: ${Buffer.byteLength(body, "utf8")}\r\n\r\n`;
-  return Buffer.from(header + body, "utf8");
+  return Buffer.from(`${JSON.stringify(payload)}\n`, "utf8");
 }
 
 export function createFrameReader(
@@ -12,28 +10,22 @@ export function createFrameReader(
   const push = (chunk: Buffer): void => {
     buffer = Buffer.concat([buffer, chunk]);
     while (true) {
-      const headerEnd = buffer.indexOf("\r\n\r\n");
-      if (headerEnd === -1) {
+      const index = buffer.indexOf(0x0a);
+      if (index === -1) {
         return;
       }
-      const headerText = buffer.subarray(0, headerEnd).toString("utf8");
-      const match = /^Content-Length:\s*(\d+)/i.exec(headerText);
-      if (match === null) {
-        buffer = buffer.subarray(headerEnd + 4);
+      const line = buffer.subarray(0, index).toString("utf8").replace(/\r$/, "");
+      buffer = buffer.subarray(index + 1);
+      if (line.length === 0) {
         continue;
       }
-      const length = Number(match[1]);
-      const start = headerEnd + 4;
-      if (buffer.length < start + length) {
-        return;
-      }
-      const body = buffer.subarray(start, start + length).toString("utf8");
-      buffer = buffer.subarray(start + length);
       try {
-        const parsed = JSON.parse(body) as Record<string, unknown>;
-        onMessage(parsed);
+        const parsed = JSON.parse(line) as unknown;
+        if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+          onMessage(parsed as Record<string, unknown>);
+        }
       } catch {
-        // skip bad json
+        // skip non-JSON lines (logs accidentally on stdout, stray headers)
       }
     }
   };
