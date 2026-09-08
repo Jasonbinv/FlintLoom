@@ -25,7 +25,7 @@
 | `env` 值 | 每个名字：`envValues[name] ?? process.env[name]`。`envValues` 只来自 overlay。缺任一声明名 → 拒绝启动，消息含 **名字**、不含值。 |
 | 子进程环境 | 基线（有则拷贝）：`PATH`、`PATHEXT`、`SYSTEMROOT`、`COMSPEC`、`HOME`、`USERPROFILE`、`TMP`、`TEMP`。再加上声明名。任何 `FLINTLOOM_*` **永不**传入。 |
 | `.env` | 本片 **不**把工作区 `.env` 自动填进 `envValues`。 |
-| 协议 | 自写 JSON-RPC 2.0 + `Content-Length` 头。不引入 `@modelcontextprotocol/sdk`。 |
+| 协议 | 自写 JSON-RPC 2.0，stdio 按官方规范一行一条 JSON（不得内嵌换行）。不引入 `@modelcontextprotocol/sdk`。 |
 | 开机 | `initialize`（`protocolVersion: "2024-11-05"`）→ 通知 `notifications/initialized` → `tools/list`。整段超时 **8s**。 |
 | 调用 | `tools/call`；尊重 `exec.signal`；另有 **30s** 上限。 |
 | 工具名 | `id` 必须 `isPluginId`。MCP 名必须 `/^[a-zA-Z0-9_-]+$/`，否则跳过该条。登记名 `mcp__<id>__<tool>`。 |
@@ -91,12 +91,10 @@ host **不** `import @flintloom/mcp`。扫描 `apps/host/src` 不得出现 `@fli
 
 ### 5.2 stdio 客户端
 
-夹具与实现共用同一套成帧：
+夹具与实现共用同一套成帧（官方 stdio：newline-delimited JSON）：
 
 ```text
-Content-Length: <utf8 字节数>\r\n
-\r\n
-<json>
+<json>\n
 ```
 
 只实现：请求 `initialize`、`tools/list`、`tools/call`；通知 `notifications/initialized`。其它 method 本片不发。

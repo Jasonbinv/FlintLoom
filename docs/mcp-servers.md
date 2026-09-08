@@ -124,7 +124,16 @@ servers:
 GITHUB_TOKEN=ghp_你的令牌
 ```
 
-注意：本片只支持 **stdio + tools**；HTTP/SSE MCP 暂不支持。
+注意：本片只支持 **stdio + tools**；HTTP/SSE MCP 暂不支持。stdio 使用官方换行 JSON，不是 LSP 的 `Content-Length` 帧。Windows 上不要把 `command` 写成 `npx.cmd`（Node `spawn` 会 EINVAL），应使用：
+
+```yaml
+command: C:\Windows\System32\cmd.exe
+args:
+  - /c
+  - npx
+  - -y
+  - "@modelcontextprotocol/server-everything"
+```
 
 ---
 
