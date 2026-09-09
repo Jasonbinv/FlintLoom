@@ -49,3 +49,7 @@ export {
   setWorkspaceMcpEnabled,
   type McpServerDeclaration,
 } from "./mcp-servers-write.ts";
+export {
+  probeMcpServer,
+  type McpProbeResult,
+} from "./mcp-probe.ts";

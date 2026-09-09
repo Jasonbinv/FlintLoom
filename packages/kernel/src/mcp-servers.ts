@@ -97,7 +97,7 @@ function readMcpServersFromPath(path: string): McpServerRow[] {
   return loadMcpServersFile(readFileSync(path, "utf8"));
 }
 
-function resolveMcpEnvValues(
+export function resolveMcpEnvValues(
   env: string[] | undefined,
   fileEnv: Record<string, string>,
 ): Record<string, string> | undefined {
