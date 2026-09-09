@@ -2539,6 +2539,68 @@ describe("App", () => {
     ).toBe(true);
   });
 
+  it("tests an MCP server from the plugins page without changing loaded tools", async () => {
+    const servers = {
+      servers: [
+        {
+          id: "fake",
+          command: "node",
+          args: ["packages/mcp/fixtures/fake-mcp-server.mjs"],
+          env: ["FAKE_TOKEN"],
+          enabled: true,
+          source: "workspace" as const,
+          writable: true,
+          status: "loaded" as const,
+          tools: ["mcp__fake__echo"],
+          error: null,
+        },
+      ],
+    };
+    installFetch({
+      plugins: new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+      mcpServers: new Response(JSON.stringify(servers), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    });
+    const fallback = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (input, init) => {
+      const url = requestUrl(input);
+      if (url.includes("/v1/mcp-servers/fake/test") && (init?.method ?? "GET") === "POST") {
+        expect(JSON.parse(String(init?.body))).toMatchObject({
+          command: "node",
+          args: ["packages/mcp/fixtures/fake-mcp-server.mjs"],
+          env: ["FAKE_TOKEN"],
+        });
+        return new Response(
+          JSON.stringify({ ok: true, tools: ["mcp__fake__echo"] }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return fallback(input, init);
+    }) as typeof fetch;
+    await mountApp();
+    const pluginsTab = findNavTab("插件");
+    await act(async () => {
+      pluginsTab!.click();
+    });
+    await waitForText("fake");
+    const testBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "测试",
+    );
+    expect(testBtn).toBeTruthy();
+    await act(async () => {
+      (testBtn as HTMLButtonElement).click();
+    });
+    await waitForText("测试通过");
+    expect(document.body.textContent).toContain("mcp__fake__echo");
+    expect(document.body.textContent).toContain("对话仍用上次重载的进程");
+    expect(document.querySelector(".settings-card .status-pill")?.textContent).toBe("已加载");
+  });
+
   it("shows MCP server error without token on Plugins page", async () => {
     installFetch({
       mcpServers: new Response(

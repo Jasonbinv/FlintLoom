@@ -172,6 +172,30 @@ export async function copyMcpServer(id: string): Promise<void> {
   await throwIfMcpMutationFailed(res);
 }
 
+export type McpProbeResult =
+  | { ok: true; tools: string[] }
+  | { ok: false; error: string };
+
+export async function testMcpServer(
+  id: string,
+  draft?: { command: string; args: string[]; env: string[] },
+): Promise<McpProbeResult> {
+  const res = await fetch(`/v1/mcp-servers/${encodeURIComponent(id)}/test`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(draft ?? {}),
+  });
+  if (res.status === 401 || res.status === 0) {
+    throw new Error("host unreachable");
+  }
+  if (res.status === 400) {
+    const text = (await res.text()).trim();
+    throw new Error(text.length > 0 ? text : "invalid");
+  }
+  if (!res.ok) throw new Error("mcp failed");
+  return (await res.json()) as McpProbeResult;
+}
+
 export async function installPlugin(
   sourcePath: string,
   id?: string,

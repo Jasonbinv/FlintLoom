@@ -7,6 +7,7 @@ import {
   fetchPlugins,
   reloadHostSettings,
   setMcpServerEnabled,
+  testMcpServer,
   updateMcpServer,
   type McpServerSnapshot,
 } from "./api.ts";
@@ -61,6 +62,8 @@ function mcpWriteError(err: unknown): string {
   if (err.message === "home") return "个人目录条目请先复制到工作区";
   if (err.message === "args") return "args 无效";
   if (err.message === "env") return "env 无效";
+  if (err.message === "enabled") return "请先启用";
+  if (err.message === "host unreachable") return "无法连接 host";
   return "操作失败";
 }
 
@@ -86,6 +89,8 @@ export function PluginsPane() {
   const [adding, setAdding] = useState(false);
   const [newDraft, setNewDraft] = useState<NewDraft>(emptyNewDraft);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | undefined>();
+  const [testingIds, setTestingIds] = useState<Set<string>>(() => new Set());
+  const [probeMessage, setProbeMessage] = useState<Record<string, string>>({});
 
   const load = useCallback(() => {
     const ac = new AbortController();
@@ -224,6 +229,51 @@ export function PluginsPane() {
     await runWrite(() => copyMcpServer(id));
   }
 
+  async function onTest(server: McpServerSnapshot) {
+    setTestingIds((prev) => new Set(prev).add(server.id));
+    try {
+      let result;
+      if (server.writable) {
+        const draft = drafts[server.id] ?? draftFrom(server);
+        let args: string[];
+        try {
+          args = parseArgs(draft.args);
+        } catch {
+          setProbeMessage((prev) => ({ ...prev, [server.id]: "args 无效" }));
+          return;
+        }
+        const env = parseEnv(draft.env);
+        result = await testMcpServer(server.id, {
+          command: draft.command,
+          args,
+          env,
+        });
+      } else {
+        result = await testMcpServer(server.id);
+      }
+      if (result.ok) {
+        const toolsPart = result.tools.length > 0 ? ` ${result.tools.join(", ")}` : "";
+        setProbeMessage((prev) => ({
+          ...prev,
+          [server.id]: `测试通过${toolsPart}；对话仍用上次重载的进程`,
+        }));
+      } else {
+        setProbeMessage((prev) => ({
+          ...prev,
+          [server.id]: `测试失败：${result.error}`,
+        }));
+      }
+    } catch (err) {
+      setProbeMessage((prev) => ({ ...prev, [server.id]: mcpWriteError(err) }));
+    } finally {
+      setTestingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(server.id);
+        return next;
+      });
+    }
+  }
+
   if (error) {
     return (
       <div className="settings-pane-inner">
@@ -289,6 +339,9 @@ export function PluginsPane() {
               {server.error ? (
                 <p className="settings-card-hint">{server.error}</p>
               ) : null}
+              {probeMessage[server.id] ? (
+                <p className="settings-card-hint">{probeMessage[server.id]}</p>
+              ) : null}
               {server.writable ? (
                 <>
                   <div className="settings-form-row">
@@ -348,6 +401,14 @@ export function PluginsPane() {
                     >
                       保存
                     </button>
+                    <button
+                      type="button"
+                      className="btn-ghost"
+                      disabled={saving || testingIds.has(server.id) || !server.enabled}
+                      onClick={() => void onTest(server)}
+                    >
+                      {testingIds.has(server.id) ? "测试中…" : "测试"}
+                    </button>
                     {confirmDeleteId === server.id ? (
                       <>
                         <button
@@ -393,6 +454,14 @@ export function PluginsPane() {
                       onClick={() => void onCopy(server.id)}
                     >
                       复制到工作区
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-ghost"
+                      disabled={saving || testingIds.has(server.id) || !server.enabled}
+                      onClick={() => void onTest(server)}
+                    >
+                      {testingIds.has(server.id) ? "测试中…" : "测试"}
                     </button>
                   </div>
                 </>
