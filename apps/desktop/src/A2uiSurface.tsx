@@ -155,6 +155,12 @@ function renderRichText(comp: Comp, model: unknown): ReactNode {
   );
 }
 
+function renderButtonLabel(comp: Comp, model: unknown): ReactNode {
+  const source = boundText(comp.markdown ?? comp.text, model);
+  if (!source.trim()) return null;
+  return source;
+}
+
 function pickerSelected(comp: Comp, model: unknown): string {
   const options = choiceOptions(comp);
   const fallback = options[0]?.value ?? "";
@@ -402,6 +408,7 @@ function renderComp(
   setModel: (next: unknown) => void,
   onAction: (name: string, data?: unknown) => void,
   hasButton: boolean,
+  phrasing = false,
 ): ReactNode {
   const comp = map.get(id);
   if (!comp) return null;
@@ -437,7 +444,7 @@ function renderComp(
     }
     case "Text":
     case "Markdown":
-      return renderRichText(comp, model);
+      return phrasing ? renderButtonLabel(comp, model) : renderRichText(comp, model);
     case "DataTable": {
       const table = resolveTable(comp, model);
       if (!table) return null;
@@ -512,7 +519,9 @@ function renderComp(
             if (name) onAction(name, model);
           }}
         >
-          {childId ? renderComp(childId, map, interactive, model, setModel, onAction, hasButton) : null}
+          {childId
+            ? renderComp(childId, map, interactive, model, setModel, onAction, hasButton, true)
+            : null}
         </button>
       );
     }

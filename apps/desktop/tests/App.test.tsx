@@ -462,6 +462,16 @@ async function typeAndSend(text: string) {
   });
 }
 
+function findA2uiButton(label: string): HTMLButtonElement | undefined {
+  return Array.from(
+    document.querySelectorAll(".a2ui-surface-host button"),
+  ).find(
+    (b) =>
+      !b.closest(".a2ui-surface-export-toolbar") &&
+      b.textContent?.trim() === label,
+  ) as HTMLButtonElement | undefined;
+}
+
 function findNavTab(label: string): HTMLButtonElement | undefined {
   return Array.from(document.querySelectorAll(".sidebar-nav button")).find((b) =>
     b.textContent?.includes(label),
@@ -1866,9 +1876,7 @@ describe("App", () => {
     await mountApp();
     await typeAndSend("hi");
     await waitForText("OK");
-    const okButton = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "OK",
-    );
+    const okButton = findA2uiButton("OK");
     expect(okButton).toBeTruthy();
     const sendButton = document.querySelector(".btn-send") as HTMLButtonElement | null;
     expect(sendButton).toBeTruthy();
@@ -1887,9 +1895,7 @@ describe("App", () => {
     await mountApp();
     await typeAndSend("hi");
     await waitForText("OK");
-    const okButton = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "OK",
-    );
+    const okButton = findA2uiButton("OK");
     if (!okButton) throw new Error("no OK button");
     await act(async () => {
       okButton.click();
@@ -1923,9 +1929,7 @@ describe("App", () => {
     await mountApp();
     await typeAndSend("hi");
     await waitForText("OK");
-    const okButton = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "OK",
-    );
+    const okButton = findA2uiButton("OK");
     if (!okButton) throw new Error("no OK button");
     await act(async () => {
       okButton.click();
@@ -2194,9 +2198,7 @@ describe("App", () => {
       proto?.set?.call(select, "blue");
       select.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    const okButton = Array.from(document.querySelectorAll("button")).find(
-      (b) => b.textContent === "OK",
-    );
+    const okButton = findA2uiButton("OK");
     if (!okButton) throw new Error("no OK button");
     await act(async () => {
       okButton.click();

@@ -239,4 +239,43 @@ describe("A2uiSurface chart binding", () => {
     expect(String(content)).toContain("| Q1 | 120 |");
     unmount();
   });
+
+  it("renders a wait Button label as phrasing text, not a markdown paragraph", () => {
+    mount(
+      <A2uiSurface
+        messages={[
+          {
+            version: "v0.9" as const,
+            createSurface: { surfaceId: "main", catalogId: "flintloom:a2ui:core" },
+          },
+          {
+            version: "v0.9" as const,
+            updateComponents: {
+              surfaceId: "main",
+              components: [
+                { id: "root", component: "Column", children: ["ok"] },
+                {
+                  id: "ok",
+                  component: "Button",
+                  child: "ok-label",
+                  action: { event: { name: "confirm" } },
+                },
+                { id: "ok-label", component: "Text", text: "OK" },
+              ],
+            },
+          },
+        ]}
+        interactive
+        onAction={() => {}}
+      />,
+    );
+    const ok = Array.from(container!.querySelectorAll(".a2ui-surface-host button")).find(
+      (btn) => !btn.closest(".a2ui-surface-export-toolbar"),
+    );
+    expect(ok).toBeTruthy();
+    expect(ok!.textContent).toBe("OK");
+    expect(ok!.querySelector(".a2ui-md")).toBeNull();
+    expect(ok!.querySelector("p")).toBeNull();
+    unmount();
+  });
 });
