@@ -1300,6 +1300,95 @@ describe("createA2uiService", () => {
     expect(bareById.get("root")?.kind).toBe("pie");
   });
 
+  it("repairs bare Table/Picker/Button aliases from a dashboard-style emit", () => {
+    const svc = createA2uiService();
+    const snap = svc.validateEmit([
+      {
+        catalogId: "flintloom:a2ui:core",
+        createSurface: {
+          surfaceId: "blueprint_poc_dashboard",
+          version: "0.9",
+        },
+      },
+      {
+        component: "Chart",
+        id: "root_chart",
+        kind: "bar",
+        labels: ["尺寸 (Dimension)", "文字 (Text)", "几何图形 (Geometry)", "符号 (Symbol)"],
+        values: [45, 82, 30, 15],
+        title: "图纸元素分布密度 (Element Density)",
+      },
+      {
+        component: "Table",
+        id: "root_table",
+        labels: ["Element ID", "Type", "Confidence", "Location (X,Y)"],
+        values: [
+          ["#001", "Dimension", "98.5%", "(120, 450)"],
+          ["#002", "Text", "92.1%", "(300, 120)"],
+          ["#003", "Symbol", "88.7%", "(550, 800)"],
+          ["#004", "Geometry", "95.4%", "(10, 10)"],
+        ],
+      },
+      {
+        component: "Button",
+        id: "root_button",
+        kind: "button",
+        label: "开始新图纸分析 (Start New Analysis)",
+      },
+      {
+        component: "Picker",
+        id: "root_picker",
+        kind: "picker",
+        options: [
+          "全量检测 (Full Detection)",
+          "仅尺寸检测 (Dimension Only)",
+          "仅文字检测 (Text Only)",
+        ],
+        title: "分析模式选择",
+      },
+    ]);
+    expect(snap.surfaceId).toBe("blueprint_poc_dashboard");
+    expect(snap.wait).toBe(true);
+    const byId = componentsById(snap.messages);
+    expect(byId.get("root")?.component).toBe("Column");
+    expect(byId.get("root")?.children).toEqual([
+      "root_chart",
+      "root_table",
+      "root_button",
+      "root_picker",
+    ]);
+    expect(byId.get("root_chart")?.component).toBe("Chart");
+    expect(byId.get("root_chart")?.kind).toBe("bar");
+    expect(byId.get("root_table")?.component).toBe("DataTable");
+    expect(byId.get("root_table")?.headers).toEqual([
+      "Element ID",
+      "Type",
+      "Confidence",
+      "Location (X,Y)",
+    ]);
+    expect(byId.get("root_table")?.rows).toEqual([
+      ["#001", "Dimension", "98.5%", "(120, 450)"],
+      ["#002", "Text", "92.1%", "(300, 120)"],
+      ["#003", "Symbol", "88.7%", "(550, 800)"],
+      ["#004", "Geometry", "95.4%", "(10, 10)"],
+    ]);
+    expect(byId.get("root_picker")?.component).toBe("ChoicePicker");
+    expect(byId.get("root_picker")?.options).toEqual([
+      { label: "全量检测 (Full Detection)", value: "全量检测 (Full Detection)" },
+      { label: "仅尺寸检测 (Dimension Only)", value: "仅尺寸检测 (Dimension Only)" },
+      { label: "仅文字检测 (Text Only)", value: "仅文字检测 (Text Only)" },
+    ]);
+    expect(byId.get("root_button")?.component).toBe("Button");
+    const buttonChild = byId.get("root_button")?.child;
+    expect(typeof buttonChild).toBe("string");
+    expect(byId.get(buttonChild as string)?.component).toBe("Text");
+    expect(byId.get(buttonChild as string)?.text).toBe("开始新图纸分析 (Start New Analysis)");
+    expect(byId.get("root_button")?.action).toEqual({ event: { name: "click" } });
+    expect(() =>
+      svc.validateAction({ surfaceId: "blueprint_poc_dashboard", name: "click" }, snap.messages),
+    ).not.toThrow();
+  });
+
   it("splits a combined createSurface+updateComponents envelope used by official-style emits", () => {
     const svc = createA2uiService();
     const snap = svc.validateEmit([

@@ -109,6 +109,14 @@ function mapOfficialComponent(comp: Record<string, unknown>): void {
     comp.component = "ChoicePicker";
     return;
   }
+  if (typeof comp.component === "string" && comp.component.toLowerCase() === "table") {
+    comp.component = "DataTable";
+    return;
+  }
+  if (typeof comp.component === "string" && comp.component.toLowerCase() === "picker") {
+    comp.component = "ChoicePicker";
+    return;
+  }
   if (comp.component === "Divider") {
     comp.component = "Text";
     if (typeof comp.text !== "string") comp.text = " ";
@@ -527,13 +535,29 @@ function coerceDashboardComponent(comp: Record<string, unknown>): Record<string,
       else if (Array.isArray(comp.data.values)) comp.values = comp.data.values;
     }
   }
-  if (comp.component === "DataTable" && isRecord(comp.data)) {
-    if (!Array.isArray(comp.headers) && Array.isArray(comp.data.headers)) {
-      comp.headers = comp.data.headers;
+  if (comp.component === "DataTable") {
+    if (isRecord(comp.data)) {
+      if (!Array.isArray(comp.headers) && Array.isArray(comp.data.headers)) {
+        comp.headers = comp.data.headers;
+      }
+      if (!Array.isArray(comp.rows) && Array.isArray(comp.data.rows)) {
+        comp.rows = comp.data.rows;
+      }
     }
-    if (!Array.isArray(comp.rows) && Array.isArray(comp.data.rows)) {
-      comp.rows = comp.data.rows;
+    if (!Array.isArray(comp.headers) && Array.isArray(comp.labels)) {
+      comp.headers = comp.labels;
     }
+    if (!Array.isArray(comp.rows) && Array.isArray(comp.values)) {
+      comp.rows = comp.values;
+    }
+  }
+  if (comp.component === "ChoicePicker" && Array.isArray(comp.options)) {
+    comp.options = comp.options.map((item) => {
+      if (typeof item === "string") {
+        return { label: item, value: item };
+      }
+      return item;
+    });
   }
   if (comp.component === "Infographic" && typeof comp.syntax === "string") {
     try {
@@ -545,14 +569,48 @@ function coerceDashboardComponent(comp: Record<string, unknown>): Record<string,
   return comp;
 }
 
+function missingButtonAction(comp: Record<string, unknown>): boolean {
+  if (!isRecord(comp.action) || !isRecord(comp.action.event)) return true;
+  return typeof comp.action.event.name !== "string" || comp.action.event.name.length === 0;
+}
+
+function uniqueChildId(base: string, taken: Set<string>): string {
+  if (!taken.has(base)) return base;
+  let i = 2;
+  while (taken.has(`${base}_${i}`)) i += 1;
+  return `${base}_${i}`;
+}
+
+function synthesizeLooseButtons(components: unknown[]): unknown[] {
+  const list = components.filter(isRecord);
+  const taken = new Set(
+    list.map((comp) => (typeof comp.id === "string" ? comp.id : "")).filter((id) => id.length > 0),
+  );
+  const extra: Record<string, unknown>[] = [];
+  for (const comp of list) {
+    if (comp.component !== "Button" || typeof comp.child === "string") continue;
+    if (typeof comp.label !== "string" || comp.label.length === 0) continue;
+    if (typeof comp.id !== "string" || comp.id.length === 0) continue;
+    const childId = uniqueChildId(`${comp.id}-label`, taken);
+    taken.add(childId);
+    extra.push({ id: childId, component: "Text", text: comp.label });
+    comp.child = childId;
+    if (missingButtonAction(comp)) {
+      comp.action = { event: { name: "click" } };
+    }
+  }
+  return extra.length === 0 ? components : [...list, ...extra];
+}
+
 function normalizeComponents(components: unknown[]): unknown[] {
   const coerced = components.map((item) => (isRecord(item) ? coerceDashboardComponent(item) : item));
   const split = splitFusedCharts(coerced);
-  return split.map((item) => {
+  const repaired = split.map((item) => {
     if (!isRecord(item)) return item;
     normalizeChartFields(item);
     return heatMatrixFromTable(item) ?? item;
   });
+  return synthesizeLooseButtons(repaired);
 }
 
 function childRefIds(comp: Record<string, unknown>): string[] {
