@@ -7,6 +7,7 @@ import {
   isPluginId,
   listMcpServerDeclarations,
   loadConfig,
+  probeMcpServer,
   setWorkspaceMcpEnabled,
   upsertWorkspaceMcpServer,
   type Context,
@@ -59,6 +60,7 @@ type HandlerOpts = {
   method: string;
   homeDir: string;
   workspaceRoot: string;
+  fileEnv: Record<string, string>;
   busy: Set<string>;
   reloadRuntime: () => Promise<void>;
   runtimeRef: { current: { ctx: Context } };
@@ -71,6 +73,11 @@ function itemId(pathname: string): string | undefined {
 
 function copyId(pathname: string): string | undefined {
   const match = /^\/v1\/mcp-servers\/([^/]+)\/copy$/.exec(pathname);
+  return match?.[1];
+}
+
+function testId(pathname: string): string | undefined {
+  const match = /^\/v1\/mcp-servers\/([^/]+)\/test$/.exec(pathname);
   return match?.[1];
 }
 
@@ -315,6 +322,73 @@ export async function handleMcpServersRequest(
       }
       sendJson(res, 200, { ok: true, server });
     });
+    return true;
+  }
+
+  const probedId = testId(opts.pathname);
+  if (opts.method === "POST" && probedId !== undefined) {
+    if (!isPluginId(probedId)) {
+      send(res, 400, "id");
+      return true;
+    }
+    let parsed: unknown = {};
+    const raw = await readBody(req);
+    if (raw.trim().length > 0) {
+      try {
+        parsed = JSON.parse(raw) as unknown;
+      } catch {
+        send(res, 400);
+        return true;
+      }
+    }
+    if (parsed !== undefined && parsed !== null && !isPlainObject(parsed)) {
+      send(res, 400);
+      return true;
+    }
+    const body = isPlainObject(parsed) ? parsed : {};
+    const draftCommand =
+      "command" in body
+        ? typeof body.command === "string"
+          ? body.command
+          : undefined
+        : undefined;
+    if ("command" in body && draftCommand === undefined) {
+      send(res, 400, "command");
+      return true;
+    }
+    let args: string[] | undefined;
+    let env: string[] | undefined;
+    if (draftCommand !== undefined) {
+      const argsField = readStringArrayField(body.args, "args");
+      if (!argsField.ok) {
+        send(res, 400, "args");
+        return true;
+      }
+      args = argsField.value ?? [];
+      const envField = readStringArrayField(body.env, "env");
+      if (!envField.ok) {
+        send(res, 400, "env");
+        return true;
+      }
+      env = envField.value ?? [];
+    }
+    try {
+      const result = await probeMcpServer({
+        workspaceRoot: opts.workspaceRoot,
+        homeDir: opts.homeDir,
+        id: probedId,
+        command: draftCommand,
+        args,
+        env,
+        fileEnv: opts.fileEnv,
+      });
+      sendJson(res, 200, result);
+    } catch (err) {
+      if (sendKnownError(res, err)) {
+        return true;
+      }
+      throw err;
+    }
     return true;
   }
 

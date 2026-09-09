@@ -1038,6 +1038,7 @@ async function handleRequest(
       method: req.method ?? "GET",
       homeDir: opts.homeDir,
       workspaceRoot,
+      fileEnv: readDotEnv(join(workspaceRoot, ".env")),
       busy,
       reloadRuntime: opts.reloadRuntime,
       runtimeRef: opts.runtimeRef,
