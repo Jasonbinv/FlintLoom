@@ -126,20 +126,20 @@ export class McpStdioClient {
     return [...this.#tools];
   }
 
-  async initialize(): Promise<void> {
+  async initialize(timeoutMs: number = MCP_INIT_TIMEOUT_MS): Promise<void> {
     await withTimeout(
       this.#request("initialize", {
         protocolVersion: "2024-11-05",
         capabilities: {},
         clientInfo: { name: "flintloom", version: "0" },
       }),
-      MCP_INIT_TIMEOUT_MS,
+      timeoutMs,
       "mcp initialize timeout",
     );
     this.#notify("notifications/initialized", {});
     const listResult = await withTimeout(
       this.#request("tools/list", {}),
-      MCP_INIT_TIMEOUT_MS,
+      timeoutMs,
       "mcp tools/list timeout",
     );
     const tools = (listResult as { tools?: McpTool[] } | null)?.tools;

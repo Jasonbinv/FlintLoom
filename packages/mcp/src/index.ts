@@ -8,6 +8,7 @@ import type { ToolRegistry } from "@flintloom/tools";
 import { McpStdioClient } from "./client.ts";
 import { validateMcpConfig } from "./config.ts";
 import { buildChildEnv } from "./env.ts";
+import { publicMcpError } from "./errors.ts";
 import { registerMcpTools } from "./tools.ts";
 
 function statusTable(ctx: Context): Map<string, McpServerRuntimeStatus> {
@@ -17,24 +18,6 @@ function statusTable(ctx: Context): Map<string, McpServerRuntimeStatus> {
     ctx.provide(MCP_SERVER_STATUS_KEY, table);
   }
   return table;
-}
-
-function publicMcpError(err: unknown): string {
-  const message = err instanceof Error ? err.message : String(err);
-  if (message.includes("missing env:")) {
-    return message.replace(/missing env:\s*/, "missing env: ").trim();
-  }
-  if (message.includes("timeout")) return "timeout";
-  if (
-    message === "id" ||
-    message === "command" ||
-    message === "args" ||
-    message === "env" ||
-    message === "workspaceRoot"
-  ) {
-    return message;
-  }
-  return "mcp";
 }
 
 const plugin: FlintPlugin = {
@@ -89,4 +72,5 @@ export { McpStdioClient } from "./client.ts";
 export { validateMcpConfig } from "./config.ts";
 export { buildChildEnv } from "./env.ts";
 export { registerMcpTools } from "./tools.ts";
+export { probeMcpServer, MCP_PROBE_TIMEOUT_MS, type McpProbeResult } from "./probe.ts";
 export default plugin;

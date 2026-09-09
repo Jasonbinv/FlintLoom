@@ -3,6 +3,15 @@ import type { McpStdioClient } from "./client.ts";
 
 const MCP_TOOL_NAME_RE = /^[a-zA-Z0-9_-]+$/;
 
+export function registeredMcpToolNames(
+  id: string,
+  tools: readonly { name: string }[],
+): string[] {
+  return tools
+    .filter((tool) => MCP_TOOL_NAME_RE.test(tool.name))
+    .map((tool) => `mcp__${id}__${tool.name}`);
+}
+
 export function registerMcpTools(input: {
   tools: ToolRegistry;
   id: string;
@@ -10,10 +19,10 @@ export function registerMcpTools(input: {
 }): () => void {
   const disposers: (() => void)[] = [];
   for (const tool of input.client.listTools()) {
-    if (!MCP_TOOL_NAME_RE.test(tool.name)) {
+    const [registeredName] = registeredMcpToolNames(input.id, [tool]);
+    if (registeredName === undefined) {
       continue;
     }
-    const registeredName = `mcp__${input.id}__${tool.name}`;
     const def: ToolDefinition = {
       name: registeredName,
       description: tool.description ?? `MCP tool ${tool.name}`,
